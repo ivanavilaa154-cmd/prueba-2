@@ -180,10 +180,15 @@ def sincronizar_odoo(transporte=None, ruta: Path | None = None) -> dict:
         extraccion = odoo.Extraccion(cliente_odoo(transporte=transporte), meses=cfg["meses"],
                                      avisar=lambda texto: _progreso.update(paso=texto))
         tablas = extraccion.ejecutar()
+        _progreso["paso"] = "Comparando con el reporte de ventas de Odoo…"
+        try:
+            control = odoo.control_ventas(extraccion.c, tablas, cfg["meses"], zona=str(extraccion.zona))
+        except Exception as e:  # el control nunca frena la sincronización
+            control = {"disponible": False, "motivo": f"No se pudo comparar con el reporte de ventas de Odoo: {e}"}
         _progreso["paso"] = "Guardando…"
         avisos = _guardar_base(tablas, ruta or RUTA_ODOO)
-        entrada.update(ok=True, conteos={t: len(f) for t, f in tablas.items()},
-                       avisos=extraccion.avisos + avisos)
+        entrada.update(ok=True, conteos={t: len(f) for t, f in tablas.items() if f},
+                       avisos=extraccion.avisos + avisos, control_ventas=control)
     except Exception as e:
         entrada.update(ok=False, error=f"{e}" if isinstance(e, odoo.OdooError) else f"{type(e).__name__}: {e}")
     finally:

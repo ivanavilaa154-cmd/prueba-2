@@ -649,6 +649,18 @@ function pintarEstadoOdoo(o) {
     html += `<p style="margin:14px 0 6px"><b>Última sincronización:</b> ${fechaCorta(o.ultima_ok.fecha)} (${fmt.format(o.ultima_ok.segundos)} s)` +
       `</p><div class="chips">` +
       Object.entries(n).map(([t, c]) => `<span class="chip ${c ? "" : "vacia"}">${esc(t)}: ${fmt.format(c)}</span>`).join("") + "</div>";
+    const ctl = o.ultima_ok.control_ventas;
+    if (ctl && ctl.disponible && ctl.filas.length) {
+      const fil = ctl.filas.map(f => [`${f.mes}`, f.equipo, f.odoo_sin_impuestos, f.plataforma_sin_impuestos, f.odoo_con_impuestos,
+        f.plataforma_con_impuestos, `${fmt.format(f.odoo_cantidad)} / ${fmt.format(f.plataforma_cantidad)}`,
+        `${f.odoo_lineas} / ${f.plataforma_lineas}`, f.coincide ? "✓ Coincide" : "✗ Revisar"]);
+      html += `<details style="margin-top:10px" ${ctl.coinciden ? "" : "open"}><summary><b>Control contra el reporte de ventas de Odoo:</b>
+        ${ctl.coinciden ? "todo coincide ✓" : "hay diferencias"}</summary>
+        <p class="nota" style="margin:6px 0">Mismos filtros que "Análisis de ventas → Órdenes de venta" en Odoo, por mes y equipo, en hora de ${esc(ctl.zona)}.
+        Odoo muestra "Total" con impuestos; la plataforma calcula la venta neta sin impuestos.</p>
+        ${tablaT(["Mes", "Equipo", "Odoo sin IVA", "Plataforma sin IVA", "Odoo con IVA", "Plataforma con IVA", "Cantidad (Odoo / plataforma)",
+          "Líneas (Odoo / plataforma)", ""], ["t", "t", "$", "$", "$", "$", "t", "t", "t"], fil)}</details>`;
+    } else if (ctl && !ctl.disponible) html += aviso("alerta", ctl.motivo);
     if (o.ultima_ok.avisos.length) html += `<details style="margin-top:8px"><summary>${o.ultima_ok.avisos.length} avisos sobre los datos</summary>` +
       o.ultima_ok.avisos.map(a => aviso("alerta", a)).join("") + "</details>";
   }

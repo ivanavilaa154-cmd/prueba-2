@@ -114,8 +114,9 @@ def _filtrar(filas, dominio):
 
 
 class OdooFalso:
-    def __init__(self, clave="secreta", sin_permiso=()):
+    def __init__(self, clave="secreta", sin_permiso=(), reporte_ventas=(), falla_en=None):
         self.clave, self.sin_permiso, self.metodos = clave, set(sin_permiso), []
+        self.reporte_ventas, self.falla_en = list(reporte_ventas), falla_en
 
     def __call__(self, url, payload):
         p = payload["params"]
@@ -125,6 +126,8 @@ class OdooFalso:
             return {"result": 6 if p["args"][2] == self.clave else False}
         db, uid, clave, modelo, metodo, args, kwargs = p["args"]
         self.metodos.append(metodo)
+        if self.falla_en == (modelo, metodo):
+            raise ConnectionResetError("se cortó la conexión")
         if metodo == "check_access_rights":
             return {"result": modelo not in self.sin_permiso}
         if modelo in self.sin_permiso:
@@ -137,11 +140,18 @@ class OdooFalso:
             return {"result": len(_filtrar(filas, args[0]))}
         if metodo == "read":
             return {"result": [f for f in filas if f["id"] in args[0]]}
+        if metodo == "read_group":
+            return {"result": self.reporte_ventas}
         if metodo == "search_read":
             encontrados = _filtrar(filas, args[0])
             ini = kwargs.get("offset", 0)
             return {"result": encontrados[ini:ini + kwargs.get("limit", 10**6)]}
         raise AssertionError(f"método no simulado: {metodo}")
+
+
+def _contiene(real: dict, esperado: dict) -> bool:
+    """El mapeo trae más campos que los que se comprueban: se comparan solo los esperados."""
+    return {k: real.get(k) for k in esperado} == esperado
 
 
 def _cliente(transporte=None, clave="secreta"):
@@ -199,14 +209,15 @@ def extraccion():
 
 def test_mapeo_de_maestros(extraccion):
     _, t = extraccion
-    assert t["sucursales"] == [{"id": 1, "nombre": "Central"}, {"id": 2, "nombre": "Norte"}]
+    assert [(s["id"], s["nombre"]) for s in t["sucursales"]] == [(1, "Central"), (2, "Norte")]
     clientes = {c["id"]: c for c in t["clientes"]}
     assert set(clientes) == {100, 102}  # el contacto 101 se agrupa en su empresa
-    assert clientes[100] == {"id": 100, "razon_social": "Almacén Sol SA", "tipo": "Autoservicio", "zona": "Montevideo",
-                             "vendedor_id": 7, "condicion_pago_dias": 30, "limite_credito": 500000.0, "fecha_alta": "2024-02-01"}
+    assert _contiene(clientes[100], {"id": 100, "razon_social": "Almacén Sol SA", "tipo": "Autoservicio", "zona": "Montevideo",
+                             "vendedor_id": 7, "condicion_pago_dias": 30, "limite_credito": 500000.0, "fecha_alta": "2024-02-01"})
     assert clientes[102]["zona"] == "Canelones" and clientes[102]["condicion_pago_dias"] == 0
     assert {v["id"]: v["nombre"] for v in t["vendedores"]} == {7: "Valentina", 8: "Federico"}
-    assert t["proveedores"] == [{"id": 200, "nombre": "Lácteos del Este", "plazo_pago_dias": 30, "plazo_entrega_dias": 2, "pedido_minimo": None}]
+    assert len(t["proveedores"]) == 1 and _contiene(t["proveedores"][0], {"id": 200, "nombre": "Lácteos del Este", "plazo_pago_dias": 30,
+                                                                          "plazo_entrega_dias": 2})
     productos = {p["id"]: p for p in t["productos"]}
     assert productos[50]["descripcion"] == "Leche entera 1 L" and productos[50]["proveedor_id"] == 200 and productos[50]["perecedero"] == 1
     assert 52 in productos  # no es vendible hoy, pero aparece en una venta
@@ -217,16 +228,17 @@ def test_mapeo_de_ventas_y_cobranzas(extraccion):
     _, t = extraccion
     ventas = {v["id"]: v for v in t["ventas"]}
     assert set(ventas) == {1, 2, odoo.OFFSET_POS + 5}  # el pedido de 2020 queda fuera de los 12 meses
-    assert ventas[1] == {"id": 1, "fecha": "2026-09-01", "cliente_id": 100, "vendedor_id": 7, "sucursal_id": 1, "anulada": 0}
+    # 14:00 UTC son las 11:00 en Montevideo
+    assert _contiene(ventas[1], {"id": 1, "fecha": "2026-09-01", "hora": "11:00", "cliente_id": 100, "vendedor_id": 7, "sucursal_id": 1, "anulada": 0})
     assert ventas[2]["anulada"] == 1
     assert ventas[odoo.OFFSET_POS + 5]["sucursal_id"] == 2 and ventas[odoo.OFFSET_POS + 5]["cliente_id"] is None
     lineas = {l["venta_id"]: l for l in t["ventas_lineas"]}
     assert len(t["ventas_lineas"]) == 3  # la nota del pedido no es una línea de venta
-    assert lineas[1] == {"venta_id": 1, "producto_id": 50, "cantidad": 10.0, "precio_unitario": 45.0, "costo_unitario": 37.0}
+    assert _contiene(lineas[1], {"venta_id": 1, "producto_id": 50, "cantidad": 10.0, "precio_unitario": 45.0, "costo_unitario": 37.0})
     assert lineas[odoo.OFFSET_POS + 5]["costo_unitario"] == 185.0 and lineas[odoo.OFFSET_POS + 5]["precio_unitario"] == 230.0
     cxc = {x["id"]: x for x in t["cxc"]}
-    assert cxc[400] == {"id": 400, "cliente_id": 100, "fecha_emision": "2026-08-01", "fecha_vencimiento": "2026-08-31",
-                        "fecha_cobro": "2026-09-05", "importe": 450.0, "saldo": 0.0}
+    assert _contiene(cxc[400], {"id": 400, "cliente_id": 100, "fecha_emision": "2026-08-01", "fecha_vencimiento": "2026-08-31",
+                                "fecha_cobro": "2026-09-05", "importe": 450.0, "saldo": 0.0, "tipo": "factura"})
     assert cxc[401]["fecha_cobro"] is None and cxc[401]["saldo"] == 900.0
 
 
@@ -328,3 +340,45 @@ def test_cuenta_regresiva(entorno, monkeypatch):
     assert estado["segundos_para_proxima"] == 50 * 60 and estado["cada_min"] == 60
     monkeypatch.setattr(gestor.time, "time", lambda: entrada["ts"] + 2 * 3600)
     assert gestor.estado_odoo()["segundos_para_proxima"] == 0
+
+
+def test_modulo_que_falla_no_frena_el_resto():
+    from datetime import date
+
+    class SinCompras(OdooFalso):
+        def __call__(self, url, payload):
+            p = payload["params"]
+            if p["service"] == "object" and p["args"][3] == "sale.order.line" and p["args"][4] == "search_read":
+                return {"error": {"message": "boom", "data": {"message": "campo inexistente"}}}
+            return super().__call__(url, payload)
+
+    e = odoo.Extraccion(_cliente(SinCompras()), hoy=date(2026, 9, 25))
+    t = e.ejecutar()
+    assert any("ventas" in a and "campo inexistente" in a for a in e.avisos)
+    assert not t.get("ventas") and not t.get("ventas_lineas")  # se deshace el paso entero, no queda a medias
+    assert t["clientes"] and t["cxc"]  # el resto se sincroniza igual
+
+
+def test_corte_de_conexion_cancela_y_conserva_la_base(entorno, monkeypatch):
+    gestor.guardar_odoo("https://odoo.test", "empresa", "integracion@empresa.com", "secreta", 12, 0)
+    assert gestor.sincronizar_odoo()["ok"]
+    antes = gestor.RUTA_ODOO.read_bytes()
+    monkeypatch.setattr(odoo, "_http", OdooFalso(falla_en=("account.move", "search_read")))
+    fallida = gestor.sincronizar_odoo()
+    assert not fallida["ok"] and "conexión" in fallida["error"]
+    assert gestor.RUTA_ODOO.read_bytes() == antes
+
+
+def test_control_contra_reporte_de_ventas():
+    from datetime import date
+
+    e = odoo.Extraccion(_cliente(), hoy=date(2026, 9, 25))
+    t = e.ejecutar()
+    # Lo que devolvería Odoo en "Análisis de ventas": pedido 1 (450 + IVA) y el ticket de caja (460), en setiembre.
+    reporte = [{"__range": {"date:month": {"from": "2026-09-01", "to": "2026-10-01"}}, "team_id": False,
+                "price_subtotal": 910.0, "price_total": 910.0, "product_uom_qty": 12.0, "nbr": 2}]
+    bien = odoo.control_ventas(_cliente(OdooFalso(reporte_ventas=reporte)), t, 12, zona="America/Montevideo", hoy=date(2026, 9, 25))
+    assert bien["coinciden"] and bien["filas"][0]["plataforma_sin_impuestos"] == 910.0
+    reporte[0]["price_subtotal"] = 1500.0
+    mal = odoo.control_ventas(_cliente(OdooFalso(reporte_ventas=reporte)), t, 12, zona="America/Montevideo", hoy=date(2026, 9, 25))
+    assert not mal["coinciden"] and mal["filas"][0]["diferencia"] == -590.0

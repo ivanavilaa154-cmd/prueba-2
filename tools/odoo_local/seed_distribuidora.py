@@ -96,7 +96,49 @@ def main():
             asistente = x("account.payment.register", "create", [{"payment_date": (hoy - timedelta(days=pagada)).isoformat()}],
                           {"context": {"active_model": "account.move", "active_ids": [factura]}})
             x("account.payment.register", "action_create_payments", [[asistente]])
-    print(f"Listo: {len(vendedores)} vendedores, {len(FACTURAS)} facturas, proveedor Textiles del Plata")
+    # --- Compras, facturas de proveedor, pagos, lotes y merma (si están los módulos) ---
+    integracion = x("res.users", "search", [[("login", "=", "integracion@tienda.cl")]])
+    grupos = [xmlid("account", "group_account_invoice")]
+    if x("ir.module.module", "search", [[("name", "=", "purchase"), ("state", "=", "installed")]]):
+        grupos.append(xmlid("purchase", "group_purchase_user"))
+    x("res.users", "write", [integracion, {"groups_id": [(4, g) for g in grupos]}])
+
+    compras = 0
+    if x("ir.module.module", "search", [[("name", "=", "purchase"), ("state", "=", "installed")]]):
+        botella = x("product.product", "search", [[("default_code", "=", "BOT-TER-750")]])[0]
+        for i, (hace, cantidad, recibir) in enumerate([(40, 50, 50), (20, 80, 60), (5, 40, 0)]):
+            ref = f"seed-oc-{i}"
+            if x("purchase.order", "search", [[("partner_ref", "=", ref)]]):
+                continue
+            oc = x("purchase.order", "create", [{"partner_id": prov, "partner_ref": ref, "order_line": [(0, 0, {
+                "product_id": botella, "product_qty": cantidad, "price_unit": 5200,
+                "date_planned": (hoy - timedelta(days=hace - 3)).isoformat() + " 12:00:00"})]}])
+            x("purchase.order", "button_confirm", [[oc]])
+            compras += 1
+            if recibir:
+                for picking in x("stock.picking", "search", [[("purchase_id", "=", oc), ("state", "not in", ["done", "cancel"])]]):
+                    for mov in x("stock.move", "search", [[("picking_id", "=", picking)]]):
+                        x("stock.move", "write", [[mov], {"quantity": recibir, "picked": True}])
+                    x("stock.picking", "button_validate", [[picking]], {"context": {"skip_backorder": True, "skip_sms": True}})
+                factura = x("account.move", "create", [{
+                    "move_type": "in_invoice", "partner_id": prov, "ref": f"FP-{i}",
+                    "invoice_date": (hoy - timedelta(days=hace)).isoformat(),
+                    "invoice_date_due": (hoy - timedelta(days=hace - 30)).isoformat(),
+                    "invoice_line_ids": [(0, 0, {"product_id": botella, "quantity": recibir, "price_unit": 5200, "tax_ids": [(6, 0, [])]})]}])
+                x("account.move", "action_post", [[factura]])
+                if i == 0:
+                    asistente = x("account.payment.register", "create", [{"payment_date": (hoy - timedelta(days=8)).isoformat()}],
+                                  {"context": {"active_model": "account.move", "active_ids": [factura]}})
+                    x("account.payment.register", "action_create_payments", [[asistente]])
+
+    # Merma: rotura de 2 botellas en Sucursal Centro
+    if not x("stock.scrap", "search", [[("origin", "=", "seed-merma")]]):
+        centro = x("stock.warehouse", "search_read", [[("code", "=", "CEN")]], {"fields": ["lot_stock_id"]})[0]
+        botella = x("product.product", "search", [[("default_code", "=", "BOT-TER-750")]])[0]
+        merma = x("stock.scrap", "create", [{"product_id": botella, "scrap_qty": 2, "origin": "seed-merma",
+                                             "location_id": centro["lot_stock_id"][0]}])
+        x("stock.scrap", "action_validate", [[merma]])
+    print(f"Listo: {len(vendedores)} vendedores, {len(FACTURAS)} facturas, {compras} compras, proveedor Textiles del Plata")
 
 
 if __name__ == "__main__":
