@@ -79,6 +79,11 @@ chat, los permisos por rol y los análisis funcionan igual con cualquiera.
 | Base de datos del ERP (SQL Server, PostgreSQL, MySQL, Oracle) | Disponible con `ERP_URL` en `.env` |
 | Tango, SAP Business One, Memory, Zeta, Bejerman | Próximamente |
 
+**Modelo de datos completo.** Todas las integraciones se traducen a las mismas 35 tablas
+(`backend/app/erp/modelo.py`, descriptas en `config/diccionario_datos.yaml`), agrupadas en Ventas, Inventario y
+Finanzas. Todo campo es opcional salvo los mínimos: lo que un sistema no tiene queda vacío y el indicador que lo
+necesita lo avisa. La sección **Cobertura de datos** muestra, tabla por tabla, qué llegó y qué controles fallan.
+
 **Odoo** (`backend/app/integraciones/`):
 1. Creá en Odoo un usuario para la integración con permisos de Ventas, Facturación e Inventario y generale
    una API key (Preferencias → Seguridad de la cuenta → Nueva clave API).
@@ -88,6 +93,9 @@ chat, los permisos por rol y los análisis funcionan igual con cualquiera.
 4. **Sincronizar ahora** trae clientes, vendedores, proveedores, productos, stock por almacén, pedidos,
    ventas de caja y facturas con su fecha real de cobro a `backend/odoo.db`, y la plataforma pasa a usarla.
    Opcional: sincronización automática (cada 15 min a una vez por día) mientras el servidor esté encendido.
+
+Cada sincronización se compara con el reporte **Análisis de ventas** de Odoo (mismos filtros que
+"Órdenes de venta"), por mes y equipo, con y sin impuestos, y el panel muestra si coincide.
 
 La integración solo usa métodos de lectura de la API de Odoo (bloqueado también en el código). El "Vendedor"
 de la ficha de cada cliente en Odoo define la cartera que ve cada vendedor en la plataforma.

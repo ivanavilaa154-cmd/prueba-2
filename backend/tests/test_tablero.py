@@ -77,7 +77,9 @@ def test_vendedor_ve_solo_su_cartera(base_demo_config, dueno):
     assert _kpis(laura["ventas"])["Venta neta"]["valor"] < _kpis(dueno["ventas"])["Venta neta"]["valor"]
     assert _kpis(laura["ventas"])["Clientes activos"]["valor"] <= 4
     assert _kpis(laura["finanzas"])["Deuda de clientes"]["valor"] < _kpis(dueno["finanzas"])["Deuda de clientes"]["valor"]
-    assert set(_kpis(laura["inventario"])) == {"Quiebres de stock", "Venta perdida por quiebres"}  # sin cobertura engañosa
+    inv = set(_kpis(laura["inventario"]))
+    assert {"Quiebres de stock", "Venta perdida por quiebres"} <= inv
+    assert not inv & {"Días de inventario", "Rotación anual", "Por quebrar", "Merma"}  # sin cobertura engañosa ni datos de depósito
     assert {v["vendedor"] for v in laura["ventas"]["vendedores"]} == {"Vendedor 1"}  # no ve la tabla de vendedores
 
 
@@ -91,8 +93,50 @@ def test_sin_ventas_recientes_usa_el_ultimo_dia(base_demo_config):
     assert t["fecha_ajustada"] and t["fecha"] <= HOY.isoformat()
 
 
-def test_nunca_inventa_lo_que_falta(dueno):
-    assert any("caja" in n["indicador"].lower() for n in dueno["no_disponibles"])
+def test_nunca_inventa_lo_que_falta(base_demo, tmp_path, monkeypatch):
+    import shutil
+    import sqlite3
+
+    from app import config
+
+    copia = tmp_path / "sin_caja.db"
+    shutil.copy(base_demo.replace("sqlite:///", ""), copia)
+    con = sqlite3.connect(copia)
+    con.execute("DELETE FROM cuentas_bancarias")
+    con.execute("DELETE FROM cheques")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(config, "ERP_URL", f"sqlite:///{copia}")
+    t = tablero.tablero(obtener_usuario("u1"), 30, hoy=HOY)
+    faltan = " ".join(n["indicador"] + n["motivo"] for n in t["no_disponibles"]).lower()
+    assert "caja" in faltan and "cheques" in faltan
+    nombres = set(_kpis(t["finanzas"]))
+    assert "Caja y bancos" not in nombres and "Cheques en cartera" not in nombres
+    conector.olvidar_conexiones()
+
+
+def test_indicadores_nuevos_contra_sql_directo(dueno, base_demo):
+    k = {**_kpis(dueno["ventas"]), **_kpis(dueno["inventario"]), **_kpis(dueno["finanzas"])}
+    assert k["Caja y bancos"]["valor"] == _uno("SELECT SUM(saldo) FROM cuentas_bancarias", base_demo)
+    assert k["Deuda con proveedores"]["valor"] == round(_uno("SELECT SUM(saldo) FROM cxp WHERE saldo <> 0", base_demo) or 0, 2)
+    desde = (HOY - timedelta(days=29)).isoformat()
+    d90 = (HOY - timedelta(days=89)).isoformat()
+    gastos = (_uno(f"SELECT SUM(importe) FROM gastos WHERE fecha >= '{d90}' AND fecha <= '{HOY}'", base_demo) or 0) / 90 * 30
+    assert gastos > 0
+    assert k["Gastos operativos"]["valor"] == round(gastos, 2)
+    assert k["Resultado operativo (aprox. EBITDA)"]["valor"] == round(k["Margen bruto"]["valor"] - gastos, 2)
+    imp = _uno(f"""SELECT SUM(l.impuestos) FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id
+                   WHERE v.anulada = 0 AND v.fecha >= '{desde}' AND v.fecha <= '{HOY}'""", base_demo)
+    assert k["Venta con impuestos"]["valor"] == round(k["Venta neta"]["valor"] + imp, 2)
+    assert k["Cheques rechazados"]["estado"] == "critico"
+    assert "Merma" in k and "Por vencer en 30 días" in k and "Pedidos completos y a tiempo" in k
+
+
+def test_flujo_de_caja(dueno):
+    panel = next(p for p in dueno["finanzas"]["paneles_extra"] if p["titulo"].startswith("Flujo de caja"))
+    assert len(panel["filas"]) == 13
+    k = _kpis(dueno["finanzas"])
+    assert k["Punto más bajo de caja (13 semanas)"]["valor"] == min(f[4] for f in panel["filas"])
 
 
 def test_endpoint(base_demo_config):
@@ -128,6 +172,6 @@ def test_cobertura(base_demo_config):
     c = cobertura.cobertura()
     por_tabla = {t["tabla"]: t for p in c["pilares"] for t in p["tablas"]}
     assert por_tabla["clientes"]["filas"] == 12 and por_tabla["clientes"]["estado"] in ("completa", "buena")
-    assert por_tabla["cheques"]["estado"] == "vacia"
+    assert por_tabla["visitas"]["estado"] == "vacia"
     assert "nombre_fantasia" in por_tabla["clientes"]["campos_vacios"]
     assert [p["pilar"] for p in c["pilares"]] == ["Ventas", "Inventario", "Finanzas"]

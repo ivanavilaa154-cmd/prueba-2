@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from ..erp import conector
 from ..erp.conector import ConsultaNoPermitida
 from ..permisos import AccesoDenegado, Usuario
+from . import indicadores
 
 SIN_LIMITE = 1_000_000
 TRAMOS = [("Al día", None, 0), ("1 a 15 días", 1, 15), ("16 a 30 días", 16, 30),
@@ -295,14 +296,37 @@ def finanzas(usuario: Usuario, ref: date, dias: int) -> dict:
     }
 
 
+def _valor(seccion: dict, nombre: str):
+    return next((k["valor"] for k in seccion.get("kpis", []) if k["nombre"] == nombre), None)
+
+
+def _sumar(seccion: dict, bloque) -> None:
+    """Agrega al pilar los indicadores que se habilitan con más datos (app/analisis/indicadores.py)."""
+    if "kpis" not in seccion:
+        return
+    seccion["kpis"] += bloque.kpis
+    seccion["paneles_extra"] = bloque.paneles
+
+
 def tablero(usuario: Usuario, dias: int = 30, hoy: date | None = None) -> dict:
     ref, ajustada = fecha_de_referencia(usuario, hoy)
+    v = _seccion(ventas, usuario, ref, dias)
+    i = _seccion(inventario, usuario, ref, dias)
+    f = _seccion(finanzas, usuario, ref, dias)
+    bloques = [indicadores.ventas(usuario, ref, dias, _valor(v, "Venta neta")),
+               indicadores.inventario(usuario, ref, dias),
+               indicadores.finanzas(usuario, ref, dias, _valor(v, "Margen bruto"))]
+    for seccion, bloque in zip((v, i, f), bloques):
+        _sumar(seccion, bloque)
+    if f.get("sin_datos") and bloques[2].kpis:  # sin facturas de clientes, pero con otros datos financieros
+        f = {"kpis": bloques[2].kpis, "paneles_extra": bloques[2].paneles, "antiguedad": [], "deudores": [],
+             "nota": "Sin facturas de clientes: se muestran los demás datos financieros."}
     return {
         "fecha": ref.isoformat(),
         "fecha_ajustada": ajustada,
         "dias": dias,
-        "ventas": _seccion(ventas, usuario, ref, dias),
-        "inventario": _seccion(inventario, usuario, ref, dias),
-        "finanzas": _seccion(finanzas, usuario, ref, dias),
-        "no_disponibles": [{"indicador": i, "motivo": m} for i, m in NO_DISPONIBLES],
+        "ventas": v,
+        "inventario": i,
+        "finanzas": f,
+        "no_disponibles": [x for b in bloques for x in b.faltan],
     }

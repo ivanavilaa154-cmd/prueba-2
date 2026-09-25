@@ -251,13 +251,21 @@ ul { margin: 6px 0; padding-left: 20px; }
     <details id="odoo-mapeo" style="margin-top:12px"><summary>Qué se trae de Odoo y a qué tabla va</summary>
       <div class="tabla-scroll" style="margin-top:8px"><table><thead><tr><th>Odoo</th><th>Tabla de la plataforma</th><th>Detalle</th></tr></thead><tbody>
         <tr><td>Almacenes</td><td>sucursales</td><td>Cada almacén es una sucursal</td></tr>
-        <tr><td>Vendedor de cada cliente</td><td>vendedores</td><td>Define la cartera que ve cada vendedor</td></tr>
-        <tr><td>Contactos cliente</td><td>clientes</td><td>Plazo de pago, límite de crédito, ciudad y etiqueta</td></tr>
-        <tr><td>Contactos proveedor</td><td>proveedores</td><td>Plazo de pago y de entrega</td></tr>
-        <tr><td>Productos vendibles</td><td>productos</td><td>Costo, precio y proveedor principal</td></tr>
-        <tr><td>Stock</td><td>stock</td><td>Suma por almacén de las ubicaciones internas</td></tr>
-        <tr><td>Pedidos de venta y caja</td><td>ventas, ventas_lineas</td><td>Precio neto sin impuestos; cancelados como anulados</td></tr>
-        <tr><td>Facturas de cliente</td><td>cxc</td><td>Saldo pendiente y fecha real de cobro</td></tr>
+        <tr><td>Vendedor de cada cliente y equipos de venta</td><td>vendedores</td><td>Definen la cartera y el canal</td></tr>
+        <tr><td>Contactos cliente y proveedor</td><td>clientes, proveedores</td><td>Plazo de pago, límite de crédito, lista de precios, dirección</td></tr>
+        <tr><td>Productos</td><td>productos, componentes_kit</td><td>Códigos, categoría, unidad, IVA, vida útil, costo, precio, kits</td></tr>
+        <tr><td>Stock, lotes y entradas pendientes</td><td>stock</td><td>Por almacén y lote con vencimiento, reservado y en tránsito</td></tr>
+        <tr><td>Movimientos de inventario</td><td>movimientos_stock</td><td>Compras, ventas, devoluciones, transferencias, ajustes y mermas</td></tr>
+        <tr><td>Órdenes de venta y caja</td><td>ventas, ventas_lineas</td><td>Hora local, equipo, precio de lista, descuento, impuestos, medio de pago</td></tr>
+        <tr><td>Cotizaciones y entregas</td><td>pedidos, presupuestos</td><td>Pedido vs entregado y conversión de presupuestos</td></tr>
+        <tr><td>Listas de precios y promociones</td><td>listas_precios, precios, promociones</td><td></td></tr>
+        <tr><td>Órdenes de compra y costos</td><td>compras, compras_lineas, costos_historial</td><td>Prometido vs recibido</td></tr>
+        <tr><td>Facturas de cliente y notas de crédito</td><td>cxc, devoluciones</td><td>Saldo y fecha real de cobro</td></tr>
+        <tr><td>Facturas de proveedor</td><td>cxp</td><td>Saldo y fecha real de pago</td></tr>
+        <tr><td>Pagos</td><td>cobranzas, pagos</td><td>Con medio de pago</td></tr>
+        <tr><td>Bancos, cajas y extractos</td><td>cuentas_bancarias, movimientos_bancarios</td><td></td></tr>
+        <tr><td>Contabilidad</td><td>gastos, impuestos</td><td>Gastos por cuenta y mes, impuestos por período</td></tr>
+        <tr><td>Tipos de cambio, préstamos, presupuesto, cheques</td><td>tipos_cambio, prestamos, presupuesto, cheques</td><td>Si están los módulos</td></tr>
       </tbody></table></div>
     </details>
   </div>
@@ -493,7 +501,9 @@ function panelTabla(titulo, columnas, tipos, filas, vacio) {
 const pct = v => v === null || v === undefined ? "—" : (v * 100).toFixed(1).replace(".", ",") + " %";
 function pilar(titulo, s, contenido) {
   if (s.sin_acceso || s.sin_datos) return `<div class="pilar"><h3>${titulo}</h3>${aviso(s.sin_acceso ? "" : "alerta", s.mensaje)}</div>`;
-  return `<div class="pilar"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}</div></div>`;
+  const extra = (s.paneles_extra || []).map(p => `<div class="panel${p.ancho ? " ancho" : ""}"><h4>${esc(p.titulo)}</h4>${p.filas.length
+    ? tablaT(p.columnas, p.tipos, p.filas) : `<p class="nota">${esc(p.vacio)}</p>`}</div>`).join("");
+  return `<div class="pilar"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}${extra}</div></div>`;
 }
 async function cargarTablero() {
   const u = $("#usuario").value;
@@ -514,9 +524,11 @@ async function cargarTablero() {
       ${t.inventario.por_quebrar && !t.inventario.nota ? panelTabla("Por quebrar (menos de 7 días)", ["Producto", "Stock", "Días de cobertura"], ["t", "n", "n"], s.por_quebrar.map(q => [q.producto, q.stock, q.dias_cobertura]), "Ningún producto está por quebrar.") : ""}
       ${t.inventario.inmovilizado && !t.inventario.nota ? panelTabla("Stock inmovilizado (sin venta en 90 días)", ["Producto", "Stock", "Valor a costo", "Última venta"], ["t", "n", "$", "t"], s.inmovilizado.map(q => [q.producto, q.stock, q.valor, q.ultima_venta || "más de un año"]), "No hay stock inmovilizado.") : ""}`);
     html += pilar("Finanzas", t.finanzas, s => `
-      <div class="panel"><h4>Deuda por antigüedad</h4>${graficoAntiguedad(s.antiguedad)}</div>
-      ${panelTabla("Clientes con deuda vencida", ["Cliente", "Vencido", "Días de atraso"], ["t", "$", "n"], s.deudores.map(d => [d.cliente, d.vencido, d.dias_max_atraso]), "Nadie tiene deuda vencida.")}`);
-    html += `<div class="panel faltan"><h4>Indicadores que todavía no se pueden calcular</h4><ul>${t.no_disponibles.map(n => `<li><b>${esc(n.indicador)}</b>: ${esc(n.motivo)} en los datos.</li>`).join("")}</ul></div>`;
+      ${s.antiguedad.length ? `<div class="panel"><h4>Deuda por antigüedad</h4>${graficoAntiguedad(s.antiguedad)}</div>` : ""}
+      ${!s.antiguedad.length ? "" : panelTabla("Clientes con deuda vencida", ["Cliente", "Vencido", "Días de atraso"], ["t", "$", "n"], s.deudores.map(d => [d.cliente, d.vencido, d.dias_max_atraso]), "Nadie tiene deuda vencida.")}`);
+    if (t.no_disponibles.length) html += `<div class="panel faltan"><h4>Indicadores que todavía no se pueden calcular</h4>
+      <p style="margin:0 0 6px">Se habilitan solos cuando el sistema integrado trae esos datos (ver «Cobertura de datos» en Integraciones).</p>
+      <ul>${t.no_disponibles.map(n => `<li><b>${esc(n.indicador)}</b>: ${esc(n.motivo)}.</li>`).join("")}</ul></div>`;
     $("#tablero-cuerpo").innerHTML = html;
   } catch (e) { $("#tablero-cuerpo").innerHTML = aviso("error", "No se pudo armar el tablero: " + e.message); }
 }
