@@ -1,0 +1,16 @@
+{
+  "name": "Plataforma IA para ERP",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "bash tools/codespaces/preparar.sh",
+  "postAttachCommand": {
+    "plataforma": "bash tools/codespaces/iniciar.sh"
+  },
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Plataforma IA", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["tools/codespaces/LEEME.md"] }
+  }
+}

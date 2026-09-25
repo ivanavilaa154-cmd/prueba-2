@@ -1,0 +1,10 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/
+*.tmp
+preview.html
+backend/integraciones_estado.json
+!backend/.env.example

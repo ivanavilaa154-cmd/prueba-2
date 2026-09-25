@@ -1,0 +1,35 @@
+# Publica la plataforma IA para ERP en Render.
+# Al desplegar, Render pide los valores marcados con "sync: false".
+services:
+  - type: web
+    name: plataforma-ia-erp
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python -m app.erp.demo
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /salud
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # La plataforma no abre sin contraseña cuando está en internet.
+      - key: EXIGIR_CLAVE
+        value: "1"
+      - key: PANEL_CLAVE
+        sync: false
+      # Conexión con Odoo (se puede completar después desde el panel).
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_USUARIO
+        sync: false
+      - key: ODOO_API_KEY
+        sync: false
+      - key: ODOO_MESES
+        value: "12"
+      - key: ODOO_SINCRONIZAR_CADA_MIN
+        value: "60"
+      # Opcional: clave de la API de Claude para el chat.
+      - key: ANTHROPIC_API_KEY
+        sync: false

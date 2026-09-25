@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plataforma IA · Preview</title>
+<style>
+:root {
+  --fondo: #f6f7f9; --panel: #ffffff; --texto: #1c2430; --suave: #5b6675; --borde: #dde2e8;
+  --acento: #1f6feb; --acento-texto: #ffffff; --ok: #1a7f37; --ok-fondo: #e6f4ea;
+  --alerta: #9a6700; --alerta-fondo: #fff4d6; --error: #c62828; --error-fondo: #fdecec;
+  --codigo: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0f141a; --panel: #171d25; --texto: #e4e9ef; --suave: #98a4b3; --borde: #2a333e;
+    --acento: #4c8dff; --ok: #56c271; --ok-fondo: #13291b; --alerta: #e0b44c; --alerta-fondo: #2c2412;
+    --error: #ff7b72; --error-fondo: #2d1517; --codigo: #1f2730;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { background: var(--panel); border-bottom: 1px solid var(--borde); padding: 12px 16px;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+header h1 { font-size: 17px; margin: 0; }
+header .sub { color: var(--suave); font-size: 13px; }
+.usuario { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+nav { display: flex; gap: 4px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--borde);
+  overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px;
+  color: var(--suave); font: inherit; cursor: pointer; white-space: nowrap; }
+nav button.activa { color: var(--texto); border-bottom-color: var(--acento); font-weight: 600; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+section { display: none; } section.activa { display: block; }
+.tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.tarjeta h2 { font-size: 16px; margin: 0 0 8px; }
+.tarjeta p { margin: 4px 0 10px; color: var(--suave); }
+button.primario, button.sec { font: inherit; border-radius: 7px; padding: 7px 14px; cursor: pointer; }
+button.primario { background: var(--acento); color: var(--acento-texto); border: 1px solid var(--acento); }
+button.sec { background: var(--panel); color: var(--texto); border: 1px solid var(--borde); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+select, input, textarea { font: inherit; color: var(--texto); background: var(--panel);
+  border: 1px solid var(--borde); border-radius: 7px; padding: 6px 8px; }
+textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fuentes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.fuente { border: 1px solid var(--borde); border-radius: 9px; padding: 12px; }
+.fuente.activa { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.fuente h3 { margin: 0 0 4px; font-size: 15px; }
+.fuente p { font-size: 13px; margin: 0 0 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: 13px; background: var(--codigo); border-radius: 999px; padding: 2px 10px; }
+.chip.vacia { color: var(--suave); }
+.aviso { border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+.aviso.ok { background: var(--ok-fondo); color: var(--ok); }
+.aviso.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.aviso.error { background: var(--error-fondo); color: var(--error); }
+.soltar { border: 2px dashed var(--borde); border-radius: 10px; padding: 20px; text-align: center; color: var(--suave); }
+.soltar.encima { border-color: var(--acento); color: var(--texto); }
+.tabla-scroll { overflow-x: auto; max-height: 420px; border: 1px solid var(--borde); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 5px 9px; border-bottom: 1px solid var(--borde); text-align: left; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--codigo); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+code, pre { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+pre { background: var(--codigo); padding: 8px 10px; border-radius: 7px; white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
+.chat { display: flex; flex-direction: column; gap: 10px; min-height: 240px; max-height: 60vh; overflow-y: auto; padding: 4px; }
+.msg { max-width: 85%; padding: 9px 12px; border-radius: 10px; white-space: pre-wrap; }
+.msg.yo { align-self: flex-end; background: var(--acento); color: var(--acento-texto); }
+.msg.ia { align-self: flex-start; background: var(--codigo); }
+.msg details { margin-top: 6px; font-size: 13px; }
+.ejemplos { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.ejemplos button { font-size: 13px; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.form label { display: flex; flex-direction: column; font-size: 13px; color: var(--suave); gap: 3px; }
+.veredicto { font-size: 20px; font-weight: 700; margin: 4px 0; }
+.pruebas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.prueba { border: 1px solid var(--borde); border-radius: 8px; padding: 10px; font-size: 14px; }
+.prueba b { display: block; }
+ul { margin: 6px 0; padding-left: 20px; }
+.plataformas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.plataforma { border: 1px solid var(--borde); border-radius: 9px; padding: 12px; display: grid; gap: 6px; align-content: start;
+  text-align: left; background: var(--panel); color: var(--texto); font: inherit; cursor: pointer; }
+.plataforma:hover:not(:disabled) { border-color: var(--acento); }
+.plataforma.elegida { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.plataforma:disabled { cursor: default; opacity: .72; }
+.plataforma .cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.plataforma b { font-size: 15px; }
+.plataforma .tipo { font-size: 12px; color: var(--suave); }
+.plataforma p { margin: 0; font-size: 13px; color: var(--suave); }
+.estado-chip { font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--codigo); color: var(--suave); white-space: nowrap; }
+.estado-chip.ok { background: var(--ok-fondo); color: var(--ok); }
+.estado-chip.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.estado-chip.error { background: var(--error-fondo); color: var(--error); }
+.titulo-panel { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.titulo-panel h2 { margin: 0; }
+.form-odoo { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.form-odoo label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--suave); }
+.pasos { display: grid; gap: 6px; margin-top: 12px; }
+.pasos div { display: grid; grid-template-columns: 22px 110px 1fr; gap: 6px; font-size: 14px; align-items: baseline; }
+.pasos .marca { font-weight: 700; }
+@media (max-width: 520px) { .pasos div { grid-template-columns: 22px 1fr; } .pasos div span:last-child { grid-column: 2; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="empresa">Plataforma IA</h1>
+    <div class="sub"><span id="estado-fuente">…</span><span id="salir" hidden> · <a href="/salir">Salir</a></span></div>
+  </div>
+  <label class="usuario">Ver como
+    <select id="usuario"></select>
+  </label>
+</header>
+<nav>
+  <button data-pestana="datos" class="activa">1 · Integraciones</button>
+  <button data-pestana="consultas">2 · Consultas y permisos</button>
+  <button data-pestana="chat">3 · Chat</button>
+  <button data-pestana="decisiones">4 · Centro de Decisiones</button>
+</nav>
+<main>
+
+<section id="datos" class="activa">
+  <div class="tarjeta">
+    <h2>Datos en uso</h2>
+    <p>La plataforma consulta una fuente por vez, siempre en solo lectura: nunca escribe en tu ERP ni en tus archivos.</p>
+    <div class="fuentes">
+      <div class="fuente" data-fuente="demo">
+        <h3>Demostración</h3>
+        <p>Distribuidora ficticia con 12 clientes y un año de ventas.</p>
+        <button class="sec" data-usar="demo">Usar demo</button>
+      </div>
+      <div class="fuente" data-fuente="odoo">
+        <h3>Odoo</h3>
+        <p id="fuente-odoo-desc">Última sincronización de Odoo.</p>
+        <button class="sec" data-usar="odoo">Usar Odoo</button>
+      </div>
+      <div class="fuente" data-fuente="importada">
+        <h3>Mis archivos</h3>
+        <p>Exportaciones CSV o Excel cargadas en esta plataforma.</p>
+        <button class="sec" data-usar="importada">Usar mis archivos</button>
+      </div>
+      <div class="fuente" data-fuente="erp">
+        <h3>Base del ERP</h3>
+        <p>La base de <code>ERP_URL</code> en <code>backend/.env</code>.</p>
+        <button class="sec" data-usar="erp">Usar ERP</button>
+      </div>
+    </div>
+    <div id="fuente-detalle"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Plataformas</h2>
+    <p>Elegí de dónde toma los datos la plataforma. Cada integración trae clientes, vendedores, productos, stock, ventas y cobranzas
+       y los traduce a las mismas tablas, así el chat y los permisos funcionan igual con cualquiera.</p>
+    <div class="plataformas" id="plataformas"></div>
+  </div>
+
+  <div class="tarjeta" id="panel-odoo" data-panel="odoo">
+    <div class="titulo-panel"><h2>Odoo</h2><span class="estado-chip" id="odoo-chip">Sin configurar</span></div>
+    <p>Conexión de solo lectura por la API de Odoo (12 o superior, en la nube o en tu servidor). Conviene un usuario
+       propio para la integración con permisos de <b>Ventas</b>, <b>Facturación</b> e <b>Inventario</b> (solo lectura alcanza).
+       La API key se crea en Odoo: tu usuario → <b>Preferencias → Seguridad de la cuenta → Nueva clave API</b>.</p>
+    <form class="form-odoo" id="form-odoo" autocomplete="off">
+      <label for="odoo-url">URL de Odoo<input id="odoo-url" placeholder="https://tu-empresa.odoo.com" required></label>
+      <label for="odoo-db">Base de datos<input id="odoo-db" placeholder="tu-empresa" required></label>
+      <label for="odoo-usuario">Usuario<input id="odoo-usuario" placeholder="integracion@tu-empresa.com" required></label>
+      <label for="odoo-clave">API key<input id="odoo-clave" type="password" placeholder="Pegá la clave API"></label>
+      <label for="odoo-meses">Historia a traer
+        <select id="odoo-meses"><option value="3">3 meses</option><option value="6">6 meses</option>
+          <option value="12" selected>12 meses</option><option value="24">24 meses</option><option value="36">36 meses</option></select></label>
+      <label for="odoo-cada">Sincronizar automáticamente<select id="odoo-cada"></select></label>
+    </form>
+    <div class="fila" style="margin-top:12px">
+      <button class="sec" id="odoo-probar">Probar conexión</button>
+      <button class="sec" id="odoo-guardar">Guardar</button>
+      <button class="primario" id="odoo-sincronizar">Sincronizar ahora</button>
+    </div>
+    <div id="odoo-diagnostico"></div>
+    <div id="odoo-estado"></div>
+    <details id="odoo-mapeo" style="margin-top:12px"><summary>Qué se trae de Odoo y a qué tabla va</summary>
+      <div class="tabla-scroll" style="margin-top:8px"><table><thead><tr><th>Odoo</th><th>Tabla de la plataforma</th><th>Detalle</th></tr></thead><tbody>
+        <tr><td>Almacenes</td><td>sucursales</td><td>Cada almacén es una sucursal</td></tr>
+        <tr><td>Vendedor de cada cliente</td><td>vendedores</td><td>Define la cartera que ve cada vendedor</td></tr>
+        <tr><td>Contactos cliente</td><td>clientes</td><td>Plazo de pago, límite de crédito, ciudad y etiqueta</td></tr>
+        <tr><td>Contactos proveedor</td><td>proveedores</td><td>Plazo de pago y de entrega</td></tr>
+        <tr><td>Productos vendibles</td><td>productos</td><td>Costo, precio y proveedor principal</td></tr>
+        <tr><td>Stock</td><td>stock</td><td>Suma por almacén de las ubicaciones internas</td></tr>
+        <tr><td>Pedidos de venta y caja</td><td>ventas, ventas_lineas</td><td>Precio neto sin impuestos; cancelados como anulados</td></tr>
+        <tr><td>Facturas de cliente</td><td>cxc</td><td>Saldo pendiente y fecha real de cobro</td></tr>
+      </tbody></table></div>
+    </details>
+  </div>
+
+  <div class="tarjeta" id="panel-archivos" data-panel="archivos" hidden>
+    <div class="titulo-panel"><h2>Archivos CSV o Excel</h2></div>
+    <p>Un archivo por tabla, con el nombre de la tabla (<code>clientes.xlsx</code>, <code>ventas.csv</code>…).
+       Se aceptan <code>1.234,56</code>, fechas <code>dd/mm/aaaa</code> y separador <code>;</code>.
+       El mínimo para empezar es <b>clientes</b>. Las columnas que falten quedan vacías.</p>
+    <div class="soltar" id="soltar">
+      Arrastrá los archivos acá o <label style="color:var(--acento);cursor:pointer;text-decoration:underline">elegilos
+      <input type="file" id="archivos" multiple accept=".csv,.txt,.xlsx,.xlsm" hidden></label>
+      <div id="elegidos" class="chips" style="justify-content:center"></div>
+    </div>
+    <div class="fila" style="margin-top:10px">
+      <button class="primario" id="importar" disabled>Importar y usar estos datos</button>
+      <span class="sub" style="color:var(--suave);font-size:13px">Plantillas (encabezados):</span>
+      <span id="plantillas" class="chips" style="margin:0"></span>
+    </div>
+    <div id="informe"></div>
+  </div>
+
+  <div class="tarjeta" id="panel-sql" data-panel="sql" hidden>
+    <div class="titulo-panel"><h2>Base de datos del ERP</h2></div>
+    <p>Para ERPs sin API (Tango, Bejerman, SAP Business One sobre SQL Server, sistemas propios) la plataforma se conecta directo a la base
+       con un usuario de <b>solo lectura</b>. Se configura en <code>backend/.env</code> y se reinicia el servidor:</p>
+    <pre>ERP_URL=mssql+pyodbc://lector:clave@servidor/TANGO?driver=ODBC+Driver+18+for+SQL+Server</pre>
+    <p>Después hay que adaptar <code>config/diccionario_datos.yaml</code> y los filtros de <code>config/roles.yaml</code> a las tablas de ese ERP.</p>
+  </div>
+</section>
+
+<section id="consultas">
+  <div class="tarjeta">
+    <h2>Probá los permisos con tus datos</h2>
+    <p>La consulta pasa por las mismas barreras que usa el chat: solo lectura, tablas del rol y cartera del vendedor.
+       Cambiá el usuario arriba y compará. Esto no necesita clave de API.</p>
+    <div class="ejemplos" id="ejemplos-sql"></div>
+    <textarea id="sql" rows="5">SELECT id, razon_social, vendedor_id FROM clientes ORDER BY id</textarea>
+    <div class="fila" style="margin-top:8px"><button class="primario" id="ejecutar">Ejecutar</button></div>
+    <div id="resultado-sql"></div>
+  </div>
+</section>
+
+<section id="chat">
+  <div class="tarjeta">
+    <h2>Chat interno</h2>
+    <p>Preguntá en lenguaje natural. La IA consulta la fuente activa con los permisos del usuario elegido.</p>
+    <div id="chat-aviso"></div>
+    <div class="ejemplos" id="ejemplos-chat"></div>
+    <div class="chat" id="mensajes"></div>
+    <form class="fila" id="form-chat" style="margin-top:10px">
+      <input id="pregunta" style="flex:1;min-width:200px" placeholder="¿Qué clientes tienen deuda vencida y cuánto?" autocomplete="off">
+      <button class="primario" id="enviar">Enviar</button>
+      <button class="sec" type="button" id="nueva">Nueva conversación</button>
+    </form>
+  </div>
+</section>
+
+<section id="decisiones">
+  <div class="tarjeta">
+    <h2>¿Puedo financiar más clientes a plazo?</h2>
+    <p>Simulación con tres pruebas: rentabilidad, caja y riesgo. Las cuentas las hace el código, no la IA.</p>
+    <form class="form" id="form-credito"></form>
+    <div class="fila" style="margin-top:10px"><button class="primario" id="simular">Simular</button></div>
+    <div id="resultado-credito"></div>
+  </div>
+</section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = new Intl.NumberFormat("es-UY", {maximumFractionDigits: 2});
+const TABLAS = ["clientes","vendedores","sucursales","productos","proveedores","stock","ventas","ventas_lineas","cxc"];
+let chatHabilitado = false, historial = [];
+
+async function api(ruta, opciones = {}) {
+  const r = await fetch(ruta, opciones);
+  const datos = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(datos.detail ? (typeof datos.detail === "string" ? datos.detail : JSON.stringify(datos.detail)) : `Error ${r.status}`);
+  return datos;
+}
+const postJSON = (ruta, cuerpo) => api(ruta, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(cuerpo)});
+const aviso = (tipo, texto) => `<div class="aviso ${tipo}">${esc(texto)}</div>`;
+
+function tabla(columnas, filas) {
+  if (!filas.length) return aviso("alerta", "La consulta no devolvió filas.");
+  return `<div class="tabla-scroll"><table><thead><tr>${columnas.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+    filas.map(f => `<tr>${f.map(v => typeof v === "number" ? `<td class="num">${fmt.format(v)}</td>` : `<td>${esc(v)}</td>`).join("")}</tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+// Pestañas
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, section").forEach(e => e.classList.remove("activa"));
+  b.classList.add("activa"); $("#" + b.dataset.pestana).classList.add("activa");
+});
+
+// Usuarios
+async function cargarUsuarios() {
+  const previo = $("#usuario").value;
+  const lista = await api("/usuarios");
+  const roles = {dueno: "dueño", vendedor: "vendedor", compras: "compras", gerente_comercial: "gerente comercial", administracion: "administración"};
+  $("#usuario").innerHTML = lista.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(roles[u.rol] || u.rol)}${u.id.startsWith("vendedor:") ? " (" + esc(u.id.split(":")[1]) + ")" : ""}</option>`).join("");
+  if (lista.some(u => u.id === previo)) $("#usuario").value = previo;
+}
+$("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; };
+
+// Fuente de datos
+function pintarFuente(f) {
+  const nombres = {demo: "datos de demostración", importada: "tus archivos", odoo: "datos de Odoo", erp: "conexión directa al ERP"};
+  $("#estado-fuente").textContent = "Usando " + nombres[f.fuente];
+  document.querySelectorAll(".fuente").forEach(e => e.classList.toggle("activa", e.dataset.fuente === f.fuente));
+  document.querySelectorAll("[data-usar]").forEach(b => {
+    b.disabled = !f.disponibles[b.dataset.usar] || b.dataset.usar === f.fuente;
+    b.textContent = b.dataset.usar === f.fuente ? "En uso" : ({demo: "Usar demo", importada: "Usar mis archivos", odoo: "Usar Odoo", erp: "Usar ERP"})[b.dataset.usar];
+  });
+  const chips = Object.entries(f.tablas).map(([t, n]) =>
+    `<span class="chip ${n ? "" : "vacia"}">${esc(t)}: ${n === null ? "no existe" : fmt.format(n)}</span>`).join("");
+  $("#fuente-detalle").innerHTML = `<div class="chips" style="margin-top:12px">${chips}</div>
+    <div style="font-size:12.5px;color:var(--suave);margin-top:6px">Base: <code>${esc(f.url)}</code></div>` +
+    (f.error ? aviso("alerta", "Algunas tablas del diccionario no están en esta base: " + f.error +
+      ". Si es tu ERP, hay que adaptar config/diccionario_datos.yaml a sus tablas.") : "");
+}
+async function cargarFuente() { pintarFuente(await api("/fuente")); }
+document.querySelectorAll("[data-usar]").forEach(b => b.onclick = async () => {
+  try { pintarFuente(await postJSON("/fuente", {fuente: b.dataset.usar})); await cargarUsuarios(); cargarIntegraciones(); }
+  catch (e) { $("#fuente-detalle").innerHTML += aviso("error", e.message); }
+});
+
+// Importación
+let elegidos = [];
+$("#plantillas").innerHTML = TABLAS.map(t => `<a class="chip" href="/plantillas/${t}.csv">${t}</a>`).join("");
+function elegir(archivos) {
+  elegidos = [...archivos];
+  $("#elegidos").innerHTML = elegidos.map(a => `<span class="chip">${esc(a.name)}</span>`).join("");
+  $("#importar").disabled = !elegidos.length;
+}
+$("#archivos").onchange = (e) => elegir(e.target.files);
+const zona = $("#soltar");
+["dragenter", "dragover"].forEach(ev => zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.add("encima"); }));
+["dragleave", "drop"].forEach(ev => zona.addEventListener(ev, e => { e.preventDefault(); zona.classList.remove("encima"); }));
+zona.addEventListener("drop", e => elegir(e.dataTransfer.files));
+$("#importar").onclick = async () => {
+  const datos = new FormData();
+  elegidos.forEach(a => datos.append("archivos", a));
+  $("#importar").disabled = true; $("#informe").innerHTML = aviso("alerta", "Importando…");
+  try {
+    const r = await api("/importar", {method: "POST", body: datos});
+    let html = aviso("ok", "Listo: la plataforma ya usa tus archivos.");
+    html += tabla(["Tabla", "Archivo", "Filas cargadas", "Descartadas", "Columnas que faltan", "Columnas ignoradas"],
+      r.tablas.map(t => [t.tabla, t.archivo, t.filas, t.descartadas, t.columnas_faltantes.join(", ") || "—", t.columnas_ignoradas.join(", ") || "—"]));
+    r.tablas.forEach(t => t.problemas.forEach(p => html += aviso("alerta", `${t.archivo}: ${p}`)));
+    r.avisos.forEach(a => html += aviso("alerta", a));
+    $("#informe").innerHTML = html;
+    pintarFuente(r.fuente); await cargarUsuarios();
+  } catch (e) { $("#informe").innerHTML = aviso("error", e.message); }
+  $("#importar").disabled = !elegidos.length;
+};
+
+// Integraciones
+const MINUTOS = {0: "No, solo a mano", 15: "Cada 15 minutos", 30: "Cada 30 minutos", 60: "Cada hora", 180: "Cada 3 horas",
+  360: "Cada 6 horas", 720: "Cada 12 horas", 1440: "Una vez por día"};
+let integ = null, siguiendo = null;
+const fechaCorta = (iso) => iso ? new Date(iso).toLocaleString("es-UY", {dateStyle: "short", timeStyle: "short"}) : "";
+function estadoOdoo(o) {
+  if (o.progreso.corriendo) return ["alerta", "Sincronizando…"];
+  if (!o.config.clave_guardada) return ["", "Sin configurar"];
+  const ultima = o.historial[0];
+  if (ultima && !ultima.ok) return ["error", "Falló la última sincronización"];
+  if (o.ultima_ok) return ["ok", "Conectado"];
+  return ["alerta", "Configurado, sin sincronizar"];
+}
+function elegirPlataforma(id) {
+  document.querySelectorAll("[data-panel]").forEach(e => e.hidden = e.dataset.panel !== id);
+  document.querySelectorAll(".plataforma").forEach(e => e.classList.toggle("elegida", e.dataset.id === id));
+}
+function pintarIntegraciones(d) {
+  integ = d;
+  const o = d.odoo, [clase, texto] = estadoOdoo(o);
+  const estados = {odoo: [clase, texto], archivos: d.fuente.disponibles.importada ? ["ok", "Con datos"] : ["", "Disponible"],
+    sql: d.fuente.disponibles.erp ? ["ok", "Configurada"] : ["", "Disponible"]};
+  const elegida = document.querySelector(".plataforma.elegida")?.dataset.id || "odoo";
+  $("#plataformas").innerHTML = d.plataformas.map(p => {
+    const [c, t] = p.estado === "proximamente" ? ["", "Próximamente"] : (estados[p.id] || ["", "Disponible"]);
+    return `<button class="plataforma" data-id="${esc(p.id)}" ${p.estado === "proximamente" ? "disabled" : ""}>
+      <span class="cab"><b>${esc(p.nombre)}</b><span class="estado-chip ${c}">${esc(t)}</span></span>
+      <span class="tipo">${esc(p.tipo)}</span><p>${esc(p.descripcion)}</p></button>`;
+  }).join("");
+  document.querySelectorAll(".plataforma:not(:disabled)").forEach(b => b.onclick = () => elegirPlataforma(b.dataset.id));
+  elegirPlataforma(elegida);
+  $("#odoo-chip").className = "estado-chip " + clase; $("#odoo-chip").textContent = texto;
+  $("#fuente-odoo-desc").textContent = o.ultima_ok ? `Sincronizado el ${fechaCorta(o.ultima_ok.fecha)}` : "Todavía no sincronizaste Odoo.";
+  pintarEstadoOdoo(o);
+}
+function llenarFormularioOdoo(c) {
+  $("#odoo-cada").innerHTML = integ.intervalos.map(m => `<option value="${m}">${esc(MINUTOS[m] || m + " min")}</option>`).join("");
+  $("#odoo-url").value = c.url; $("#odoo-db").value = c.db; $("#odoo-usuario").value = c.usuario;
+  $("#odoo-meses").value = String(c.meses); $("#odoo-cada").value = String(c.cada_min);
+  $("#odoo-clave").placeholder = c.clave_guardada ? "Guardada (dejá vacío para conservarla)" : "Pegá la clave API";
+}
+function datosOdoo() {
+  return {url: $("#odoo-url").value.trim(), db: $("#odoo-db").value.trim(), usuario: $("#odoo-usuario").value.trim(),
+    api_key: $("#odoo-clave").value.trim(), meses: Number($("#odoo-meses").value), cada_min: Number($("#odoo-cada").value)};
+}
+function pintarEstadoOdoo(o) {
+  let html = "";
+  if (o.progreso.corriendo) html += aviso("alerta", (o.progreso.paso || "Sincronizando…") + " Podés seguir usando la plataforma.");
+  const u = o.historial[0];
+  if (u && !u.ok) html += aviso("error", `La sincronización del ${fechaCorta(u.fecha)} falló: ${u.error}`);
+  if (o.ultima_ok) {
+    const n = o.ultima_ok.conteos;
+    html += `<p style="margin:14px 0 6px"><b>Última sincronización:</b> ${fechaCorta(o.ultima_ok.fecha)} (${fmt.format(o.ultima_ok.segundos)} s)` +
+      (o.proxima ? ` · próxima: ${fechaCorta(o.proxima)}` : "") + `</p><div class="chips">` +
+      Object.entries(n).map(([t, c]) => `<span class="chip ${c ? "" : "vacia"}">${esc(t)}: ${fmt.format(c)}</span>`).join("") + "</div>";
+    if (o.ultima_ok.avisos.length) html += `<details style="margin-top:8px"><summary>${o.ultima_ok.avisos.length} avisos sobre los datos</summary>` +
+      o.ultima_ok.avisos.map(a => aviso("alerta", a)).join("") + "</details>";
+  }
+  if (o.historial.length > 1) html += `<details style="margin-top:8px"><summary>Historial</summary>` + tabla(["Fecha", "Resultado", "Duración (s)", "Detalle"],
+    o.historial.map(h => [fechaCorta(h.fecha), h.ok ? "Bien" : "Falló", h.segundos, h.ok ? Object.values(h.conteos).reduce((a, b) => a + b, 0) + " filas" : h.error])) + "</details>";
+  $("#odoo-estado").innerHTML = html;
+  $("#odoo-sincronizar").disabled = o.progreso.corriendo || !o.config.clave_guardada;
+  $("#odoo-sincronizar").textContent = o.progreso.corriendo ? "Sincronizando…" : "Sincronizar ahora";
+}
+async function cargarIntegraciones(llenar = false) {
+  const d = await api("/integraciones");
+  pintarIntegraciones(d); pintarFuente(d.fuente);
+  if (llenar) llenarFormularioOdoo(d.odoo.config);
+  return d;
+}
+function seguirSincronizacion() {
+  clearInterval(siguiendo);
+  siguiendo = setInterval(async () => {
+    const d = await cargarIntegraciones().catch(() => null);
+    if (d && !d.odoo.progreso.corriendo) { clearInterval(siguiendo); siguiendo = null; await cargarUsuarios(); }
+  }, 1500);
+}
+function pintarPasos(r) {
+  const marca = (p) => !p.ok ? ["✗", "var(--error)"] : p.aviso ? ["!", "var(--alerta)"] : ["✓", "var(--ok)"];
+  $("#odoo-diagnostico").innerHTML = `<div class="pasos">${r.pasos.map(p => { const [m, c] = marca(p);
+    return `<div><span class="marca" style="color:${c}">${m}</span><b>${esc(p.paso)}</b><span>${esc(p.detalle)}</span></div>`; }).join("")}</div>` +
+    (r.ok ? aviso("ok", "La conexión funciona. Guardala y sincronizá.") : "");
+}
+$("#odoo-probar").onclick = async () => {
+  $("#odoo-diagnostico").innerHTML = aviso("alerta", "Probando la conexión con Odoo…");
+  try { pintarPasos(await postJSON("/integraciones/odoo/probar", datosOdoo())); }
+  catch (e) { $("#odoo-diagnostico").innerHTML = aviso("error", e.message); }
+};
+$("#odoo-guardar").onclick = async () => {
+  try {
+    await postJSON("/integraciones/odoo", datosOdoo());
+    $("#odoo-clave").value = "";
+    const d = await cargarIntegraciones(true);
+    $("#odoo-diagnostico").innerHTML = aviso("ok", "Guardado en backend/.env." + (d.odoo.config.cada_min ? " La sincronización automática corre mientras el servidor esté encendido." : ""));
+  } catch (e) { $("#odoo-diagnostico").innerHTML = aviso("error", e.message); }
+};
+$("#odoo-sincronizar").onclick = async () => {
+  try {
+    const estado = await api("/integraciones/odoo/sincronizar", {method: "POST"});
+    pintarEstadoOdoo({...estado, config: integ.odoo.config});
+    seguirSincronizacion();
+  }
+  catch (e) { $("#odoo-estado").innerHTML = aviso("error", e.message); }
+};
+
+// Consultas
+const EJEMPLOS_SQL = {
+  "Clientes": "SELECT id, razon_social, vendedor_id FROM clientes ORDER BY id",
+  "Deuda vencida por cliente": "SELECT c.razon_social, ROUND(SUM(x.saldo), 2) AS deuda_vencida\nFROM cxc x JOIN clientes c ON c.id = x.cliente_id\nWHERE x.saldo > 0 AND x.fecha_vencimiento < date('now')\nGROUP BY c.razon_social ORDER BY deuda_vencida DESC",
+  "Venta de los últimos 30 días": "SELECT ROUND(SUM(l.cantidad * l.precio_unitario), 2) AS venta_neta\nFROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id\nWHERE v.anulada = 0 AND v.fecha >= date('now', '-30 day')",
+  "Proveedores (solo algunos roles)": "SELECT * FROM proveedores",
+  "Intento de borrar": "DELETE FROM ventas",
+};
+$("#ejemplos-sql").innerHTML = Object.keys(EJEMPLOS_SQL).map(k => `<button class="sec" data-sql="${esc(k)}">${esc(k)}</button>`).join("");
+document.querySelectorAll("[data-sql]").forEach(b => b.onclick = () => { $("#sql").value = EJEMPLOS_SQL[b.dataset.sql]; ejecutar(); });
+async function ejecutar() {
+  $("#resultado-sql").innerHTML = aviso("alerta", "Consultando…");
+  try {
+    const r = await postJSON("/consulta", {usuario_id: $("#usuario").value, sql: $("#sql").value});
+    const reescrita = r.sql_ejecutado.trim() !== $("#sql").value.trim().replace(/;$/, "");
+    $("#resultado-sql").innerHTML =
+      `<p style="margin:10px 0 6px">${fmt.format(r.cantidad)} filas${r.truncado ? " (se muestran las primeras)" : ""}.</p>` +
+      (reescrita ? `<details><summary>SQL que se ejecutó con el filtro del rol</summary><pre>${esc(r.sql_ejecutado)}</pre></details>` : "") +
+      tabla(r.columnas, r.filas);
+  } catch (e) { $("#resultado-sql").innerHTML = aviso("error", e.message); }
+}
+$("#ejecutar").onclick = ejecutar;
+
+// Chat
+const EJEMPLOS_CHAT = ["¿Cuánto vendimos ayer?", "¿Qué clientes tienen deuda vencida y cuánto?",
+  "¿Qué productos se venden más este mes?", "¿Puedo financiar 5 clientes más a 30 días?", "Borrá la factura 1234"];
+$("#ejemplos-chat").innerHTML = EJEMPLOS_CHAT.map(p => `<button class="sec" type="button">${esc(p)}</button>`).join("");
+$("#ejemplos-chat").querySelectorAll("button").forEach(b => b.onclick = () => { $("#pregunta").value = b.textContent; $("#form-chat").requestSubmit(); });
+function burbuja(clase, html) { const d = document.createElement("div"); d.className = "msg " + clase; d.innerHTML = html; $("#mensajes").append(d); d.scrollIntoView({block: "end"}); return d; }
+$("#nueva").onclick = () => { historial = []; $("#mensajes").innerHTML = ""; };
+$("#form-chat").onsubmit = async (e) => {
+  e.preventDefault();
+  const texto = $("#pregunta").value.trim();
+  if (!texto || !chatHabilitado) return;
+  $("#pregunta").value = ""; $("#enviar").disabled = true;
+  burbuja("yo", esc(texto));
+  const espera = burbuja("ia", "Pensando y consultando los datos…");
+  try {
+    const r = await postJSON("/chat", {usuario_id: $("#usuario").value, mensaje: texto, historial});
+    historial = r.historial;
+    const usadas = r.herramientas_usadas.map(h => `<b>${esc(h.herramienta)}</b>` +
+      (h.entrada.sql ? `<pre>${esc(h.entrada.sql)}</pre>` : `<pre>${esc(JSON.stringify(h.entrada, null, 1))}</pre>`)).join("");
+    espera.innerHTML = esc(r.respuesta) + (usadas ? `<details><summary>Cómo lo calculó (${r.herramientas_usadas.length})</summary>${usadas}</details>` : "");
+  } catch (err) { espera.innerHTML = `<span style="color:var(--error)">${esc(err.message)}</span>`; }
+  $("#enviar").disabled = false;
+};
+
+// Centro de Decisiones
+const CAMPOS = [
+  ["compra_mensual_cliente", "Compra mensual por cliente ($)", 400000],
+  ["margen_bruto", "Margen bruto (0,22 = 22 %)", 0.22],
+  ["dias_cobro_reales", "Días reales de cobro", 42],
+  ["dias_inventario", "Días de inventario", 20],
+  ["dias_pago_proveedores", "Días de pago a proveedores", 21],
+  ["costo_servir", "Costo de servir (0,04 = 4 %)", 0.04],
+  ["incobrabilidad", "Incobrabilidad (0,02 = 2 %)", 0.02],
+  ["punto_mas_bajo_caja", "Punto más bajo de caja ($)", 2600000],
+  ["clientes_solicitados", "Clientes nuevos a financiar", 5],
+];
+$("#form-credito").innerHTML = CAMPOS.map(([k, t, v]) => `<label>${esc(t)}<input name="${k}" value="${v}" inputmode="decimal"></label>`).join("");
+$("#form-credito").onsubmit = (e) => { e.preventDefault(); simular(); };
+async function simular() {
+  const cuerpo = {};
+  for (const [k] of CAMPOS) {
+    const t = String($(`[name=${k}]`).value).trim().replace(/[$\s]/g, "");
+    // "1.234,56" o "0,22" (coma decimal) y también "0.22" o "400000"
+    cuerpo[k] = Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : /^\d{1,3}(\.\d{3})+$/.test(t) ? t.replace(/\./g, "") : t);
+  }
+  cuerpo.clientes_solicitados = Math.round(cuerpo.clientes_solicitados);
+  try {
+    const r = await postJSON("/decisiones/credito", cuerpo);
+    const color = r.veredicto.startsWith("NO") ? "var(--error)" : r.veredicto.includes("CONDICIONES") ? "var(--alerta)" : "var(--ok)";
+    $("#resultado-credito").innerHTML = `
+      <div class="veredicto" style="color:${color}">${esc(r.veredicto)}</div>
+      <p>Límite: <b>${r.limite_base}</b> clientes${r.usa_descubierto_base ? " (usando descubierto)" : ""} ·
+         escenario pesimista: <b>${r.limite_seguro_pesimista}</b>.</p>
+      <div class="pruebas">${Object.entries(r.pruebas).map(([n, p]) =>
+        `<div class="prueba"><b style="color:${p.pasa ? "var(--ok)" : "var(--error)"}">${p.pasa ? "✓" : "✗"} ${esc(n[0].toUpperCase() + n.slice(1))}</b>${esc(p.detalle)}</div>`).join("")}</div>
+      <h2 style="font-size:15px;margin:14px 0 6px">Por cantidad de clientes</h2>
+      ${tabla(["Clientes", "Caja inmovilizada", "Punto más bajo de caja", "Resultado mensual", "Estado"],
+        r.tabla_clientes.map(f => [f.clientes, f.caja_inmovilizada, f.punto_mas_bajo_caja, f.resultado_mensual, f.estado]))}
+      <h2 style="font-size:15px;margin:14px 0 6px">Condiciones</h2><ul>${r.condiciones.map(c => `<li>${esc(c)}</li>`).join("")}</ul>
+      <h2 style="font-size:15px;margin:14px 0 6px">Señales para frenar</h2><ul>${r.senales_de_frenado.map(c => `<li>${esc(c)}</li>`).join("")}</ul>`;
+  } catch (e) { $("#resultado-credito").innerHTML = aviso("error", e.message); }
+}
+$("#simular").onclick = (e) => { e.preventDefault(); simular(); };
+
+// Inicio
+(async () => {
+  try {
+    const s = await api("/salud");
+    $("#empresa").textContent = s.empresa + " · Plataforma IA";
+    chatHabilitado = s.chat_habilitado;
+    $("#salir").hidden = !s.con_clave;
+    $("#chat-aviso").innerHTML = chatHabilitado ? "" :
+      aviso("alerta", "El chat necesita ANTHROPIC_API_KEY en backend/.env (después reiniciá el servidor). Mientras tanto podés usar Consultas y Decisiones.");
+    $("#enviar").disabled = !chatHabilitado;
+    const d = await cargarIntegraciones(true);
+    await cargarUsuarios();
+    if (d.odoo.progreso.corriendo) seguirSincronizacion();
+  } catch (e) { document.querySelector("main").insertAdjacentHTML("afterbegin", aviso("error", "No pude conectar con la API: " + e.message)); }
+})();
+</script>
+</body>
+</html>

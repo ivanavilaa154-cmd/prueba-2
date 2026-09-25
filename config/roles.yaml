@@ -1,0 +1,35 @@
+# Permisos por rol.
+# - tablas: tablas que el rol puede consultar.
+# - filtros_fila: condición SQL que se aplica a cada tabla antes de consultarla.
+#   {vendedor_id} se reemplaza por el del usuario. El conector cambia cada tabla
+#   por una subconsulta ya filtrada, así el filtro no depende del modelo.
+#   Los nombres de tablas y campos son los del ERP (cambian con el diccionario).
+roles:
+  dueno:
+    descripcion: Dueño o gerente general. Ve todo.
+    tablas: "*"
+  gerente_comercial:
+    descripcion: Ventas, clientes, precios, márgenes y deuda de clientes.
+    tablas: [sucursales, vendedores, clientes, productos, ventas, ventas_lineas, cxc, stock]
+  vendedor:
+    descripcion: Solo su cartera de clientes, pedidos, deuda y oportunidades.
+    tablas: [clientes, productos, ventas, ventas_lineas, cxc, stock]
+    filtros_fila:
+      clientes: "vendedor_id = {vendedor_id}"
+      ventas: "cliente_id IN (SELECT id FROM clientes WHERE vendedor_id = {vendedor_id})"
+      ventas_lineas: >-
+        venta_id IN (SELECT v.id FROM ventas v JOIN clientes c ON c.id = v.cliente_id
+        WHERE c.vendedor_id = {vendedor_id})
+      cxc: "cliente_id IN (SELECT id FROM clientes WHERE vendedor_id = {vendedor_id})"
+  compras:
+    descripcion: Inventario, proveedores, costos y pedidos sugeridos.
+    tablas: [productos, proveedores, stock, ventas, ventas_lineas, sucursales]
+  administracion:
+    descripcion: Cuentas por cobrar y pagar, caja y bancos.
+    tablas: [clientes, cxc, proveedores, ventas, sucursales]
+
+# Usuarios de demostración.
+usuarios:
+  u1: {nombre: Iván, rol: dueno}
+  u2: {nombre: Laura, rol: vendedor, vendedor_id: 1}
+  u3: {nombre: Martín, rol: compras}

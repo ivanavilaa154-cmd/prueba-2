@@ -1,0 +1,103 @@
+# Diccionario de datos: traduce el lenguaje del negocio a tablas y campos del ERP.
+# Es lo único que cambia entre clientes. Este corresponde a la base de demostración.
+
+tablas:
+  sucursales:
+    descripcion: Sucursales y depósitos.
+    campos: {id: identificador, nombre: nombre de la sucursal}
+  vendedores:
+    descripcion: Vendedores o preventistas.
+    campos: {id: identificador, nombre: nombre, sucursal_id: sucursal a la que pertenece}
+  clientes:
+    descripcion: Maestro de clientes B2B.
+    campos:
+      id: identificador
+      razon_social: nombre del comercio
+      tipo: almacén, autoservicio, kiosco, restaurante
+      zona: zona geográfica
+      vendedor_id: vendedor asignado
+      condicion_pago_dias: plazo de pago pactado en días (0 = contado)
+      limite_credito: límite de crédito en UYU
+      fecha_alta: fecha de alta como cliente
+  proveedores:
+    descripcion: Proveedores.
+    campos:
+      id: identificador
+      nombre: razón social
+      plazo_pago_dias: plazo de pago que nos da el proveedor
+      plazo_entrega_dias: días desde el pedido hasta la entrega
+      pedido_minimo: importe mínimo de pedido en UYU
+  productos:
+    descripcion: Maestro de productos.
+    campos:
+      id: identificador
+      descripcion: nombre del producto
+      categoria: categoría
+      proveedor_id: proveedor principal
+      costo: costo unitario de reposición sin IVA
+      precio: precio de lista unitario sin IVA
+      unidades_bulto: unidades por bulto de compra
+      perecedero: 1 si es perecedero
+  stock:
+    descripcion: Stock actual por producto y sucursal.
+    campos: {producto_id: producto, sucursal_id: sucursal, cantidad: unidades disponibles}
+  ventas:
+    descripcion: Cabecera de comprobantes de venta.
+    campos:
+      id: número de comprobante
+      fecha: fecha de emisión (YYYY-MM-DD)
+      cliente_id: cliente
+      vendedor_id: vendedor
+      sucursal_id: sucursal
+      anulada: 1 si el comprobante está anulado
+  ventas_lineas:
+    descripcion: Detalle de cada comprobante de venta.
+    campos:
+      venta_id: comprobante
+      producto_id: producto
+      cantidad: unidades vendidas
+      precio_unitario: precio neto sin IVA
+      costo_unitario: costo al momento de la venta
+  cxc:
+    descripcion: Cuentas por cobrar (facturas pendientes y cobradas).
+    campos:
+      id: identificador
+      cliente_id: cliente
+      fecha_emision: emisión
+      fecha_vencimiento: vencimiento pactado
+      fecha_cobro: fecha real de cobro (vacía si está pendiente)
+      importe: importe original
+      saldo: saldo pendiente (0 si se cobró)
+
+relaciones:
+  - ventas.cliente_id = clientes.id
+  - ventas.vendedor_id = vendedores.id
+  - ventas.sucursal_id = sucursales.id
+  - ventas_lineas.venta_id = ventas.id
+  - ventas_lineas.producto_id = productos.id
+  - productos.proveedor_id = proveedores.id
+  - stock.producto_id = productos.id
+  - cxc.cliente_id = clientes.id
+  - clientes.vendedor_id = vendedores.id
+
+definiciones:
+  venta_neta: SUM(ventas_lineas.cantidad * ventas_lineas.precio_unitario) excluyendo ventas.anulada = 1
+  margen_bruto: venta_neta - SUM(cantidad * costo_unitario)
+  margen_porcentaje: margen_bruto / venta_neta
+  deuda_vencida: SUM(cxc.saldo) donde fecha_vencimiento < hoy y saldo > 0
+  dias_reales_cobro: promedio de (fecha_cobro - fecha_emision) en facturas cobradas
+  atraso_promedio: promedio de (fecha_cobro - fecha_vencimiento) en facturas cobradas
+
+sinonimos:
+  "lo que me deben": deuda de clientes (cxc.saldo)
+  "la calle": deuda de clientes (cxc.saldo)
+  "cuenta corriente": cxc
+  "facturación": venta_neta
+  "la Norte": sucursal Norte
+  "la Centro": sucursal Centro
+
+filtros_por_defecto:
+  - Excluir ventas con anulada = 1.
+
+frescura:
+  todo: base de demostración estática

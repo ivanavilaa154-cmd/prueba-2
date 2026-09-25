@@ -1,0 +1,19 @@
+# Datos del cliente. Reemplazan las variables {ENTRE_LLAVES} de los prompts.
+EMPRESA: Distribuidora Demo
+TIPO_NEGOCIO: distribuidor mayorista B2B
+PAIS: Uruguay
+MONEDAS: UYU (principal) y USD
+ERP: base de demostración SQLite
+SUCURSALES: 2 sucursales (Centro y Norte)
+PERIODO: últimos 12 meses
+USUARIO: dueño
+POLITICAS: >
+  Margen mínimo 18%. Crédito máximo 30 días. Caja mínima de seguridad $1.500.000.
+  Bloqueo de pedidos con más de 15 días de atraso.
+
+# Parámetros financieros por defecto para el Centro de Decisiones.
+finanzas:
+  caja_minima: 1500000
+  descubierto_disponible: 1000000
+  costo_dinero_mensual: 0.03
+  inflacion_mensual: 0.004

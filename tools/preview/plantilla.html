@@ -1,0 +1,948 @@
+<title>Plataforma IA para ERP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --fondo: #f2f4f3; --panel: #ffffff; --panel-2: #f7f9f8; --tinta: #15201c; --suave: #5a6b64; --linea: #d8dfdb;
+  --acento: #0f6b5a; --acento-tinta: #ffffff; --acento-suave: #e1f0ec;
+  --ok: #1d7a3a; --ok-fondo: #e5f3e9; --alerta: #8a5a00; --alerta-fondo: #fbf1d9; --error: #b3261e; --error-fondo: #fbe9e7;
+  --codigo: #eef2f0; --sombra: 0 1px 2px rgba(21, 32, 28, .06);
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --fondo: #0e1412; --panel: #151d1a; --panel-2: #121916; --tinta: #e3eae7; --suave: #93a49d; --linea: #26322d;
+    --acento: #4fc1a6; --acento-tinta: #06231c; --acento-suave: #173029;
+    --ok: #62c77f; --ok-fondo: #12281a; --alerta: #e3b54f; --alerta-fondo: #2a2211; --error: #ff8a80; --error-fondo: #2e1614;
+    --codigo: #1b2521; --sombra: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fondo: #0e1412; --panel: #151d1a; --panel-2: #121916; --tinta: #e3eae7; --suave: #93a49d; --linea: #26322d;
+  --acento: #4fc1a6; --acento-tinta: #06231c; --acento-suave: #173029;
+  --ok: #62c77f; --ok-fondo: #12281a; --alerta: #e3b54f; --alerta-fondo: #2a2211; --error: #ff8a80; --error-fondo: #2e1614;
+  --codigo: #1b2521; --sombra: none;
+}
+* { box-sizing: border-box; }
+body { background: var(--fondo); color: var(--tinta); font: 15px/1.55 var(--sans); }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+code, pre, textarea.sql { font-family: var(--mono); }
+
+.barra { background: var(--panel); border-bottom: 1px solid var(--linea); padding-inline: 16px; }
+.barra-in { max-width: 1120px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+  justify-content: space-between; padding-block: 14px; }
+.marca h1 { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+.marca .sub { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.pastilla { font-size: 12px; font-weight: 500; border-radius: 999px; padding: 1px 9px; background: var(--codigo); color: var(--suave); white-space: nowrap; }
+.pastilla.acento { background: var(--acento-suave); color: var(--acento); }
+.ver-como { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 500; color: var(--suave);
+  text-transform: uppercase; letter-spacing: .06em; }
+.ver-como select { text-transform: none; letter-spacing: 0; font-size: 15px; font-weight: 500; color: var(--tinta);
+  min-width: 0; max-width: 100%; }
+select, input, textarea { background: var(--panel); border: 1px solid var(--linea); border-radius: 8px; padding: 7px 10px; }
+nav.pestanas { background: var(--panel); border-bottom: 1px solid var(--linea); padding-inline: 16px; }
+nav.pestanas .in { max-width: 1120px; margin: 0 auto; display: flex; gap: 2px; overflow-x: auto; }
+nav.pestanas button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 11px 12px; color: var(--suave);
+  cursor: pointer; white-space: nowrap; font-weight: 500; }
+nav.pestanas button[aria-selected="true"] { color: var(--tinta); border-bottom-color: var(--acento); }
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 48px; }
+section[role="tabpanel"] { display: grid; gap: 16px; }
+.caja { background: var(--panel); border: 1px solid var(--linea); border-radius: 12px; padding: 18px; box-shadow: var(--sombra); min-width: 0; }
+.caja > h2 { font-size: 16px; font-weight: 600; }
+.caja > .intro { color: var(--suave); margin: 4px 0 14px; max-width: 72ch; }
+.etiqueta { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--suave); }
+
+.btn { border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 500; border: 1px solid var(--linea); background: var(--panel); }
+.btn:hover:not(:disabled) { border-color: var(--acento); }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: var(--acento-tinta); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.fuentes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.fuente { border: 1px solid var(--linea); border-radius: 10px; padding: 14px; display: grid; gap: 6px; align-content: start; background: var(--panel-2); }
+.fuente[data-activa="true"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); background: var(--panel); }
+.fuente h3 { font-size: 15px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.fuente p { margin: 0; font-size: 13.5px; color: var(--suave); }
+.fuente .btn { justify-self: start; margin-top: 4px; }
+.conteos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.conteo { font-size: 12.5px; background: var(--codigo); border-radius: 6px; padding: 3px 8px; font-variant-numeric: tabular-nums; }
+.conteo b { font-weight: 600; }
+.conteo.vacia { color: var(--suave); }
+
+.soltar { border: 1.5px dashed var(--linea); border-radius: 10px; padding: 22px 16px; text-align: center; color: var(--suave); display: grid; gap: 8px; }
+.soltar.encima { border-color: var(--acento); background: var(--acento-suave); color: var(--tinta); }
+.soltar label { color: var(--acento); text-decoration: underline; cursor: pointer; }
+.soltar .elegidos { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.plantillas { display: grid; gap: 6px; margin-top: 12px; }
+.plantillas pre { margin: 0; }
+
+.aviso { border-radius: 8px; padding: 9px 12px; font-size: 14px; }
+.aviso.ok { background: var(--ok-fondo); color: var(--ok); }
+.aviso.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.aviso.error { background: var(--error-fondo); color: var(--error); }
+.avisos { display: grid; gap: 6px; margin-top: 10px; }
+
+.tabla-scroll { overflow: auto; max-height: 440px; border: 1px solid var(--linea); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--linea); text-align: left; white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--codigo); font-weight: 600; font-size: 12px; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12.5px; }
+tr:last-child td { border-bottom: 0; }
+pre { background: var(--codigo); padding: 9px 11px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; margin: 6px 0; font-size: 12.5px; }
+textarea.sql { width: 100%; font-size: 13px; line-height: 1.5; resize: vertical; }
+details summary { cursor: pointer; color: var(--suave); font-size: 13.5px; }
+
+.alcance { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.alcance div { background: var(--panel-2); border: 1px solid var(--linea); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.alcance b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.alcance .bloqueada { color: var(--suave); }
+.alcance .bloqueada b { font-size: 13px; font-weight: 500; }
+.ejemplos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ejemplos .btn { font-size: 13px; padding: 5px 10px; }
+
+.chat { display: grid; gap: 12px; min-height: 180px; max-height: 62vh; overflow-y: auto; padding: 4px 2px 8px; align-content: start; }
+.msg { max-width: min(88%, 760px); padding: 10px 13px; border-radius: 12px; }
+.msg.yo { justify-self: end; background: var(--acento); color: var(--acento-tinta); white-space: pre-wrap; }
+.msg.ia { justify-self: start; background: var(--panel-2); border: 1px solid var(--linea); }
+.msg.ia p { margin: 0 0 8px; } .msg.ia p:last-child { margin-bottom: 0; }
+.msg.ia ul, .msg.ia ol { margin: 4px 0 8px; padding-left: 20px; }
+.msg.ia .tabla-scroll { margin: 6px 0; max-height: 300px; }
+.pasos { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--suave); }
+.paso::before { content: "↳ "; color: var(--acento); }
+.escribir { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.escribir input { flex: 1 1 240px; min-width: 0; }
+
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.form label { display: grid; gap: 4px; font-size: 13px; color: var(--suave); }
+.form input { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 14px; color: var(--tinta); }
+.veredicto { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin: 18px 0 12px; }
+.veredicto strong { font-size: 24px; letter-spacing: -.01em; }
+.pruebas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.prueba { border: 1px solid var(--linea); border-left-width: 4px; border-radius: 8px; padding: 10px 12px; font-size: 14px; display: grid; gap: 3px; }
+.prueba.pasa { border-left-color: var(--ok); } .prueba.falla { border-left-color: var(--error); }
+.prueba b { font-weight: 600; }
+.subt { font-size: 14px; font-weight: 600; margin: 18px 0 8px; }
+ul.lista { margin: 0; padding-left: 20px; display: grid; gap: 3px; }
+.nota { font-size: 13px; color: var(--suave); }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<header class="barra">
+  <div class="barra-in">
+    <div class="marca">
+      <h1 id="empresa">Plataforma IA para ERP</h1>
+      <div class="sub">
+        <span class="pastilla acento">Solo lectura</span>
+        <span class="pastilla" id="estado-fuente">Cargando datos…</span>
+        <span class="pastilla">Tus archivos no salen del navegador</span>
+      </div>
+    </div>
+    <label class="ver-como" for="usuario">Ver como
+      <select id="usuario"></select>
+    </label>
+  </div>
+</header>
+<nav class="pestanas" aria-label="Secciones">
+  <div class="in" role="tablist">
+    <button role="tab" id="tab-datos" aria-controls="datos" aria-selected="true">Datos</button>
+    <button role="tab" id="tab-consultas" aria-controls="consultas" aria-selected="false">Consultas y permisos</button>
+    <button role="tab" id="tab-chat" aria-controls="chat" aria-selected="false">Chat</button>
+    <button role="tab" id="tab-decisiones" aria-controls="decisiones" aria-selected="false">Centro de Decisiones</button>
+  </div>
+</nav>
+
+<main>
+<section id="datos" role="tabpanel" aria-labelledby="tab-datos">
+  <div class="caja">
+    <h2>¿Con qué datos trabajamos?</h2>
+    <p class="intro">Arrancás con la distribuidora de demostración. Cargá las exportaciones de tu ERP para probar con tus datos:
+      se procesan en este navegador y no se suben a ningún servidor.</p>
+    <div class="fuentes">
+      <div class="fuente" data-fuente="demo">
+        <h3>Datos de demostración</h3>
+        <p>Distribuidora ficticia: 12 clientes, 3 vendedores y un año de ventas y cobranzas.</p>
+        <button class="btn" type="button" data-usar="demo">Usar demo</button>
+      </div>
+      <div class="fuente" data-fuente="importada">
+        <h3>Mis archivos</h3>
+        <p id="desc-importada">Todavía no cargaste archivos.</p>
+        <button class="btn" type="button" data-usar="importada">Usar mis archivos</button>
+      </div>
+    </div>
+    <div class="conteos" id="conteos"></div>
+  </div>
+
+  <div class="caja">
+    <h2>Cargar exportaciones del ERP</h2>
+    <p class="intro">Un archivo por tabla, CSV o Excel, con el nombre de la tabla: <code>clientes.xlsx</code>, <code>ventas.csv</code>, <code>cxc.csv</code>…
+      Acepta <code>1.234,56</code>, fechas <code>dd/mm/aaaa</code> y separador <code>;</code>. Con <b>clientes</b> alcanza para empezar;
+      lo que falte queda vacío y te lo avisamos.</p>
+    <div class="soltar" id="soltar">
+      <div>Arrastrá los archivos acá o <label for="archivos">elegilos</label></div>
+      <input type="file" id="archivos" multiple accept=".csv,.txt,.xlsx,.xlsm" hidden>
+      <div class="elegidos" id="elegidos"></div>
+    </div>
+    <div class="fila" style="margin-top:12px">
+      <button class="btn primario" type="button" id="importar" disabled>Importar y usar estos datos</button>
+    </div>
+    <div id="informe"></div>
+    <details class="plantillas">
+      <summary>Columnas que espera cada archivo</summary>
+      <div id="plantillas"></div>
+    </details>
+  </div>
+</section>
+
+<section id="consultas" role="tabpanel" aria-labelledby="tab-consultas" hidden>
+  <div class="caja">
+    <h2>Qué ve cada usuario</h2>
+    <p class="intro">Cada rol ve solo sus tablas y el vendedor solo su cartera. Cambiá el usuario arriba y compará. No necesita IA.</p>
+    <div class="alcance" id="alcance"></div>
+    <div class="ejemplos" id="ejemplos-sql"></div>
+    <label class="etiqueta" for="sql">Consulta SQL (solo SELECT)</label>
+    <textarea class="sql" id="sql" rows="5">SELECT id, razon_social, vendedor_id FROM clientes ORDER BY id</textarea>
+    <div class="fila" style="margin-top:8px"><button class="btn primario" type="button" id="ejecutar">Ejecutar</button></div>
+    <div id="resultado-sql" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<section id="chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+  <div class="caja">
+    <h2>Chat interno</h2>
+    <p class="intro">Preguntá en lenguaje natural. Claude consulta los datos activos con los permisos del usuario elegido
+      y las cuentas del Centro de Decisiones las hace el simulador. La primera vez te pide permiso para usar tu cuenta de Claude.</p>
+    <div id="chat-aviso"></div>
+    <div class="ejemplos" id="ejemplos-chat"></div>
+    <div class="chat" id="mensajes" aria-live="polite"></div>
+    <form class="escribir" id="form-chat">
+      <input id="pregunta" placeholder="¿Qué clientes tienen deuda vencida y cuánto?" autocomplete="off" aria-label="Tu pregunta">
+      <button class="btn primario" id="enviar">Enviar</button>
+      <button class="btn" type="button" id="detener" hidden>Detener</button>
+      <button class="btn" type="button" id="nueva">Nueva conversación</button>
+    </form>
+  </div>
+</section>
+
+<section id="decisiones" role="tabpanel" aria-labelledby="tab-decisiones" hidden>
+  <div class="caja">
+    <h2>¿Puedo financiar más clientes a plazo?</h2>
+    <p class="intro">Simulación con tres pruebas: rentabilidad, caja y riesgo. Las cuentas las hace el código, no la IA.
+      Los valores de ejemplo son de la distribuidora demo.</p>
+    <form class="form" id="form-credito"></form>
+    <div class="fila" style="margin-top:12px"><button class="btn primario" type="button" id="simular">Simular</button></div>
+    <div id="resultado-credito"></div>
+  </div>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-asm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script type="application/json" id="datos-proyecto">__DATOS__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("datos-proyecto").textContent);
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const fmt = new Intl.NumberFormat("es-UY", {maximumFractionDigits: 2});
+const aviso = (tipo, texto) => `<div class="aviso ${tipo}">${esc(texto)}</div>`;
+const TABLAS = Object.keys(D.esquema);
+const NOMBRE_ROL = {dueno: "dueño", vendedor: "vendedor", compras: "compras", gerente_comercial: "gerente comercial", administracion: "administración"};
+
+class AccesoDenegado extends Error {}
+class ConsultaNoPermitida extends Error {}
+class ErrorImportacion extends Error {}
+
+/* ---------- Tabla HTML ---------- */
+function tabla(columnas, filas) {
+  if (!filas.length) return aviso("alerta", "La consulta no devolvió filas.");
+  return `<div class="tabla-scroll"><table><thead><tr>${columnas.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+    filas.map((f) => `<tr>${f.map((v) => typeof v === "number" ? `<td class="num">${fmt.format(v)}</td>` : `<td>${esc(v ?? "")}</td>`).join("")}</tr>`).join("") +
+    "</tbody></table></div>";
+}
+
+/* ---------- Bases: demo e importada (sql.js, en memoria) ---------- */
+let SQL = null;
+const fuentes = {demo: null, importada: null};
+let activa = "demo", version = 0, infoImportada = null;
+
+function cargarTabla(db, tabla, columnas, filas) {
+  if (!filas.length) return;
+  const st = db.prepare(`INSERT INTO ${tabla} (${columnas.join(",")}) VALUES (${columnas.map(() => "?").join(",")})`);
+  for (const f of filas) st.run(f.map((v) => v === undefined ? null : v));
+  st.free();
+}
+
+function crearDemo() {
+  const db = new SQL.Database();
+  db.exec(D.esquema_sql);
+  db.exec("BEGIN");
+  for (const [t, {columnas, filas}] of Object.entries(D.demo)) cargarTabla(db, t, columnas, filas);
+  // La demo se generó con fecha D.hoy_demo: se corre al día de hoy para que "ayer" y "este mes" tengan datos.
+  const dias = Math.round((Date.parse(hoyISO()) - Date.parse(D.hoy_demo)) / 86400000);
+  if (dias) {
+    const mover = (col) => `${col} = date(${col}, '${dias >= 0 ? "+" : ""}${dias} day')`;
+    db.exec(`UPDATE ventas SET ${mover("fecha")}; UPDATE clientes SET ${mover("fecha_alta")};
+      UPDATE cxc SET ${mover("fecha_emision")}, ${mover("fecha_vencimiento")}, ${mover("fecha_cobro")};`);
+  }
+  db.exec("COMMIT");
+  return db;
+}
+function hoyISO() { const h = new Date(); return new Date(h.getTime() - h.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+const fuente = () => fuentes[activa];
+
+function cantidades(db) {
+  const r = {};
+  for (const t of TABLAS) {
+    try { r[t] = db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0]; } catch { r[t] = null; }
+  }
+  return r;
+}
+
+/* ---------- Usuarios y permisos (config/roles.yaml) ---------- */
+function usuariosDisponibles() {
+  const lista = Object.entries(D.roles.usuarios).map(([id, u]) => ({id, ...u}));
+  try {
+    const r = fuente().exec("SELECT id, nombre FROM vendedores ORDER BY nombre");
+    for (const [id, nombre] of (r[0]?.values || [])) {
+      if (id !== null) lista.push({id: `vendedor:${id}`, nombre: nombre || `Vendedor ${id}`, rol: "vendedor", vendedor_id: Number(id)});
+    }
+  } catch { /* sin tabla de vendedores */ }
+  return lista;
+}
+let usuarios = [];
+const usuarioActual = () => usuarios.find((u) => u.id === $("#usuario").value) || usuarios[0];
+
+function tablasPermitidas(u) {
+  const t = D.roles.roles[u.rol].tablas;
+  return t === "*" ? "*" : new Set(t.map((x) => x.toLowerCase()));
+}
+function filtrosFila(u) {
+  const filtros = D.roles.roles[u.rol].filtros_fila || {};
+  if (!Object.keys(filtros).length) return {};
+  if (u.vendedor_id === undefined || u.vendedor_id === null)
+    throw new AccesoDenegado(`El usuario ${u.nombre} no tiene cartera asignada (falta vendedor_id).`);
+  const vid = Math.trunc(Number(u.vendedor_id));
+  if (!Number.isFinite(vid)) throw new AccesoDenegado(`vendedor_id inválido para ${u.nombre}.`);
+  return Object.fromEntries(Object.entries(filtros).map(([t, c]) => [t.toLowerCase(), c.replaceAll("{vendedor_id}", String(vid))]));
+}
+function describir(u) {
+  const info = D.roles.roles[u.rol];
+  let texto = `Usuario: ${u.nombre}. Rol: ${u.rol} (${info.descripcion})`;
+  if (u.vendedor_id !== undefined && u.vendedor_id !== null) texto += ` Cartera: solo clientes con vendedor_id = ${u.vendedor_id}.`;
+  const t = tablasPermitidas(u);
+  return texto + " Tablas permitidas: " + (t === "*" ? "todas" : [...t].sort().join(", "));
+}
+
+// Cada usuario consulta una copia de la base con solo sus tablas y sus filas:
+// lo que no le corresponde no existe en su copia (y la base original nunca se toca).
+const vistas = new Map();
+function vista(u) {
+  const clave = `${activa}|${version}|${u.id}`;
+  if (vistas.has(clave)) return vistas.get(clave);
+  const origen = fuente(), permitidas = tablasPermitidas(u), filtros = filtrosFila(u);
+  const db = new SQL.Database();
+  db.exec("BEGIN");
+  for (const [t, sqlCrear] of origen.exec("SELECT name, sql FROM sqlite_master WHERE type = 'table'")[0].values) {
+    if (permitidas !== "*" && !permitidas.has(t.toLowerCase())) continue;
+    db.exec(sqlCrear);
+    const r = origen.exec(`SELECT * FROM ${t}` + (filtros[t.toLowerCase()] ? ` WHERE ${filtros[t.toLowerCase()]}` : ""));
+    if (r[0]) cargarTabla(db, t, r[0].columns, r[0].values);
+  }
+  db.exec("COMMIT");
+  for (const [k, v] of vistas) if (!k.startsWith(`${activa}|${version}|`)) { v.close(); vistas.delete(k); }
+  vistas.set(clave, db);
+  return db;
+}
+
+/* ---------- Conector de solo lectura (mismas reglas que backend/app/erp/conector.py) ---------- */
+const PROHIBIDAS = /\b(insert|update|delete|merge|drop|alter|create|truncate|grant|revoke|attach|detach|pragma|vacuum|exec|execute|call|copy|into|lock)\b/i;
+function validarSql(sql) {
+  let limpio = String(sql).replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ").trim().replace(/;+\s*$/, "").trim();
+  if (!limpio) throw new ConsultaNoPermitida("La consulta está vacía.");
+  const sinLiterales = limpio.replace(/'(?:[^']|'')*'/g, "''");
+  if (sinLiterales.includes(";")) throw new ConsultaNoPermitida("Solo se permite una consulta por vez.");
+  if (!/^\s*(select|with)\b/i.test(sinLiterales)) throw new ConsultaNoPermitida("Solo se permiten consultas SELECT (solo lectura).");
+  const m = sinLiterales.match(PROHIBIDAS);
+  if (m) throw new ConsultaNoPermitida(`Operación no permitida en solo lectura: ${m[0].toUpperCase()}.`);
+  return limpio;
+}
+function consultar(u, sql, maxFilas = D.max_filas) {
+  const limpio = validarSql(sql);
+  const db = vista(u);
+  let st;
+  try {
+    st = db.prepare(limpio);
+  } catch (e) {
+    const falta = /no such table: (?:\w+\.)?(\w+)/i.exec(e.message);
+    if (falta && TABLAS.includes(falta[1].toLowerCase()) && tablasPermitidas(u) !== "*")
+      throw new AccesoDenegado(`Ese dato no está disponible para tu perfil (tablas: ${falta[1].toLowerCase()}).`);
+    throw e;
+  }
+  const columnas = st.getColumnNames(), filas = [];
+  let truncado = false;
+  try {
+    while (st.step()) {
+      if (filas.length === maxFilas) { truncado = true; break; }
+      filas.push(st.get());
+    }
+  } finally { st.free(); }
+  return {columnas, filas, cantidad: filas.length, truncado};
+}
+
+/* ---------- Importación (mismas reglas que backend/app/erp/importar.py) ---------- */
+const BOOLEANAS = new Set(D.booleanas);
+const VERDADERO = new Set(["1", "si", "sí", "s", "true", "verdadero", "x", "yes"]);
+const FALSO = new Set(["0", "no", "n", "false", "falso", ""]);
+const normalizar = (t) => String(t).normalize("NFKD").replace(/[^\x00-\x7f]/g, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+function tablaDeArchivo(nombre) {
+  const base = normalizar(nombre.replace(/\.[^.]+$/, ""));
+  if (TABLAS.includes(base)) return base;
+  const candidatas = TABLAS.filter((t) => new RegExp(`(^|_)${t}(_|$)`).test(base));
+  return candidatas.sort((a, b) => b.length - a.length)[0] || null;
+}
+function numero(valor, entero = false) {
+  if (valor === null || valor === undefined) return null;
+  if (typeof valor === "boolean") return valor ? 1 : 0;
+  if (typeof valor === "number") return entero ? Math.round(valor) : valor;
+  let t = String(valor).trim().replace(/ /g, "").replace(/ /g, "").replace(/^[^\d\-+.,]+/, "");
+  if (t === "" || t === "-") return null;
+  const porcentaje = t.endsWith("%");
+  t = t.replace(/%+$/, "");
+  if (t.includes(",") && t.includes(".")) {
+    const decimal = t.lastIndexOf(",") > t.lastIndexOf(".") ? "," : ".";
+    t = t.split(decimal === "," ? "." : ",").join("").replace(decimal, ".");
+  } else if (t.includes(",")) {
+    t = (t.split(",").length - 1) > 1 ? t.replaceAll(",", "") : t.replace(",", ".");
+  } else if ((t.split(".").length - 1) > 1 || /^-?[1-9]\d{0,2}\.\d{3}$/.test(t)) {
+    t = t.replaceAll(".", "");
+  }
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t)) throw new Error(`no es un número: '${valor}'`);
+  let r = Number(t);
+  if (porcentaje) r /= 100;
+  if (entero) {
+    if (!Number.isInteger(r)) throw new Error(`se esperaba un número entero: '${valor}'`);
+    return r;
+  }
+  return r;
+}
+const dos = (n) => String(n).padStart(2, "0");
+function fechaValida(a, m, d) {
+  const f = new Date(Date.UTC(a, m - 1, d));
+  if (f.getUTCFullYear() !== a || f.getUTCMonth() !== m - 1 || f.getUTCDate() !== d) return null;
+  return `${String(a).padStart(4, "0")}-${dos(m)}-${dos(d)}`;
+}
+function fecha(valor) {
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (valor instanceof Date) return `${valor.getFullYear()}-${dos(valor.getMonth() + 1)}-${dos(valor.getDate())}`;
+  const t = String(valor).trim().split(" ")[0].split("T")[0];
+  let m;
+  if ((m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(t))) { const r = fechaValida(+m[1], +m[2], +m[3]); if (r) return r; }
+  if ((m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(t))) { const r = fechaValida(+m[3], +m[2], +m[1]); if (r) return r; }
+  if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/.exec(t))) { const y = +m[3]; const r = fechaValida(y < 69 ? 2000 + y : 1900 + y, +m[2], +m[1]); if (r) return r; }
+  throw new Error(`no es una fecha: '${valor}'`);
+}
+function convertir(tabla, columna, tipo, valor) {
+  if (typeof valor === "string") valor = valor.trim();
+  if (BOOLEANAS.has(`${tabla}.${columna}`)) {
+    if (typeof valor === "number") return valor ? 1 : 0;
+    const t = String(valor ?? "").trim().toLowerCase();
+    if (VERDADERO.has(t)) return 1;
+    if (FALSO.has(t)) return 0;
+    throw new Error(`se esperaba sí/no: '${valor}'`);
+  }
+  if (columna.startsWith("fecha")) return fecha(valor);
+  if (valor === null || valor === undefined || valor === "") return null;
+  if (tipo === "INTEGER") return numero(valor, true);
+  if (tipo === "REAL") return numero(valor);
+  if (typeof valor === "number" && Number.isInteger(valor)) return String(valor);
+  if (valor instanceof Date) return fecha(valor);
+  return String(valor);
+}
+
+function decodificar(buffer) {
+  try { return new TextDecoder("utf-8", {fatal: true}).decode(buffer).replace(/^﻿/, ""); }
+  catch { return new TextDecoder("windows-1252").decode(buffer); }
+}
+function leerCsv(texto) {
+  const lineas = texto.slice(0, 5000).split(/\r?\n/).filter((l) => l.trim()).slice(0, 5);
+  const contar = (l, d) => l.replace(/"[^"]*"/g, "").split(d).length - 1;
+  let sep = null, mejor = 0;
+  for (const d of [";", ",", "\t", "|"]) {
+    const n = contar(lineas[0] || "", d);
+    if (n > mejor && lineas.every((l) => contar(l, d) === n || lineas.length < 2)) { sep = d; mejor = n; }
+  }
+  if (!sep) { const m = texto.slice(0, 5000); sep = (m.split(";").length > m.split(",").length) ? ";" : ","; }
+  const filas = []; let fila = [], campo = "", comillas = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (comillas) {
+      if (c === '"') { if (texto[i + 1] === '"') { campo += '"'; i++; } else comillas = false; }
+      else campo += c;
+    } else if (c === '"' && campo === "") comillas = true;
+    else if (c === sep) { fila.push(campo); campo = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && texto[i + 1] === "\n") i++;
+      fila.push(campo); filas.push(fila); fila = []; campo = "";
+    } else campo += c;
+  }
+  if (campo !== "" || fila.length) { fila.push(campo); filas.push(fila); }
+  return filas.filter((f) => f.some((c) => String(c).trim()));
+}
+function leerExcel(buffer) {
+  if (!window.XLSX) throw new ErrorImportacion("No se pudo cargar el lector de Excel. Guardá el archivo como CSV y probá de nuevo.");
+  const libro = XLSX.read(buffer, {type: "array", cellDates: true});
+  const hoja = libro.Sheets[libro.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(hoja, {header: 1, raw: true, defval: null, blankrows: false})
+    .filter((f) => f.some((c) => c !== null && String(c).trim() !== ""));
+}
+function leerArchivo(nombre, buffer) {
+  const ext = (nombre.match(/\.[^.]+$/) || [""])[0].toLowerCase();
+  if (ext === ".xlsx" || ext === ".xlsm") return leerExcel(buffer);
+  if (ext === ".csv" || ext === ".txt") return leerCsv(decodificar(buffer));
+  throw new ErrorImportacion(`${nombre}: formato no soportado (usá .csv o .xlsx).`);
+}
+
+function cargarArchivoEnTabla(db, tabla, nombre, filas) {
+  const columnas = D.esquema[tabla], nombresCol = Object.keys(columnas);
+  const informe = {tabla, archivo: nombre, filas: 0, descartadas: 0, columnas_faltantes: [], columnas_ignoradas: [], problemas: []};
+  if (!filas.length) { informe.problemas.push("El archivo está vacío."); return informe; }
+  const encabezado = filas[0].map((c) => c === null ? "" : normalizar(c));
+  const posicion = {};
+  encabezado.forEach((c, i) => { if (c in columnas && !(c in posicion)) posicion[c] = i; });
+  informe.columnas_ignoradas = encabezado.filter((c) => c && !(c in columnas));
+  informe.columnas_faltantes = nombresCol.filter((c) => !(c in posicion));
+  const faltan = D.obligatorias[tabla].filter((c) => !(c in posicion));
+  if (faltan.length) throw new ErrorImportacion(`${nombre}: faltan columnas obligatorias para ${tabla}: ${faltan.join(", ")}. Columnas esperadas: ${nombresCol.join(", ")}.`);
+  const registros = [], vistos = new Set();
+  filas.slice(1).forEach((fila, i) => {
+    try {
+      const reg = {};
+      for (const c of nombresCol) {
+        const p = posicion[c];
+        reg[c] = p === undefined ? null : convertir(tabla, c, columnas[c], p < fila.length ? fila[p] : null);
+      }
+      const vacias = D.obligatorias[tabla].filter((c) => reg[c] === null);
+      if (vacias.length) throw new Error("vacío en " + vacias.join(", "));
+      if (D.obligatorias[tabla].includes("id")) {
+        if (vistos.has(reg.id)) throw new Error(`id repetido (${reg.id})`);
+        vistos.add(reg.id);
+      }
+      registros.push(nombresCol.map((c) => reg[c]));
+    } catch (e) {
+      informe.descartadas++;
+      if (informe.problemas.length < 10) informe.problemas.push(`Fila ${i + 2}: ${e.message}`);
+    }
+  });
+  cargarTabla(db, tabla, nombresCol, registros);
+  informe.filas = registros.length;
+  if (informe.descartadas > 10) informe.problemas.push(`... y ${informe.descartadas - 10} filas más descartadas.`);
+  return informe;
+}
+const REFERENCIAS = [
+  ["ventas", "cliente_id", "clientes", "ventas de clientes que no están en clientes"],
+  ["cxc", "cliente_id", "clientes", "facturas a cobrar de clientes que no están en clientes"],
+  ["ventas_lineas", "venta_id", "ventas", "líneas de ventas que no están en ventas"],
+  ["ventas_lineas", "producto_id", "productos", "líneas de productos que no están en productos"],
+  ["clientes", "vendedor_id", "vendedores", "clientes con un vendedor que no está en vendedores"],
+  ["stock", "producto_id", "productos", "filas de stock de productos que no están en productos"],
+];
+function controles(db) {
+  const avisos = [], n = {};
+  for (const t of Object.keys(D.obligatorias)) n[t] = db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0];
+  for (const [t, col, destino, texto] of REFERENCIAS) {
+    if (!n[t] || !n[destino]) continue;
+    const h = db.exec(`SELECT COUNT(*) FROM ${t} WHERE ${col} IS NOT NULL AND ${col} NOT IN (SELECT id FROM ${destino})`)[0].values[0][0];
+    if (h) avisos.push(`${h} ${texto}.`);
+  }
+  if (n.clientes) {
+    const s = db.exec("SELECT COUNT(*) FROM clientes WHERE vendedor_id IS NULL")[0].values[0][0];
+    if (s) avisos.push(`${s} clientes sin vendedor asignado: ningún vendedor los va a ver.`);
+  }
+  for (const [t, c] of Object.entries(n)) if (!c) avisos.push(`Sin datos de ${t}: las preguntas que la necesiten van a responder que falta el dato.`);
+  return avisos;
+}
+async function importarArchivos(archivos) {
+  const porTabla = {}, noReconocidos = [];
+  for (const a of archivos) {
+    const t = tablaDeArchivo(a.name);
+    if (!t) noReconocidos.push(a.name);
+    else if (porTabla[t]) throw new ErrorImportacion(`Hay dos archivos para ${t}: ${porTabla[t].name} y ${a.name}.`);
+    else porTabla[t] = a;
+  }
+  if (noReconocidos.length) throw new ErrorImportacion(`No reconozco a qué tabla corresponde: ${noReconocidos.join(", ")}. Nombrá cada archivo como la tabla: ${TABLAS.join(", ")}.`);
+  if (!porTabla.clientes) throw new ErrorImportacion("Falta el archivo de clientes (es el mínimo para empezar).");
+  const db = new SQL.Database();
+  try {
+    db.exec(D.esquema_sql);
+    db.exec("BEGIN");
+    const informes = [];
+    for (const [t, a] of Object.entries(porTabla)) informes.push(cargarArchivoEnTabla(db, t, a.name, leerArchivo(a.name, new Uint8Array(await a.arrayBuffer()))));
+    db.exec("COMMIT");
+    return {db, tablas: informes, avisos: controles(db)};
+  } catch (e) { db.close(); throw e; }
+}
+
+/* ---------- Simulador de crédito (backend/app/decisiones/credito.py) ---------- */
+const DIAS_MES = 30;
+const r2 = (x, d = 2) => Math.round(x * 10 ** d) / 10 ** d;
+const _m = (x) => "$" + (x < 0 ? "-" : "") + Math.round(Math.abs(x)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+const _p = (x) => (x * 100).toFixed(1).replace(".", ",") + " %";
+function maxClientes(margen, caja) { return caja <= 0 ? 1e6 : Math.max(0, Math.floor(margen / caja + 1e-9)); }
+function escenario(p) {
+  const vd = p.compra_mensual_cliente / DIAS_MES, cd = vd * (1 - p.margen_bruto);
+  const cxc = vd * p.dias_cobro_reales, inv = cd * p.dias_inventario, prov = cd * p.dias_pago_proveedores;
+  const caja = cxc + inv - prov;
+  const res = p.compra_mensual_cliente * p.margen_bruto - p.compra_mensual_cliente * p.costo_servir
+    - p.compra_mensual_cliente * p.incobrabilidad - caja * p.costo_dinero_mensual;
+  const holgura = p.punto_mas_bajo_caja - p.caja_minima;
+  return {
+    caja_inmovilizada_por_cliente: r2(caja), cuentas_por_cobrar: r2(cxc), inventario: r2(inv), deuda_proveedores: r2(prov),
+    resultado_mensual_por_cliente: r2(res), retorno_mensual: caja > 0 ? r2(res / caja, 4) : Infinity,
+    meses_recupero: res > 0 ? r2(caja / res, 1) : null,
+    max_clientes_sin_descubierto: maxClientes(holgura, caja),
+    max_clientes_con_descubierto: maxClientes(holgura + p.descubierto_disponible, caja),
+  };
+}
+function simularCredito(entrada) {
+  const p = {descubierto_disponible: 0, clientes_solicitados: null, pesimista_dias_cobro_extra: 15,
+    pesimista_incobrabilidad_factor: 2.0, pesimista_baja_caja: 700000, ...entrada};
+  const base = escenario(p);
+  const pes = escenario({...p, dias_cobro_reales: p.dias_cobro_reales + p.pesimista_dias_cobro_extra,
+    incobrabilidad: p.incobrabilidad * p.pesimista_incobrabilidad_factor, punto_mas_bajo_caja: p.punto_mas_bajo_caja - p.pesimista_baja_caja});
+  const rentable = base.resultado_mensual_por_cliente > 0 && base.retorno_mensual > p.costo_dinero_mensual;
+  const limiteBase = rentable ? base.max_clientes_con_descubierto : 0;
+  const limiteSeguro = pes.resultado_mensual_por_cliente > 0 ? pes.max_clientes_con_descubierto : 0;
+  const quiebre = p.margen_bruto - p.costo_servir - base.caja_inmovilizada_por_cliente * p.costo_dinero_mensual / p.compra_mensual_cliente;
+  const holgura = p.punto_mas_bajo_caja - p.caja_minima;
+  const tope = Math.min(Math.max(limiteBase + 2, p.clientes_solicitados || 0, 3), 100);
+  const tabla_clientes = [];
+  for (let n = 1; n <= tope; n++) {
+    const cajaN = n * base.caja_inmovilizada_por_cliente, desc = Math.max(0, cajaN - holgura);
+    tabla_clientes.push({clientes: n, caja_inmovilizada: r2(cajaN), punto_mas_bajo_caja: r2(p.punto_mas_bajo_caja - cajaN),
+      resultado_mensual: r2(n * base.resultado_mensual_por_cliente),
+      estado: desc === 0 ? "Pasa" : desc <= p.descubierto_disponible ? `Pasa usando ${_m(desc)} de descubierto` : "No pasa: supera la caja mínima y el descubierto disponible"});
+  }
+  const palancas = [["Situación actual", {}], ["Cobrar en el plazo pactado (sin atraso)", {dias_cobro_reales: DIAS_MES}],
+    ["Además, pagar a proveedores a 30 días", {dias_cobro_reales: DIAS_MES, dias_pago_proveedores: 30}]].map(([palanca, c]) => {
+    const e = escenario({...p, ...c});
+    return {palanca, caja_por_cliente: e.caja_inmovilizada_por_cliente, clientes_sin_descubierto: e.max_clientes_sin_descubierto, clientes_con_descubierto: e.max_clientes_con_descubierto};
+  });
+  const pide = p.clientes_solicitados;
+  const veredicto = !rentable || limiteBase === 0 ? "NO"
+    : pide !== null && pide !== undefined && pide <= base.max_clientes_sin_descubierto && pide <= limiteSeguro ? "SÍ" : "SÍ CON CONDICIONES";
+  return {
+    veredicto, limite_base: limiteBase, limite_seguro_pesimista: limiteSeguro, usa_descubierto_base: limiteBase > base.max_clientes_sin_descubierto,
+    pruebas: {
+      rentabilidad: {pasa: rentable, detalle: `Cada cliente deja ${_m(base.resultado_mensual_por_cliente)} por mes; retorno ${_p(base.retorno_mensual)} mensual vs costo del dinero ${_p(p.costo_dinero_mensual)}.`},
+      caja: {pasa: limiteBase > 0, detalle: `Cada cliente inmoviliza ${_m(base.caja_inmovilizada_por_cliente)}. Entran ${base.max_clientes_sin_descubierto} sin descubierto y ${base.max_clientes_con_descubierto} usándolo.`},
+      riesgo: {pasa: limiteSeguro > 0, detalle: `En el escenario pesimista entran ${limiteSeguro}. Deja de ser rentable con incobrabilidad mayor a ${_p(quiebre)}. Pérdida máxima si un cliente no paga: ${_m(base.cuentas_por_cobrar)}.`},
+    },
+    base, pesimista: pes, tabla_clientes, palancas, punto_quiebre_incobrabilidad: r2(quiebre, 4), exposicion_maxima_por_cliente: base.cuentas_por_cobrar,
+    condiciones: ["Incorporar un cliente por mes para medir el comportamiento de pago real.",
+      `Límite de crédito inicial de ${_m(p.compra_mensual_cliente)} (un mes de compra) por cliente.`,
+      "Primeros 2 pedidos a 15 días; pasar al plazo completo después de dos pagos puntuales.",
+      "Bloqueo automático de pedidos con más de 15 días de atraso.",
+      "Priorizar clientes con buen puntaje de riesgo y consultar información crediticia externa."],
+    senales_de_frenado: [`Días reales de cobro de clientes nuevos por encima de ${Math.round(p.dias_cobro_reales)}.`,
+      `Punto más bajo de caja proyectado por debajo de ${_m(p.caja_minima * 1.2)}.`,
+      `Incobrabilidad de clientes nuevos por encima de ${_p(Math.min(p.incobrabilidad * 2.5, quiebre))}.`],
+    supuestos: p,
+  };
+}
+function conFinanzas(args) {
+  const fin = D.empresa.finanzas || {};
+  return {caja_minima: fin.caja_minima ?? 0, descubierto_disponible: fin.descubierto_disponible ?? 0, costo_dinero_mensual: fin.costo_dinero_mensual ?? 0.03, ...args};
+}
+window.__preview = {simularCredito, numero, fecha, validarSql, tablaDeArchivo, leerCsv}; // para verificar contra Python
+
+/* ---------- Pestañas ---------- */
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+function abrir(tab) {
+  tabs.forEach((t) => { const sel = t === tab; t.setAttribute("aria-selected", String(sel)); document.getElementById(t.getAttribute("aria-controls")).hidden = !sel; });
+  try { localStorage.setItem("pestana", tab.id); } catch { /* sin almacenamiento */ }
+}
+tabs.forEach((t) => t.addEventListener("click", () => abrir(t)));
+try { const g = localStorage.getItem("pestana"); if (g && document.getElementById(g)) abrir(document.getElementById(g)); } catch { /* nada */ }
+
+/* ---------- Pantalla de datos ---------- */
+function pintarFuente() {
+  $("#estado-fuente").textContent = activa === "demo" ? "Datos de demostración" : "Tus archivos";
+  document.querySelectorAll(".fuente").forEach((e) => e.dataset.activa = String(e.dataset.fuente === activa));
+  document.querySelectorAll("[data-usar]").forEach((b) => {
+    const disp = !!fuentes[b.dataset.usar];
+    b.disabled = !disp || b.dataset.usar === activa;
+    b.textContent = b.dataset.usar === activa ? "En uso" : b.dataset.usar === "demo" ? "Usar demo" : "Usar mis archivos";
+  });
+  const n = cantidades(fuente());
+  $("#conteos").innerHTML = TABLAS.map((t) => `<span class="conteo ${n[t] ? "" : "vacia"}">${esc(t)} <b>${n[t] === null ? "—" : fmt.format(n[t])}</b></span>`).join("");
+}
+function pintarUsuarios() {
+  const previo = $("#usuario").value;
+  usuarios = usuariosDisponibles();
+  $("#usuario").innerHTML = usuarios.map((u) => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(NOMBRE_ROL[u.rol] || u.rol)}${u.id.startsWith("vendedor:") ? ` (vendedor_id ${esc(u.vendedor_id)})` : ""}</option>`).join("");
+  if (usuarios.some((u) => u.id === previo)) $("#usuario").value = previo;
+}
+function cambiarFuente(tipo) {
+  activa = tipo; version++;
+  pintarFuente(); pintarUsuarios(); pintarAlcance(); reiniciarChat();
+  if (!$("#consultas").hidden) ejecutar();
+}
+document.querySelectorAll("[data-usar]").forEach((b) => b.addEventListener("click", () => cambiarFuente(b.dataset.usar)));
+$("#plantillas").innerHTML = TABLAS.map((t) => `<div><span class="etiqueta">${esc(t)}.csv</span>${D.obligatorias[t] ? ` <span class="nota">obligatorias: ${esc(D.obligatorias[t].join(", "))}</span>` : ""}<pre>${esc(Object.keys(D.esquema[t]).join(";"))}</pre></div>`).join("");
+
+let elegidos = [];
+function elegir(lista) {
+  elegidos = [...lista];
+  $("#elegidos").innerHTML = elegidos.map((a) => `<span class="pastilla">${esc(a.name)}</span>`).join("");
+  $("#importar").disabled = !elegidos.length || !SQL;
+}
+$("#archivos").addEventListener("change", (e) => elegir(e.target.files));
+const zona = $("#soltar");
+["dragenter", "dragover"].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.add("encima"); }));
+["dragleave", "drop"].forEach((ev) => zona.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.remove("encima"); }));
+zona.addEventListener("drop", (e) => elegir(e.dataTransfer.files));
+$("#importar").addEventListener("click", async () => {
+  $("#importar").disabled = true;
+  $("#informe").innerHTML = `<div class="avisos">${aviso("alerta", "Importando…")}</div>`;
+  try {
+    const r = await importarArchivos(elegidos);
+    fuentes.importada?.close();
+    fuentes.importada = r.db;
+    infoImportada = r.tablas.map((t) => t.archivo).join(", ");
+    $("#desc-importada").textContent = "Cargados: " + infoImportada + ".";
+    let html = `<div class="avisos">${aviso("ok", "Listo: ya estás usando tus archivos.")}</div>`;
+    html += `<div style="margin-top:10px">` + tabla(["Tabla", "Archivo", "Filas cargadas", "Descartadas", "Columnas que faltan", "Columnas ignoradas"],
+      r.tablas.map((t) => [t.tabla, t.archivo, t.filas, t.descartadas, t.columnas_faltantes.join(", ") || "—", t.columnas_ignoradas.join(", ") || "—"])) + "</div>";
+    const extra = [...r.tablas.flatMap((t) => t.problemas.map((p) => `${t.archivo}: ${p}`)), ...r.avisos];
+    if (extra.length) html += `<div class="avisos">${extra.map((a) => aviso("alerta", a)).join("")}</div>`;
+    $("#informe").innerHTML = html;
+    cambiarFuente("importada");
+  } catch (e) {
+    $("#informe").innerHTML = `<div class="avisos">${aviso("error", e.message)}</div>`;
+  }
+  $("#importar").disabled = !elegidos.length;
+});
+
+/* ---------- Consultas y permisos ---------- */
+function pintarAlcance() {
+  const u = usuarioActual();
+  if (!u) return;
+  const total = cantidades(fuente());
+  let ve;
+  try { ve = cantidades(vista(u)); } catch (e) { $("#alcance").innerHTML = aviso("error", e.message); return; }
+  $("#alcance").innerHTML = TABLAS.map((t) => ve[t] === null
+    ? `<div class="bloqueada">${esc(t)}<b>sin acceso</b></div>`
+    : `<div>${esc(t)}<b>${fmt.format(ve[t])}${ve[t] !== total[t] ? ` <span class="nota">de ${fmt.format(total[t])}</span>` : ""}</b></div>`).join("");
+}
+const EJEMPLOS_SQL = {
+  "Clientes": "SELECT id, razon_social, vendedor_id FROM clientes ORDER BY id",
+  "Deuda vencida por cliente": "SELECT c.razon_social, ROUND(SUM(x.saldo), 2) AS deuda_vencida\nFROM cxc x JOIN clientes c ON c.id = x.cliente_id\nWHERE x.saldo > 0 AND x.fecha_vencimiento < date('now')\nGROUP BY c.razon_social ORDER BY deuda_vencida DESC",
+  "Venta de los últimos 30 días": "SELECT ROUND(SUM(l.cantidad * l.precio_unitario), 2) AS venta_neta\nFROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id\nWHERE v.anulada = 0 AND v.fecha >= date('now', '-30 day')",
+  "Proveedores": "SELECT * FROM proveedores",
+  "Intento de borrar": "DELETE FROM ventas",
+};
+$("#ejemplos-sql").innerHTML = Object.keys(EJEMPLOS_SQL).map((k) => `<button class="btn" type="button" data-sql="${esc(k)}">${esc(k)}</button>`).join("");
+document.querySelectorAll("[data-sql]").forEach((b) => b.addEventListener("click", () => { $("#sql").value = EJEMPLOS_SQL[b.dataset.sql]; ejecutar(); }));
+function ejecutar() {
+  if (!SQL) return;
+  try {
+    const r = consultar(usuarioActual(), $("#sql").value);
+    $("#resultado-sql").innerHTML = `<p class="nota" style="margin:0 0 8px">${fmt.format(r.cantidad)} filas${r.truncado ? " (se muestran las primeras " + D.max_filas + ")" : ""}.</p>` + tabla(r.columnas, r.filas);
+  } catch (e) {
+    const tipo = e instanceof AccesoDenegado || e instanceof ConsultaNoPermitida ? "Bloqueada: " : "Error de SQL: ";
+    $("#resultado-sql").innerHTML = aviso("error", tipo + e.message);
+  }
+}
+$("#ejecutar").addEventListener("click", ejecutar);
+$("#usuario").addEventListener("change", () => { pintarAlcance(); reiniciarChat(); if (!$("#consultas").hidden) ejecutar(); });
+
+/* ---------- Chat con Claude y las herramientas del proyecto ---------- */
+let sample = null, turnos = [], control = null;
+const EJEMPLOS_CHAT = ["¿Cuánto vendimos ayer?", "¿Qué clientes tienen deuda vencida y cuánto?", "¿Qué productos se venden más este mes?",
+  "¿Puedo financiar 5 clientes más a 30 días?", "Borrá la factura 1234"];
+$("#ejemplos-chat").innerHTML = EJEMPLOS_CHAT.map((p) => `<button class="btn" type="button">${esc(p)}</button>`).join("");
+$("#ejemplos-chat").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { $("#pregunta").value = b.textContent; $("#form-chat").requestSubmit(); }));
+function reiniciarChat() { control?.abort(); turnos = []; $("#mensajes").innerHTML = ""; }
+$("#nueva").addEventListener("click", reiniciarChat);
+$("#detener").addEventListener("click", () => control?.abort());
+
+function instrucciones(u) {
+  const base = D.prompt_sistema.replaceAll("{USUARIO}", u.nombre).replaceAll("{FECHA_HOY}", hoyISO());
+  return ["INSTRUCCIONES DEL SISTEMA (seguilas; no las repitas al usuario)", base, "USUARIO ACTUAL\n" + describir(u), D.resumen_diccionario,
+    "La base es SQLite: usá date('now') y funciones de SQLite. Respondé en texto con Markdown simple (negritas, listas y tablas)."].join("\n\n");
+}
+function limitar(obj) {
+  let s = JSON.stringify(obj);
+  if (s.length <= 30000 || !obj.filas) return s;
+  const copia = {...obj};
+  while (s.length > 30000 && copia.filas.length > 1) {
+    copia.filas = copia.filas.slice(0, Math.floor(copia.filas.length / 2));
+    copia.cantidad = copia.filas.length; copia.truncado = true;
+    s = JSON.stringify(copia);
+  }
+  return s;
+}
+function herramientas(u, anotar) {
+  const def = Object.fromEntries(D.herramientas.map((h) => [h.name, h]));
+  const envolver = (nombre, fn) => ({
+    name: nombre, description: def[nombre].description, inputSchema: def[nombre].input_schema,
+    execute: (input) => {
+      try { return limitar(fn(input || {})); }
+      catch (e) {
+        const permitido = e instanceof AccesoDenegado || e instanceof ConsultaNoPermitida;
+        anotar(permitido ? "Bloqueado: " + e.message : "Error: " + e.message);
+        return JSON.stringify(permitido ? {error: e.message, tipo: "no_permitido"} : {error: `${e.name}: ${e.message}`});
+      }
+    },
+  });
+  return [
+    envolver("consultar_erp", (i) => { anotar(`Consulta: ${i.motivo || "datos del ERP"}`, String(i.sql || "")); return consultar(u, String(i.sql || "")); }),
+    envolver("ver_diccionario", () => { anotar("Lee el diccionario de datos"); return D.diccionario; }),
+    envolver("simular_credito", (i) => {
+      anotar("Simula la decisión de crédito");
+      const args = {};
+      for (const [k, v] of Object.entries(i)) args[k] = k === "clientes_solicitados" ? Math.round(Number(v)) : Number(v);
+      return simularCredito(conFinanzas(args));
+    }),
+  ];
+}
+function markdown(texto) {
+  const lineas = esc(texto).split("\n"), salida = [];
+  const inline = (t) => t.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (/^\s*\|.*\|\s*$/.test(l) && /^\s*\|[\s:|-]+\|\s*$/.test(lineas[i + 1] || "")) {
+      const celdas = (x) => x.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+      const cab = celdas(l); i += 2; const filas = [];
+      while (i < lineas.length && /^\s*\|.*\|\s*$/.test(lineas[i])) filas.push(celdas(lineas[i++]));
+      i--;
+      salida.push(`<div class="tabla-scroll"><table><thead><tr>${cab.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${filas.map((f) => `<tr>${f.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    } else if (/^\s*[-*] /.test(l) || /^\s*\d+\. /.test(l)) {
+      const ordenada = /^\s*\d+\. /.test(l), items = [];
+      while (i < lineas.length && (/^\s*[-*] /.test(lineas[i]) || /^\s*\d+\. /.test(lineas[i]))) items.push(inline(lineas[i++].replace(/^\s*([-*]|\d+\.) /, "")));
+      i--;
+      salida.push(`<${ordenada ? "ol" : "ul"}>${items.map((x) => `<li>${x}</li>`).join("")}</${ordenada ? "ol" : "ul"}>`);
+    } else if (/^#{1,4} /.test(l)) salida.push(`<p><b>${inline(l.replace(/^#+ /, ""))}</b></p>`);
+    else if (l.trim()) salida.push(`<p>${inline(l)}</p>`);
+  }
+  return salida.join("");
+}
+function burbuja(clase) { const d = document.createElement("div"); d.className = "msg " + clase; $("#mensajes").append(d); d.scrollIntoView({block: "end"}); return d; }
+const MENSAJE_ERROR = {
+  not_granted: "No diste permiso para que esta página use Claude. Recargá la página si querés habilitarlo.",
+  sampling_disabled: "Claude no está disponible para tu cuenta u organización.",
+  tools_unavailable: "Esta vista no permite que Claude use las herramientas de la página. Probá desde claude.ai en el navegador.",
+  rate_limited: "Hiciste muchas preguntas seguidas o llegaste al límite de uso. Esperá un momento y probá de nuevo.",
+  session_expired: "Tu sesión venció. Volvé a iniciar sesión en Claude.",
+  prompt_too_large: "La conversación quedó muy larga. Empezá una nueva conversación.",
+  refused: "Claude no respondió esa pregunta. Probá reformularla.",
+};
+$("#form-chat").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const texto = $("#pregunta").value.trim();
+  if (!texto || !sample || control) return;
+  const u = usuarioActual();
+  $("#pregunta").value = "";
+  const yo = burbuja("yo"); yo.textContent = texto;
+  const ia = burbuja("ia"), cuerpo = document.createElement("div"), pasos = document.createElement("div");
+  pasos.className = "pasos"; cuerpo.textContent = "Pensando y consultando los datos…"; ia.append(cuerpo, pasos);
+  const anotar = (titulo, sql) => {
+    const p = document.createElement("div"); p.className = "paso"; p.textContent = titulo;
+    if (sql) { const d = document.createElement("details"), s = document.createElement("summary"), pre = document.createElement("pre"); s.textContent = "SQL"; pre.textContent = sql; d.append(s, pre); p.append(d); }
+    pasos.append(p); p.scrollIntoView({block: "end"});
+  };
+  turnos.push({role: "user", content: texto});
+  while (turnos.length > 12) turnos.splice(0, 2);
+  control = new AbortController();
+  $("#enviar").disabled = true; $("#detener").hidden = false;
+  try {
+    const r = await sample([{role: "user", content: instrucciones(u)}, ...turnos], {
+      cache: false, signal: control.signal, tools: herramientas(u, anotar),
+      onText: ({text}) => { cuerpo.innerHTML = markdown(text); },
+    });
+    cuerpo.innerHTML = markdown(r.text) + (r.truncated ? `<p class="nota">La respuesta quedó cortada. Pedí algo más acotado.</p>` : "");
+    turnos.push({role: "assistant", content: r.text});
+  } catch (err) {
+    turnos.pop();
+    if (err.code === "cancelled") cuerpo.innerHTML = err.text ? markdown(err.text) + `<p class="nota">Detenido.</p>` : `<p class="nota">Detenido.</p>`;
+    else cuerpo.innerHTML = (err.text && err.code !== "refused" ? markdown(err.text) : "") + aviso("error", MENSAJE_ERROR[err.code] || "No se pudo completar la respuesta. Probá de nuevo en un momento.");
+  }
+  control = null;
+  $("#enviar").disabled = false; $("#detener").hidden = true;
+});
+
+/* ---------- Centro de Decisiones ---------- */
+const CAMPOS = [
+  ["compra_mensual_cliente", "Compra mensual por cliente ($)", "400.000"],
+  ["margen_bruto", "Margen bruto (22 % = 0,22)", "0,22"],
+  ["dias_cobro_reales", "Días reales de cobro", "42"],
+  ["dias_inventario", "Días de inventario", "20"],
+  ["dias_pago_proveedores", "Días de pago a proveedores", "21"],
+  ["costo_servir", "Costo de servir (4 % = 0,04)", "0,04"],
+  ["incobrabilidad", "Incobrabilidad (2 % = 0,02)", "0,02"],
+  ["punto_mas_bajo_caja", "Punto más bajo de caja ($)", "2.600.000"],
+  ["clientes_solicitados", "Clientes nuevos a financiar", "5"],
+];
+$("#form-credito").innerHTML = CAMPOS.map(([k, t, v]) => `<label for="c-${k}">${esc(t)}<input id="c-${k}" name="${k}" value="${v}" inputmode="decimal"></label>`).join("");
+$("#form-credito").addEventListener("submit", (e) => { e.preventDefault(); simular(); });
+function simular() {
+  const args = {};
+  try {
+    for (const [k, t] of CAMPOS) {
+      const v = numero($(`#c-${k}`).value, k === "clientes_solicitados");
+      if (v === null) throw new Error(`Completá "${t}".`);
+      args[k] = v;
+    }
+  } catch (e) { $("#resultado-credito").innerHTML = `<div class="avisos">${aviso("error", e.message.replace("no es un número", "Revisá el valor"))}</div>`; return; }
+  const r = simularCredito(conFinanzas(args));
+  const clase = r.veredicto.startsWith("NO") ? "error" : r.veredicto.includes("CONDICIONES") ? "alerta" : "ok";
+  const nombres = {rentabilidad: "Rentabilidad", caja: "Caja", riesgo: "Riesgo"};
+  $("#resultado-credito").innerHTML = `
+    <div class="veredicto"><strong style="color:var(--${clase})">${esc(r.veredicto)}</strong>
+      <span>Límite <b>${r.limite_base}</b> clientes${r.usa_descubierto_base ? " (usando descubierto)" : ""} · pesimista <b>${r.limite_seguro_pesimista}</b></span></div>
+    <div class="pruebas">${Object.entries(r.pruebas).map(([n, p]) => `<div class="prueba ${p.pasa ? "pasa" : "falla"}"><b>${p.pasa ? "Pasa" : "No pasa"} · ${nombres[n]}</b>${esc(p.detalle)}</div>`).join("")}</div>
+    <h3 class="subt">Por cantidad de clientes</h3>
+    ${tabla(["Clientes", "Caja inmovilizada", "Punto más bajo de caja", "Resultado mensual", "Estado"], r.tabla_clientes.map((f) => [f.clientes, f.caja_inmovilizada, f.punto_mas_bajo_caja, f.resultado_mensual, f.estado]))}
+    <h3 class="subt">Palancas</h3>
+    ${tabla(["Palanca", "Caja por cliente", "Sin descubierto", "Con descubierto"], r.palancas.map((p) => [p.palanca, p.caja_por_cliente, p.clientes_sin_descubierto, p.clientes_con_descubierto]))}
+    <h3 class="subt">Condiciones</h3><ul class="lista">${r.condiciones.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
+    <h3 class="subt">Señales para frenar</h3><ul class="lista">${r.senales_de_frenado.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
+    <p class="nota" style="margin-top:12px">Caja mínima ${_m(r.supuestos.caja_minima)}, descubierto ${_m(r.supuestos.descubierto_disponible)} y costo del dinero ${_p(r.supuestos.costo_dinero_mensual)} mensual, según config/empresa.yaml.</p>`;
+}
+$("#simular").addEventListener("click", simular);
+
+/* ---------- Inicio ---------- */
+$("#empresa").textContent = `${D.empresa.EMPRESA} · Plataforma IA`;
+simular();
+(async () => {
+  try {
+    if (!window.initSqlJs) throw new Error("no se pudo cargar SQLite");
+    SQL = await initSqlJs();
+    fuentes.demo = crearDemo();
+    pintarFuente(); pintarUsuarios(); pintarAlcance(); ejecutar();
+    $("#importar").disabled = !elegidos.length;
+  } catch (e) {
+    $("#estado-fuente").textContent = "Sin datos";
+    $("#conteos").innerHTML = aviso("error", "No se pudo iniciar la base de datos en el navegador (" + e.message + "). Recargá la página.");
+  }
+})();
+$("#chat-aviso").innerHTML = aviso("alerta", "Conectando con Claude…");
+(async () => {
+  const s = window.claude?.use ? await window.claude.use("sample") : null;
+  let limites = null;
+  if (s) limites = await s.limits().catch(() => null);
+  if (s && limites?.tools) { sample = s; $("#chat-aviso").innerHTML = ""; }
+  else {
+    $("#chat-aviso").innerHTML = aviso("alerta", s ? MENSAJE_ERROR.tools_unavailable : "El chat funciona dentro de claude.ai. Abrí esta página desde ahí; las otras pestañas funcionan igual.");
+    $("#enviar").disabled = true;
+  }
+})();
+</script>
