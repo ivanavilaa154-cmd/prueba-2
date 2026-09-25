@@ -79,6 +79,41 @@ pre { background: var(--codigo); padding: 8px 10px; border-radius: 7px; white-sp
 .prueba { border: 1px solid var(--borde); border-radius: 8px; padding: 10px; font-size: 14px; }
 .prueba b { display: block; }
 ul { margin: 6px 0; padding-left: 20px; }
+.tablero-cab { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: end; margin-bottom: 14px; }
+.tablero-titulo { margin: 0; font-size: 20px; }
+.periodo { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--suave); }
+.pilar { margin-bottom: 22px; }
+.pilar > h3 { font-size: 16px; margin: 0 0 10px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pilar > h3 .nota { font-weight: 400; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; }
+.kpi { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.kpi .nombre { font-size: 12.5px; color: var(--suave); }
+.kpi .valor { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.kpi .var { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.kpi .var.sube { color: var(--ok); } .kpi .var.baja { color: var(--error); } .kpi .var.igual { color: var(--suave); }
+.kpi .detalle { font-size: 12px; color: var(--suave); }
+.kpi .marca-estado { font-size: 12px; font-weight: 600; }
+.kpi.critico { border-left: 4px solid var(--error); } .kpi.critico .marca-estado { color: var(--error); }
+.kpi.alerta { border-left: 4px solid var(--alerta); } .kpi.alerta .marca-estado { color: var(--alerta); }
+.kpi.ok .marca-estado { color: var(--ok); }
+.paneles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 12px; margin-top: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 14px; min-width: 0; }
+.panel h4 { margin: 0 0 8px; font-size: 14px; }
+.panel .tabla-scroll { max-height: 300px; }
+.panel.ancho { grid-column: 1 / -1; }
+.panel table th, .panel table td { padding: 5px 8px; }
+.panel table td:first-child { white-space: normal; min-width: 120px; }
+.panel table .der { text-align: right; font-variant-numeric: tabular-nums; }
+.grafico { width: 100%; height: auto; display: block; }
+.grafico .barra { fill: var(--acento); }
+.grafico .barra.curso { fill: var(--acento); opacity: .45; }
+.grafico .barra:hover, .grafico .barra.foco { opacity: .8; }
+.grafico .eje { fill: var(--suave); font-size: 12px; }
+.grafico .grilla { stroke: var(--borde); stroke-width: 1; }
+.grafico-tip { position: fixed; z-index: 10; pointer-events: none; background: var(--texto); color: var(--panel); font-size: 12.5px;
+  padding: 6px 9px; border-radius: 6px; font-variant-numeric: tabular-nums; max-width: 240px; }
+.faltan { font-size: 13px; color: var(--suave); }
+.faltan li { margin: 2px 0; }
 .cuenta { font-size: 12px; background: var(--codigo); border-radius: 999px; padding: 1px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cuenta.activa { background: var(--alerta-fondo); color: var(--alerta); }
 .cuenta-panel { margin-top: 14px; font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -118,14 +153,29 @@ ul { margin: 6px 0; padding-left: 20px; }
   </label>
 </header>
 <nav>
-  <button data-pestana="datos" class="activa">1 · Integraciones</button>
-  <button data-pestana="consultas">2 · Consultas y permisos</button>
-  <button data-pestana="chat">3 · Chat</button>
-  <button data-pestana="decisiones">4 · Centro de Decisiones</button>
+  <button data-pestana="tablero" class="activa">Tablero</button>
+  <button data-pestana="datos">Integraciones</button>
+  <button data-pestana="consultas">Consultas y permisos</button>
+  <button data-pestana="chat">Chat</button>
+  <button data-pestana="decisiones">Centro de Decisiones</button>
 </nav>
 <main>
 
-<section id="datos" class="activa">
+<section id="tablero" class="activa">
+  <div class="tablero-cab">
+    <div>
+      <h2 class="tablero-titulo">Tablero</h2>
+      <p class="nota" id="tablero-sub">Cargando indicadores…</p>
+    </div>
+    <label class="periodo" for="periodo">Período
+      <select id="periodo"><option value="7">Últimos 7 días</option><option value="30" selected>Últimos 30 días</option><option value="90">Últimos 90 días</option></select>
+    </label>
+  </div>
+  <div id="tablero-cuerpo"></div>
+  <div id="grafico-tip" class="grafico-tip" role="tooltip" hidden></div>
+</section>
+
+<section id="datos">
   <div class="tarjeta">
     <h2>Datos en uso</h2>
     <p>La plataforma consulta una fuente por vez, siempre en solo lectura: nunca escribe en tu ERP ni en tus archivos.</p>
@@ -298,6 +348,7 @@ async function cargarUsuarios() {
   const roles = {dueno: "dueño", vendedor: "vendedor", compras: "compras", gerente_comercial: "gerente comercial", administracion: "administración"};
   $("#usuario").innerHTML = lista.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(roles[u.rol] || u.rol)}${u.id.startsWith("vendedor:") ? " (" + esc(u.id.split(":")[1]) + ")" : ""}</option>`).join("");
   if (lista.some(u => u.id === previo)) $("#usuario").value = previo;
+  cargarTablero();
 }
 $("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; };
 
@@ -352,6 +403,117 @@ $("#importar").onclick = async () => {
   } catch (e) { $("#informe").innerHTML = aviso("error", e.message); }
   $("#importar").disabled = !elegidos.length;
 };
+
+// Tablero
+const MONEDA = new Intl.NumberFormat("es-UY", {maximumFractionDigits: 0});
+const plata = v => v === null || v === undefined ? "—" : "$ " + MONEDA.format(v);
+function corto(v) {
+  if (v >= 1e6) return "$ " + (v / 1e6).toLocaleString("es-UY", {maximumFractionDigits: 1}) + " M";
+  if (v >= 1e3) return "$ " + MONEDA.format(v / 1e3) + " mil";
+  return "$ " + MONEDA.format(v);
+}
+// Tabla del tablero: tipos por columna ("t" texto, "$" moneda, "n" número, "%" porcentaje)
+function tablaT(columnas, tipos, filas) {
+  const celda = (v, t) => t === "$" ? plata(v) : t === "%" ? pct(v) : t === "n" ? (v === null ? "—" : fmt.format(v)) : (v ?? "");
+  return `<div class="tabla-scroll"><table><thead><tr>${columnas.map((c, i) => `<th class="${tipos[i] === "t" ? "" : "der"}">${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+    filas.map(f => `<tr>${f.map((v, i) => `<td class="${tipos[i] === "t" ? "" : "der"}">${esc(celda(v, tipos[i]))}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>";
+}
+function valorKpi(k) {
+  if (k.valor === null || k.valor === undefined) return "—";
+  if (k.formato === "moneda") return "$ " + MONEDA.format(k.valor);
+  if (k.formato === "porcentaje") return (k.valor * 100).toFixed(1).replace(".", ",") + " %";
+  if (k.formato === "dias") return fmt.format(k.valor) + " días";
+  if (k.formato === "veces") return fmt.format(k.valor) + " veces";
+  return fmt.format(k.valor);
+}
+function variacionKpi(k) {
+  if (k.variacion === null || k.variacion === undefined) return "";
+  const v = k.variacion, clase = v > 0.0005 ? "sube" : v < -0.0005 ? "baja" : "igual", flecha = clase === "sube" ? "▲" : clase === "baja" ? "▼" : "=";
+  const texto = k.formato === "porcentaje" ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1).replace(".", ",")} pts`
+    : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1).replace(".", ",")} %`;
+  return `<span class="var ${clase}">${flecha} ${texto} vs período anterior</span>`;
+}
+const ESTADO = {critico: "● Crítico", alerta: "▲ Atención", ok: "✓ Bien"};
+function tarjetas(kpis) {
+  return `<div class="kpis">${kpis.map(k => `<div class="kpi ${k.estado || ""}">
+    <span class="nombre">${esc(k.nombre)}</span><span class="valor">${esc(valorKpi(k))}</span>
+    ${variacionKpi(k)}${k.nota ? `<span class="detalle">${esc(k.nota)}</span>` : ""}
+    ${k.estado ? `<span class="marca-estado">${ESTADO[k.estado]}</span>` : ""}</div>`).join("")}</div>`;
+}
+const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function graficoMensual(serie) {
+  if (!serie.length) return "";
+  const W = 900, H = 240, izq = 72, abajo = 24, arriba = 10, max = Math.max(...serie.map(m => m.venta)) || 1;
+  const paso = Math.pow(10, Math.floor(Math.log10(max))), tope = Math.ceil(max / paso) * paso;
+  const ancho = (W - izq - 8) / serie.length, barra = Math.max(6, ancho * 0.62);
+  const y = v => arriba + (H - arriba - abajo) * (1 - v / tope);
+  const grilla = [0, 0.5, 1].map(f => `<line class="grilla" x1="${izq}" x2="${W - 4}" y1="${y(tope * f)}" y2="${y(tope * f)}"/>
+    <text class="eje" x="${izq - 6}" y="${y(tope * f) + 4}" text-anchor="end">${corto(tope * f)}</text>`).join("");
+  const barras = serie.map((m, i) => {
+    const x = izq + i * ancho + (ancho - barra) / 2, alto = Math.max(0, y(0) - y(m.venta)), r = Math.min(4, barra / 2, alto);
+    const [a, mm] = m.mes.split("-"), etiqueta = MES[+mm - 1];
+    const d = `M${x},${y(0)} v${-(alto - r)} q0,${-r} ${r},${-r} h${barra - 2 * r} q${r},0 ${r},${r} v${alto - r} z`;
+    const tip = `${etiqueta} ${a}${m.en_curso ? " (en curso)" : ""} · $ ${MONEDA.format(m.venta)}` + (m.margen_pct !== null ? ` · margen ${(m.margen_pct * 100).toFixed(1).replace(".", ",")} %` : "");
+    return `<path class="barra${m.en_curso ? " curso" : ""}" d="${d}" data-tip="${esc(tip)}"/>
+      <rect x="${izq + i * ancho}" y="${arriba}" width="${ancho}" height="${H - arriba - abajo}" fill="transparent" data-tip="${esc(tip)}"/>
+      ${i % (serie.length > 8 ? 2 : 1) === 0 || i === serie.length - 1 ? `<text class="eje" x="${x + barra / 2}" y="${H - 6}" text-anchor="middle">${etiqueta}</text>` : ""}`;
+  }).join("");
+  return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="Venta neta por mes, últimos 12 meses">${grilla}${barras}</svg>
+    <p class="nota" style="margin:4px 0 0">La barra más clara es el mes en curso. Pasá el mouse para ver el detalle.</p>`;
+}
+function graficoAntiguedad(tramos) {
+  const max = Math.max(...tramos.map(t => t.saldo)) || 1, W = 520, fila = 30, izq = 118;
+  const H = tramos.length * fila + 4;
+  return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="Deuda por antigüedad">${tramos.map((t, i) => {
+    const largo = (W - izq - 110) * t.saldo / max, yy = i * fila + 4, tip = `${t.tramo} · $ ${MONEDA.format(t.saldo)}`;
+    return `<text class="eje" x="${izq - 8}" y="${yy + 14}" text-anchor="end">${esc(t.tramo)}</text>
+      <rect class="barra" x="${izq}" y="${yy + 2}" width="${Math.max(largo, t.saldo ? 2 : 0)}" height="16" rx="3" data-tip="${esc(tip)}"/>
+      <text class="eje" x="${izq + largo + 6}" y="${yy + 14}">$ ${MONEDA.format(t.saldo)}</text>`;
+  }).join("")}</svg>`;
+}
+function panelTabla(titulo, columnas, tipos, filas, vacio) {
+  return `<div class="panel"><h4>${esc(titulo)}</h4>${filas.length ? tablaT(columnas, tipos, filas) : `<p class="nota">${esc(vacio)}</p>`}</div>`;
+}
+const pct = v => v === null || v === undefined ? "—" : (v * 100).toFixed(1).replace(".", ",") + " %";
+function pilar(titulo, s, contenido) {
+  if (s.sin_acceso || s.sin_datos) return `<div class="pilar"><h3>${titulo}</h3>${aviso(s.sin_acceso ? "" : "alerta", s.mensaje)}</div>`;
+  return `<div class="pilar"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}</div></div>`;
+}
+async function cargarTablero() {
+  const u = $("#usuario").value;
+  if (!u) return;
+  try {
+    const t = await api(`/tablero?usuario_id=${encodeURIComponent(u)}&dias=${$("#periodo").value}`);
+    const fecha = new Date(t.fecha + "T12:00").toLocaleDateString("es-UY", {day: "numeric", month: "long", year: "numeric"});
+    $("#tablero-sub").textContent = `Últimos ${t.dias} días al ${fecha}, comparado con los ${t.dias} días anteriores · ${$("#estado-fuente").textContent} · viendo como ${$("#usuario").selectedOptions[0]?.textContent || u}`;
+    let html = t.fecha_ajustada ? aviso("alerta", `No hay ventas en los últimos 30 días: el tablero se calcula al ${fecha}, el último día con ventas.`) : "";
+    html += pilar("Ventas", t.ventas, s => `
+      <div class="panel ancho"><h4>Venta neta por mes (últimos 12 meses)</h4>${graficoMensual(s.serie_mensual)}</div>
+      ${panelTabla("Clientes que más compraron", ["Cliente", "Venta"], ["t", "$"], s.top_clientes.map(c => [c.cliente, c.venta]), "Sin ventas a clientes en el período.")}
+      ${panelTabla("Clientes en riesgo (dejaron de comprar)", ["Cliente", "Días sin comprar", "Compra por mes"], ["t", "n", "$"], s.clientes_en_riesgo.map(c => [c.cliente, c.dias_sin_comprar, c.compra_mensual]), "Ningún cliente habitual dejó de comprar.")}
+      ${panelTabla("Por vendedor", ["Vendedor", "Venta", "Margen", "Clientes"], ["t", "$", "%", "n"], s.vendedores.map(v => [v.vendedor, v.venta, v.margen_pct, v.clientes]), "Sin ventas en el período.")}
+      ${panelTabla("Por sucursal", ["Sucursal", "Venta", "Pedidos"], ["t", "$", "n"], s.sucursales.map(v => [v.sucursal, v.venta, v.pedidos]), "Sin ventas en el período.")}`);
+    html += pilar("Inventario", t.inventario, s => `
+      ${panelTabla("Quiebres: se venden y están en 0", ["Producto", "Unidades por día", "Venta perdida por día"], ["t", "n", "$"], s.quiebres.map(q => [q.producto, q.venta_diaria, q.venta_perdida_diaria]), "No hay quiebres de stock.")}
+      ${t.inventario.por_quebrar && !t.inventario.nota ? panelTabla("Por quebrar (menos de 7 días)", ["Producto", "Stock", "Días de cobertura"], ["t", "n", "n"], s.por_quebrar.map(q => [q.producto, q.stock, q.dias_cobertura]), "Ningún producto está por quebrar.") : ""}
+      ${t.inventario.inmovilizado && !t.inventario.nota ? panelTabla("Stock inmovilizado (sin venta en 90 días)", ["Producto", "Stock", "Valor a costo", "Última venta"], ["t", "n", "$", "t"], s.inmovilizado.map(q => [q.producto, q.stock, q.valor, q.ultima_venta || "más de un año"]), "No hay stock inmovilizado.") : ""}`);
+    html += pilar("Finanzas", t.finanzas, s => `
+      <div class="panel"><h4>Deuda por antigüedad</h4>${graficoAntiguedad(s.antiguedad)}</div>
+      ${panelTabla("Clientes con deuda vencida", ["Cliente", "Vencido", "Días de atraso"], ["t", "$", "n"], s.deudores.map(d => [d.cliente, d.vencido, d.dias_max_atraso]), "Nadie tiene deuda vencida.")}`);
+    html += `<div class="panel faltan"><h4>Indicadores que todavía no se pueden calcular</h4><ul>${t.no_disponibles.map(n => `<li><b>${esc(n.indicador)}</b>: ${esc(n.motivo)} en los datos.</li>`).join("")}</ul></div>`;
+    $("#tablero-cuerpo").innerHTML = html;
+  } catch (e) { $("#tablero-cuerpo").innerHTML = aviso("error", "No se pudo armar el tablero: " + e.message); }
+}
+$("#periodo").addEventListener("change", cargarTablero);
+$("#usuario").addEventListener("change", cargarTablero);
+// Detalle al pasar el mouse (o tocar) sobre las barras
+document.addEventListener("pointermove", (e) => {
+  const tip = $("#grafico-tip"), el = e.target.closest?.("[data-tip]");
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip; tip.hidden = false;
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px"; tip.style.top = (e.clientY - tip.offsetHeight - 10) + "px";
+});
 
 // Integraciones
 const MINUTOS = {0: "No, solo a mano", 15: "Cada 15 minutos", 30: "Cada 30 minutos", 60: "Cada hora", 180: "Cada 3 horas",

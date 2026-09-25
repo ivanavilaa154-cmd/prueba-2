@@ -30,6 +30,8 @@ Marcar con [x] lo terminado. Trabajar una fase por vez.
 
 ## Fase 3 — Tablero web
 
+- [x] Tablero con indicadores de Ventas, Inventario y Finanzas por rol (`app/analisis/tablero.py`, pestaña Tablero)
+
 - [ ] Frontend Next.js: chat, pestaña Decisiones con controles de supuestos, indicadores por pilar
 - [ ] Autenticación de usuarios y asignación de rol
 - [ ] Registro de decisiones con seguimiento real vs simulado

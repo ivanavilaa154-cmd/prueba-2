@@ -52,6 +52,20 @@ pytest -q                       # 89 pruebas
 uvicorn app.main:app --reload   # preview: http://localhost:8000 · API: /docs
 ```
 
+## Tablero
+
+La primera pestaña muestra los indicadores clave de los tres pilares, con los datos de la fuente activa
+(Odoo, archivos o demo) y los permisos del usuario elegido en "Ver como":
+
+- **Ventas:** venta neta, margen, pedidos, pedido promedio, clientes activos y nuevos, venta en riesgo por
+  clientes que dejaron de comprar, venta por mes, por vendedor y por sucursal.
+- **Inventario:** valor a costo, días de inventario, rotación, quiebres y venta perdida, productos por
+  quebrar y capital inmovilizado.
+- **Finanzas:** deuda de clientes, vencida y en riesgo, antigüedad, DSO, días reales de cobro y atraso.
+
+Las cuentas están en `backend/app/analisis/tablero.py` (con pruebas contra SQL directo). Lo que falta en los
+datos (caja, cuentas por pagar, lotes, merma) se muestra como "todavía no se puede calcular".
+
 ## Integraciones: de dónde toma los datos
 
 En la pestaña **Integraciones** del preview local (`uvicorn app.main:app`, http://localhost:8000) se elige

@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from . import acceso, config
+from .analisis import tablero as tablero_analisis
 from .chat import motor
 from .decisiones import credito
 from .erp import conector, fuente, importar
@@ -119,6 +120,14 @@ def chat(pregunta: PreguntaChat):
         raise HTTPException(status_code=503, detail="Falta ANTHROPIC_API_KEY en backend/.env para usar el chat.")
     r = motor.responder(pregunta.mensaje, usuario, pregunta.historial)
     return {"respuesta": r.texto, "herramientas_usadas": r.herramientas_usadas, "historial": r.historial}
+
+
+@app.get("/tablero")
+def tablero(usuario_id: str, dias: int = 30):
+    """Indicadores de Ventas, Inventario y Finanzas con los permisos del usuario."""
+    if dias not in (7, 30, 90):
+        raise HTTPException(status_code=400, detail="El período tiene que ser 7, 30 o 90 días.")
+    return tablero_analisis.tablero(_usuario(usuario_id), dias)
 
 
 @app.get("/usuarios")
