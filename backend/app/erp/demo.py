@@ -12,23 +12,7 @@ from pathlib import Path
 
 from .. import config
 
-ESQUEMA = """
-CREATE TABLE sucursales (id INTEGER PRIMARY KEY, nombre TEXT);
-CREATE TABLE vendedores (id INTEGER PRIMARY KEY, nombre TEXT, sucursal_id INTEGER);
-CREATE TABLE proveedores (id INTEGER PRIMARY KEY, nombre TEXT, plazo_pago_dias INTEGER,
-    plazo_entrega_dias INTEGER, pedido_minimo REAL);
-CREATE TABLE clientes (id INTEGER PRIMARY KEY, razon_social TEXT, tipo TEXT, zona TEXT,
-    vendedor_id INTEGER, condicion_pago_dias INTEGER, limite_credito REAL, fecha_alta TEXT);
-CREATE TABLE productos (id INTEGER PRIMARY KEY, descripcion TEXT, categoria TEXT,
-    proveedor_id INTEGER, costo REAL, precio REAL, unidades_bulto INTEGER, perecedero INTEGER);
-CREATE TABLE stock (producto_id INTEGER, sucursal_id INTEGER, cantidad REAL);
-CREATE TABLE ventas (id INTEGER PRIMARY KEY, fecha TEXT, cliente_id INTEGER,
-    vendedor_id INTEGER, sucursal_id INTEGER, anulada INTEGER DEFAULT 0);
-CREATE TABLE ventas_lineas (venta_id INTEGER, producto_id INTEGER, cantidad REAL,
-    precio_unitario REAL, costo_unitario REAL);
-CREATE TABLE cxc (id INTEGER PRIMARY KEY, cliente_id INTEGER, fecha_emision TEXT,
-    fecha_vencimiento TEXT, fecha_cobro TEXT, importe REAL, saldo REAL);
-"""
+from .modelo import ESQUEMA  # noqa: E402  (se reexporta: otros módulos lo importan desde acá)
 
 PRODUCTOS = [
     # descripcion, categoria, proveedor, costo, margen, bulto, perecedero
@@ -59,6 +43,11 @@ CLIENTES = [
 ]
 
 
+def _insertar(con, tabla: str, **valores) -> None:
+    columnas = list(valores)
+    con.execute(f"INSERT INTO {tabla} ({','.join(columnas)}) VALUES ({','.join('?' * len(columnas))})", list(valores.values()))
+
+
 def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
     ruta = ruta or config.BACKEND / "demo_erp.db"
     hoy = hoy or date.today()
@@ -68,26 +57,26 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
     con = sqlite3.connect(ruta)
     con.executescript(ESQUEMA)
 
-    con.executemany("INSERT INTO sucursales VALUES (?,?)", [(1, "Centro"), (2, "Norte")])
-    con.executemany("INSERT INTO vendedores VALUES (?,?,?)",
-                    [(1, "Laura", 1), (2, "Diego", 2), (3, "Sofía", 1)])
-    con.executemany("INSERT INTO proveedores VALUES (?,?,?,?,?)", [
-        (1, "Lácteos del Este", 15, 2, 20000), (2, "Alimentos Unidos", 21, 5, 40000),
-        (3, "Molinos del Sur", 30, 7, 30000), (4, "Bebidas Río", 21, 3, 25000),
-        (5, "Higiene Total", 30, 6, 15000),
-    ])
+    for i, nombre in ((1, "Centro"), (2, "Norte")):
+        _insertar(con, "sucursales", id=i, nombre=nombre, tipo="sucursal")
+    for i, nombre, suc in ((1, "Laura", 1), (2, "Diego", 2), (3, "Sofía", 1)):
+        _insertar(con, "vendedores", id=i, nombre=nombre, sucursal_id=suc, activo=1)
+    for i, nombre, pago, entrega, minimo in ((1, "Lácteos del Este", 15, 2, 20000), (2, "Alimentos Unidos", 21, 5, 40000),
+                                             (3, "Molinos del Sur", 30, 7, 30000), (4, "Bebidas Río", 21, 3, 25000),
+                                             (5, "Higiene Total", 30, 6, 15000)):
+        _insertar(con, "proveedores", id=i, nombre=nombre, plazo_pago_dias=pago, plazo_entrega_dias=entrega, pedido_minimo=minimo)
     for i, (desc, cat, prov, costo, margen, bulto, per) in enumerate(PRODUCTOS, start=1):
         precio = round(costo / (1 - margen), 2)
-        con.execute("INSERT INTO productos VALUES (?,?,?,?,?,?,?,?)",
-                    (i, desc, cat, prov, costo, precio, bulto, per))
+        _insertar(con, "productos", id=i, codigo=f"P{i:03d}", descripcion=desc, categoria=cat, proveedor_id=prov,
+                  costo=costo, precio=precio, unidades_bulto=bulto, perecedero=per, unidad="u", tasa_iva=0.22, estado="activo")
         for suc in (1, 2):
-            con.execute("INSERT INTO stock VALUES (?,?,?)", (i, suc, rnd.choice([0, 5, 20, 60, 150, 400])))
+            _insertar(con, "stock", producto_id=i, sucursal_id=suc, cantidad=rnd.choice([0, 5, 20, 60, 150, 400]))
 
     for i, (nombre, tipo, zona, vend) in enumerate(CLIENTES, start=1):
         plazo = rnd.choice([0, 15, 30, 30])
         alta = hoy - timedelta(days=rnd.randint(60, 1500))
-        con.execute("INSERT INTO clientes VALUES (?,?,?,?,?,?,?,?)",
-                    (i, nombre, tipo, zona, vend, plazo, plazo * 15000, alta.isoformat()))
+        _insertar(con, "clientes", id=i, razon_social=nombre, tipo=tipo, zona=zona, vendedor_id=vend, condicion_pago_dias=plazo,
+                  limite_credito=plazo * 15000, fecha_alta=alta.isoformat(), estado="activo", canal="preventa")
 
     # Ventas de los últimos 365 días; el cliente 9 deja de comprar hace 70 días (churn).
     venta_id, cxc_id = 0, 0
@@ -102,8 +91,8 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
             suc = 1 if CLIENTES[cli - 1][2] == "Centro" else 2
             venta_id += 1
             anulada = 1 if rnd.random() < 0.01 else 0
-            con.execute("INSERT INTO ventas VALUES (?,?,?,?,?,?)",
-                        (venta_id, fecha.isoformat(), cli, vend, suc, anulada))
+            _insertar(con, "ventas", id=venta_id, tipo="factura", fecha=fecha.isoformat(), cliente_id=cli, vendedor_id=vend,
+                      sucursal_id=suc, anulada=anulada, canal="preventa")
             total = 0.0
             for prod in rnd.sample(range(1, len(PRODUCTOS) + 1), rnd.randint(3, 7)):
                 costo = PRODUCTOS[prod - 1][3] * (1 + 0.004 * (365 - dia) / 30)  # inflación
@@ -111,8 +100,8 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
                 precio = costo / (1 - margen) * rnd.uniform(0.95, 1.0)
                 cant = rnd.randint(2, 24)
                 total += cant * precio
-                con.execute("INSERT INTO ventas_lineas VALUES (?,?,?,?,?)",
-                            (venta_id, prod, cant, round(precio, 2), round(costo, 2)))
+                _insertar(con, "ventas_lineas", venta_id=venta_id, producto_id=prod, cantidad=cant, precio_unitario=round(precio, 2),
+                          costo_unitario=round(costo, 2), impuestos=round(cant * precio * 0.22, 2))
             plazo = con.execute("SELECT condicion_pago_dias FROM clientes WHERE id=?", (cli,)).fetchone()[0]
             if plazo and not anulada:
                 cxc_id += 1
@@ -120,10 +109,9 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
                 atraso = rnd.choice([0, 0, 3, 7, 12, 20]) + (25 if cli in (5, 8) else 0)
                 cobro = venc + timedelta(days=atraso)
                 pendiente = cobro > hoy
-                con.execute("INSERT INTO cxc VALUES (?,?,?,?,?,?,?)", (
-                    cxc_id, cli, fecha.isoformat(), venc.isoformat(),
-                    None if pendiente else cobro.isoformat(), round(total, 2),
-                    round(total, 2) if pendiente else 0.0))
+                _insertar(con, "cxc", id=cxc_id, tipo="factura", cliente_id=cli, vendedor_id=vend, fecha_emision=fecha.isoformat(),
+                          fecha_vencimiento=venc.isoformat(), fecha_cobro=None if pendiente else cobro.isoformat(),
+                          importe=round(total, 2), saldo=round(total, 2) if pendiente else 0.0)
     con.commit()
     con.close()
     return ruta

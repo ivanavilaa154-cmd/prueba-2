@@ -113,6 +113,14 @@ ul { margin: 6px 0; padding-left: 20px; }
 .grafico-tip { position: fixed; z-index: 10; pointer-events: none; background: var(--texto); color: var(--panel); font-size: 12.5px;
   padding: 6px 9px; border-radius: 6px; font-variant-numeric: tabular-nums; max-width: 240px; }
 .faltan { font-size: 13px; color: var(--suave); }
+.cobertura { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.cob-pilar { border: 1px solid var(--borde); border-radius: 9px; padding: 12px; }
+.cob-pilar h3 { margin: 0 0 2px; font-size: 15px; }
+.cob-fila { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: baseline; padding: 5px 0;
+  border-top: 1px solid var(--borde); font-size: 13.5px; }
+.cob-fila .n { font-variant-numeric: tabular-nums; color: var(--suave); font-size: 12.5px; }
+.cob-fila details { grid-column: 1 / -1; font-size: 12.5px; color: var(--suave); }
+.cob-fila details summary { font-size: 12.5px; }
 .faltan li { margin: 2px 0; }
 .cuenta { font-size: 12px; background: var(--codigo); border-radius: 999px; padding: 1px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cuenta.activa { background: var(--alerta-fondo); color: var(--alerta); }
@@ -202,6 +210,13 @@ ul { margin: 6px 0; padding-left: 20px; }
       </div>
     </div>
     <div id="fuente-detalle"></div>
+  </div>
+
+  <div class="tarjeta">
+    <h2>Cobertura de datos</h2>
+    <p>Qué trajo la fuente en uso, pilar por pilar. Si un sistema no tiene un dato, queda vacío y el indicador que lo
+       necesita avisa que falta: nunca se completa con supuestos.</p>
+    <div id="cobertura"></div>
   </div>
 
   <div class="tarjeta">
@@ -354,6 +369,7 @@ $("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; 
 
 // Fuente de datos
 function pintarFuente(f) {
+  if (f.fuente !== pintarFuente.ultima) { pintarFuente.ultima = f.fuente; cargarCobertura(); }
   const nombres = {demo: "datos de demostración", importada: "tus archivos", odoo: "datos de Odoo", erp: "conexión directa al ERP"};
   $("#estado-fuente").textContent = "Usando " + nombres[f.fuente];
   document.querySelectorAll(".fuente").forEach(e => e.classList.toggle("activa", e.dataset.fuente === f.fuente));
@@ -399,7 +415,7 @@ $("#importar").onclick = async () => {
     r.tablas.forEach(t => t.problemas.forEach(p => html += aviso("alerta", `${t.archivo}: ${p}`)));
     r.avisos.forEach(a => html += aviso("alerta", a));
     $("#informe").innerHTML = html;
-    pintarFuente(r.fuente); await cargarUsuarios();
+    pintarFuente(r.fuente); await cargarUsuarios(); cargarCobertura();
   } catch (e) { $("#informe").innerHTML = aviso("error", e.message); }
   $("#importar").disabled = !elegidos.length;
 };
@@ -514,6 +530,25 @@ document.addEventListener("pointermove", (e) => {
   const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
   tip.style.left = x + "px"; tip.style.top = (e.clientY - tip.offsetHeight - 10) + "px";
 });
+
+// Cobertura de datos
+const ESTADO_COB = {completa: ["ok", "Completa"], buena: ["ok", "Casi completa"], parcial: ["alerta", "Parcial"], vacia: ["", "Sin datos"]};
+async function cargarCobertura() {
+  try {
+    const c = await api("/cobertura");
+    const pilares = c.pilares.map(p => `<div class="cob-pilar"><h3>${esc(p.pilar)}</h3>
+      <p class="nota" style="margin:0 0 6px">${p.con_datos} de ${p.total} tablas con datos</p>
+      ${p.tablas.map(t => { const [cl, tx] = ESTADO_COB[t.estado];
+        const detalle = t.filas && (t.campos_vacios.length || t.campos_parciales.length) ? `<details><summary>${t.campos_completos} de ${t.campos_total} campos con datos</summary>
+          ${t.campos_vacios.length ? `Vacíos: ${esc(t.campos_vacios.join(", "))}.` : ""}
+          ${t.campos_parciales.length ? `<br>Incompletos: ${esc(t.campos_parciales.map(x => `${x.campo} (${Math.round(x.pct * 100)} %)`).join(", "))}.` : ""}</details>` : "";
+        return `<div class="cob-fila"><span>${esc(t.tabla)}</span><span class="n">${t.filas ? fmt.format(t.filas) + " filas" : ""}</span>
+          <span class="estado-chip ${cl}">${tx}</span>${detalle}</div>`; }).join("")}</div>`).join("");
+    const controles = c.controles.length ? `<div class="avisos">${c.controles.map(a => aviso(a.nivel === "error" ? "error" : "alerta", a.texto)).join("")}</div>`
+      : aviso("ok", "Los controles de calidad no encontraron problemas.");
+    $("#cobertura").innerHTML = `<div class="cobertura">${pilares}</div><h3 style="font-size:15px;margin:16px 0 6px">Controles de calidad</h3>${controles}`;
+  } catch (e) { $("#cobertura").innerHTML = aviso("error", "No se pudo calcular la cobertura: " + e.message); }
+}
 
 // Integraciones
 const MINUTOS = {0: "No, solo a mano", 15: "Cada 15 minutos", 30: "Cada 30 minutos", 60: "Cada hora", 180: "Cada 3 horas",
@@ -633,7 +668,7 @@ function seguirSincronizacion() {
   clearInterval(siguiendo);
   siguiendo = setInterval(async () => {
     const d = await cargarIntegraciones().catch(() => null);
-    if (d && !d.odoo.progreso.corriendo) { clearInterval(siguiendo); siguiendo = null; await cargarUsuarios(); }
+    if (d && !d.odoo.progreso.corriendo) { clearInterval(siguiendo); siguiendo = null; await cargarUsuarios(); cargarCobertura(); }
   }, 1500);
 }
 function pintarPasos(r) {

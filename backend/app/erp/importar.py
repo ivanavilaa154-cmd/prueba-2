@@ -20,23 +20,11 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .. import config
-from .demo import ESQUEMA
+from .modelo import BOOLEANAS, ESQUEMA, MINIMOS, es_fecha
 
 RUTA = config.BACKEND / "datos_reales.db"
 
-# Columnas sin las cuales una fila no sirve. El resto puede faltar (queda vacío).
-OBLIGATORIAS = {
-    "sucursales": ["id"],
-    "vendedores": ["id"],
-    "proveedores": ["id"],
-    "clientes": ["id"],
-    "productos": ["id"],
-    "stock": ["producto_id", "sucursal_id", "cantidad"],
-    "ventas": ["id", "fecha", "cliente_id"],
-    "ventas_lineas": ["venta_id", "producto_id", "cantidad", "precio_unitario"],
-    "cxc": ["cliente_id", "saldo"],
-}
-BOOLEANAS = {("ventas", "anulada"), ("productos", "perecedero")}
+OBLIGATORIAS = MINIMOS  # nombre anterior
 _VERDADERO = {"1", "si", "sí", "s", "true", "verdadero", "x", "yes"}
 _FALSO = {"0", "no", "n", "false", "falso", ""}
 
@@ -153,7 +141,7 @@ def _convertir(tabla: str, columna: str, tipo: str, valor):
         if texto in _FALSO:
             return 0
         raise ValueError(f"se esperaba sí/no: {valor!r}")
-    if columna.startswith("fecha"):
+    if es_fecha(columna):
         return fecha(valor)
     if valor is None or valor == "":
         return None
@@ -252,12 +240,23 @@ def _cargar_tabla(con, tabla: str, columnas: dict[str, str], nombre: str, filas:
 
 _REFERENCIAS = [
     ("ventas", "cliente_id", "clientes", "ventas de clientes que no están en clientes"),
-    ("cxc", "cliente_id", "clientes", "facturas a cobrar de clientes que no están en clientes"),
     ("ventas_lineas", "venta_id", "ventas", "líneas de ventas que no están en ventas"),
     ("ventas_lineas", "producto_id", "productos", "líneas de productos que no están en productos"),
     ("clientes", "vendedor_id", "vendedores", "clientes con un vendedor que no está en vendedores"),
     ("stock", "producto_id", "productos", "filas de stock de productos que no están en productos"),
+    ("cxc", "cliente_id", "clientes", "facturas a cobrar de clientes que no están en clientes"),
+    ("cobranzas", "cliente_id", "clientes", "cobranzas de clientes que no están en clientes"),
+    ("pedidos", "cliente_id", "clientes", "pedidos de clientes que no están en clientes"),
+    ("devoluciones", "cliente_id", "clientes", "devoluciones de clientes que no están en clientes"),
+    ("movimientos_stock", "producto_id", "productos", "movimientos de stock de productos que no están en productos"),
+    ("compras", "proveedor_id", "proveedores", "compras a proveedores que no están en proveedores"),
+    ("compras_lineas", "compra_id", "compras", "líneas de compras que no están en compras"),
+    ("cxp", "proveedor_id", "proveedores", "facturas a pagar de proveedores que no están en proveedores"),
+    ("pagos", "proveedor_id", "proveedores", "pagos a proveedores que no están en proveedores"),
+    ("movimientos_bancarios", "cuenta_id", "cuentas_bancarias", "movimientos de cuentas que no están en cuentas_bancarias"),
 ]
+# Sin estas tablas los indicadores principales quedan vacíos: se avisa en el informe de importación.
+PRINCIPALES = ["clientes", "productos", "ventas", "ventas_lineas", "stock", "cxc"]
 
 
 def _controles(con) -> list[str]:
@@ -276,8 +275,8 @@ def _controles(con) -> list[str]:
         sin_vendedor = con.execute("SELECT COUNT(*) FROM clientes WHERE vendedor_id IS NULL").fetchone()[0]
         if sin_vendedor:
             avisos.append(f"{sin_vendedor} clientes sin vendedor asignado: ningún vendedor los va a ver.")
-    for tabla, cantidad in cantidades.items():
-        if not cantidad:
+    for tabla in PRINCIPALES:
+        if not cantidades[tabla]:
             avisos.append(f"Sin datos de {tabla}: las preguntas que la necesiten van a responder que falta el dato.")
     return avisos
 

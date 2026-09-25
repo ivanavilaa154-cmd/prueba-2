@@ -102,3 +102,32 @@ def test_endpoint(base_demo_config):
     assert api.get("/tablero", params={"usuario_id": "u1", "dias": 30}).status_code == 200
     assert api.get("/tablero", params={"usuario_id": "u1", "dias": 45}).status_code == 400
     assert api.get("/tablero", params={"usuario_id": "nadie"}).status_code == 403
+
+
+def test_diccionario_igual_al_modelo():
+    """Cada tabla y campo del modelo está descripto en el diccionario, y nada más."""
+    import sqlite3
+
+    from app import config
+    from app.erp import modelo
+
+    con = sqlite3.connect(":memory:")
+    con.executescript(modelo.ESQUEMA)
+    tablas = {t: {c[1] for c in con.execute(f"PRAGMA table_info({t})")}
+              for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    dicc = config.diccionario()["tablas"]
+    assert set(dicc) == set(tablas) == {t for ts in modelo.PILARES.values() for t in ts}
+    for tabla, campos in tablas.items():
+        assert set(dicc[tabla]["campos"]) == campos, tabla
+    assert set(modelo.MINIMOS) == set(tablas)
+
+
+def test_cobertura(base_demo_config):
+    from app.analisis import cobertura
+
+    c = cobertura.cobertura()
+    por_tabla = {t["tabla"]: t for p in c["pilares"] for t in p["tablas"]}
+    assert por_tabla["clientes"]["filas"] == 12 and por_tabla["clientes"]["estado"] in ("completa", "buena")
+    assert por_tabla["cheques"]["estado"] == "vacia"
+    assert "nombre_fantasia" in por_tabla["clientes"]["campos_vacios"]
+    assert [p["pilar"] for p in c["pilares"]] == ["Ventas", "Inventario", "Finanzas"]

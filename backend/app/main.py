@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from . import acceso, config
+from .analisis import cobertura as cobertura_analisis
 from .analisis import tablero as tablero_analisis
 from .chat import motor
 from .decisiones import credito
@@ -128,6 +129,12 @@ def tablero(usuario_id: str, dias: int = 30):
     if dias not in (7, 30, 90):
         raise HTTPException(status_code=400, detail="El período tiene que ser 7, 30 o 90 días.")
     return tablero_analisis.tablero(_usuario(usuario_id), dias)
+
+
+@app.get("/cobertura")
+def cobertura():
+    """Qué datos trajo la fuente activa, tabla por tabla, y controles de calidad."""
+    return cobertura_analisis.cobertura()
 
 
 @app.get("/usuarios")

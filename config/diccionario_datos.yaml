@@ -1,73 +1,393 @@
-# Diccionario de datos: traduce el lenguaje del negocio a tablas y campos del ERP.
-# Es lo único que cambia entre clientes. Este corresponde a la base de demostración.
+# Diccionario de datos: el modelo estándar de la plataforma (backend/app/erp/modelo.py).
+# Cada integración (Odoo, archivos, base del ERP) traduce sus datos a estas tablas.
+# Todo campo puede venir vacío si el sistema de origen no lo tiene: en ese caso, decir que falta el dato.
+# Importes en la moneda de la fila (vacía = moneda de la empresa). Fechas AAAA-MM-DD. Sí/no = 1/0.
 
 tablas:
-  sucursales:
-    descripcion: Sucursales y depósitos.
-    campos: {id: identificador, nombre: nombre de la sucursal}
-  vendedores:
-    descripcion: Vendedores o preventistas.
-    campos: {id: identificador, nombre: nombre, sucursal_id: sucursal a la que pertenece}
+  # ---------------- VENTAS ----------------
   clientes:
-    descripcion: Maestro de clientes B2B.
+    descripcion: Maestro de clientes.
     campos:
-      id: identificador
-      razon_social: nombre del comercio
-      tipo: almacén, autoservicio, kiosco, restaurante
-      zona: zona geográfica
-      vendedor_id: vendedor asignado
-      condicion_pago_dias: plazo de pago pactado en días (0 = contado)
-      limite_credito: límite de crédito en UYU
-      fecha_alta: fecha de alta como cliente
-  proveedores:
-    descripcion: Proveedores.
+      id: "identificador"
+      razon_social: "nombre legal del cliente"
+      nombre_fantasia: "nombre comercial"
+      tipo: "almacén, autoservicio, supermercado, kiosco, restaurante, hotel, institución, mayorista, consumidor final"
+      canal: "canal de venta habitual (preventa, salón, televenta, e-commerce, institucional...)"
+      zona: "zona geográfica"
+      direccion: "dirección"
+      ciudad: "ciudad o departamento"
+      latitud: "latitud"
+      longitud: "longitud"
+      ruta: "ruta de reparto o visita"
+      dia_visita: "día de visita del vendedor"
+      vendedor_id: "vendedor asignado (define la cartera)"
+      lista_precios_id: "lista de precios del cliente"
+      condicion_pago_dias: "plazo de pago pactado en días (0 = contado)"
+      limite_credito: "límite de crédito"
+      fecha_alta: "fecha de alta"
+      estado: "activo, bloqueado o inactivo"
+  vendedores:
+    descripcion: Vendedores, preventistas y equipos de venta.
     campos:
-      id: identificador
-      nombre: razón social
-      plazo_pago_dias: plazo de pago que nos da el proveedor
-      plazo_entrega_dias: días desde el pedido hasta la entrega
-      pedido_minimo: importe mínimo de pedido en UYU
-  productos:
-    descripcion: Maestro de productos.
+      id: "identificador"
+      nombre: "nombre"
+      sucursal_id: "sucursal"
+      zona: "zona"
+      equipo: "equipo o canal de venta"
+      comision_pct: "comisión sobre la venta"
+      activo: "1 si está activo"
+  objetivos_vendedores:
+    descripcion: Objetivo de venta mensual por vendedor.
     campos:
-      id: identificador
-      descripcion: nombre del producto
-      categoria: categoría
-      proveedor_id: proveedor principal
-      costo: costo unitario de reposición sin IVA
-      precio: precio de lista unitario sin IVA
-      unidades_bulto: unidades por bulto de compra
-      perecedero: 1 si es perecedero
-  stock:
-    descripcion: Stock actual por producto y sucursal.
-    campos: {producto_id: producto, sucursal_id: sucursal, cantidad: unidades disponibles}
+      vendedor_id: "vendedor"
+      mes: "mes AAAA-MM"
+      objetivo_venta: "importe objetivo sin impuestos"
+  visitas:
+    descripcion: Registro de visitas de vendedores a clientes.
+    campos:
+      id: "identificador"
+      vendedor_id: "vendedor"
+      cliente_id: "cliente"
+      fecha: "fecha"
+      hora: "hora"
+      resultado: "resultado de la visita"
+      con_pedido: "1 si hubo pedido"
   ventas:
-    descripcion: Cabecera de comprobantes de venta.
+    descripcion: Comprobantes de venta (facturas, tickets de caja, remitos).
     campos:
-      id: número de comprobante
-      fecha: fecha de emisión (YYYY-MM-DD)
-      cliente_id: cliente
-      vendedor_id: vendedor
-      sucursal_id: sucursal
-      anulada: 1 si el comprobante está anulado
+      id: "identificador"
+      tipo: "factura, ticket o remito"
+      numero: "número del comprobante"
+      fecha: "fecha de la venta en hora local"
+      hora: "hora local"
+      cliente_id: "cliente (vacío en ventas de mostrador sin cliente identificado)"
+      vendedor_id: "vendedor"
+      sucursal_id: "sucursal o depósito"
+      canal: "canal o equipo de venta"
+      moneda: "moneda"
+      condicion_pago_dias: "plazo de pago de esta venta"
+      medio_pago: "medio de pago (tickets de caja)"
+      caja: "caja o punto de venta"
+      anulada: "1 si está anulada"
+      motivo_anulacion: "motivo de la anulación"
   ventas_lineas:
     descripcion: Detalle de cada comprobante de venta.
     campos:
-      venta_id: comprobante
-      producto_id: producto
-      cantidad: unidades vendidas
-      precio_unitario: precio neto sin IVA
-      costo_unitario: costo al momento de la venta
-  cxc:
-    descripcion: Cuentas por cobrar (facturas pendientes y cobradas).
+      venta_id: "comprobante"
+      producto_id: "producto"
+      cantidad: "unidades o kilos vendidos"
+      precio_lista: "precio de lista unitario sin impuestos"
+      descuento_pct: "descuento aplicado (0,1 = 10 %)"
+      precio_unitario: "precio neto unitario sin impuestos, después de descuentos"
+      costo_unitario: "costo unitario al momento de la venta"
+      impuestos: "impuestos de la línea (IVA y otros)"
+      en_promocion: "1 si se vendió en promoción"
+  devoluciones:
+    descripcion: Notas de crédito y devoluciones de clientes.
     campos:
-      id: identificador
-      cliente_id: cliente
-      fecha_emision: emisión
-      fecha_vencimiento: vencimiento pactado
-      fecha_cobro: fecha real de cobro (vacía si está pendiente)
-      importe: importe original
-      saldo: saldo pendiente (0 si se cobró)
+      id: "identificador"
+      fecha: "fecha"
+      cliente_id: "cliente"
+      venta_id: "venta de origen"
+      producto_id: "producto"
+      cantidad: "cantidad devuelta"
+      importe: "importe sin impuestos"
+      motivo: "motivo"
+  pedidos:
+    descripcion: Pedidos de clientes (lo pedido, antes de entregar y facturar).
+    campos:
+      id: "identificador"
+      numero: "número"
+      cliente_id: "cliente"
+      vendedor_id: "vendedor"
+      sucursal_id: "sucursal"
+      fecha_pedido: "fecha del pedido"
+      fecha_entrega_prometida: "fecha comprometida"
+      fecha_entrega: "fecha real de entrega"
+      estado: "pendiente, entregado, parcial o anulado"
+      motivo_anulacion: "motivo si se anuló"
+  pedidos_lineas:
+    descripcion: Detalle de los pedidos.
+    campos:
+      pedido_id: "pedido"
+      producto_id: "producto"
+      cantidad_pedida: "cantidad pedida"
+      cantidad_entregada: "cantidad entregada"
+  presupuestos:
+    descripcion: Presupuestos o cotizaciones a clientes.
+    campos:
+      id: "identificador"
+      numero: "número"
+      cliente_id: "cliente"
+      vendedor_id: "vendedor"
+      fecha: "fecha"
+      importe: "importe sin impuestos"
+      estado: "enviado, aceptado o rechazado"
+      venta_id: "venta en la que se convirtió"
+  listas_precios:
+    descripcion: Listas de precios.
+    campos:
+      id: "identificador"
+      nombre: "nombre"
+      moneda: "moneda"
+  precios:
+    descripcion: Precios por lista y su historial.
+    campos:
+      lista_precios_id: "lista"
+      producto_id: "producto"
+      precio: "precio sin impuestos"
+      desde: "vigente desde"
+  promociones:
+    descripcion: Promociones y precios especiales.
+    campos:
+      id: "identificador"
+      nombre: "nombre"
+      producto_id: "producto"
+      desde: "inicio"
+      hasta: "fin"
+      tipo: "porcentaje, 2x1, combo o precio especial"
+      precio_promocional: "precio promocional"
+      descuento_pct: "descuento"
+      financia_proveedor: "1 si la paga el proveedor"
+
+  # ---------------- INVENTARIO ----------------
+  sucursales:
+    descripcion: Sucursales y depósitos.
+    campos:
+      id: "identificador"
+      nombre: "nombre"
+      tipo: "sucursal o depósito"
+  productos:
+    descripcion: Maestro de productos.
+    campos:
+      id: "identificador"
+      codigo: "código interno"
+      codigo_barras: "código de barras (EAN/DUN)"
+      descripcion: "nombre del producto"
+      marca: "marca"
+      categoria: "categoría"
+      subcategoria: "subcategoría"
+      familia: "familia"
+      proveedor_id: "proveedor principal"
+      unidad: "unidad de medida"
+      unidades_bulto: "unidades por bulto de compra"
+      multiplo_compra: "múltiplo de compra"
+      peso_kg: "peso en kilos"
+      volumen_m3: "volumen en metros cúbicos"
+      pesable: "1 si se vende por peso"
+      perecedero: "1 si es perecedero"
+      vida_util_dias: "vida útil en días"
+      es_kit: "1 si es kit o combo"
+      tasa_iva: "tasa de IVA (0,22 = 22 %)"
+      estado: "activo, discontinuado o bloqueado"
+      fecha_alta: "fecha de alta"
+      costo: "costo unitario de reposición sin impuestos"
+      precio: "precio de lista unitario sin impuestos"
+  componentes_kit:
+    descripcion: Componentes de kits y combos.
+    campos:
+      kit_id: "producto kit"
+      producto_id: "componente"
+      cantidad: "cantidad por kit"
+  stock:
+    descripcion: Stock actual por producto, sucursal, ubicación y lote.
+    campos:
+      producto_id: "producto"
+      sucursal_id: "sucursal o depósito"
+      ubicacion: "ubicación"
+      lote: "lote"
+      fecha_vencimiento: "vencimiento del lote"
+      cantidad: "cantidad física"
+      comprometido: "reservado para pedidos"
+      en_transito: "en camino (compras o transferencias no recibidas)"
+  movimientos_stock:
+    descripcion: Movimientos de stock (ventas, compras, devoluciones, transferencias, ajustes, mermas, consumo, producción).
+    campos:
+      id: "identificador"
+      fecha: "fecha"
+      producto_id: "producto"
+      sucursal_id: "sucursal"
+      tipo: "venta, compra, devolucion_cliente, devolucion_proveedor, transferencia_entrada, transferencia_salida, ajuste, merma, vencimiento, consumo_interno o produccion"
+      motivo: "motivo (rotura, robo, vencimiento...)"
+      cantidad: "cantidad con signo (+ entra, - sale)"
+      costo_unitario: "costo"
+      comprobante: "comprobante"
+      usuario: "usuario"
+  proveedores:
+    descripcion: Proveedores y sus condiciones.
+    campos:
+      id: "identificador"
+      nombre: "razón social"
+      plazo_pago_dias: "plazo de pago que nos dan"
+      plazo_entrega_dias: "días desde el pedido hasta la entrega"
+      pedido_minimo: "importe mínimo de pedido"
+      pedido_minimo_unidades: "mínimo en unidades"
+      dias_pedido: "días en que se hace el pedido"
+      descuento_pronto_pago_pct: "descuento por pronto pago"
+      acepta_devolucion_vencidos: "1 si acepta devolución de vencidos"
+  compras:
+    descripcion: Órdenes de compra a proveedores.
+    campos:
+      id: "identificador"
+      numero: "número"
+      proveedor_id: "proveedor"
+      sucursal_id: "sucursal que recibe"
+      fecha: "fecha de emisión"
+      fecha_prometida: "fecha prometida de entrega"
+      fecha_recepcion: "fecha real de recepción"
+      estado: "estado"
+      moneda: "moneda"
+  compras_lineas:
+    descripcion: Detalle de órdenes de compra.
+    campos:
+      compra_id: "orden"
+      producto_id: "producto"
+      cantidad_pedida: "pedida"
+      cantidad_recibida: "recibida"
+      precio_pactado: "precio pactado"
+      precio_facturado: "precio facturado"
+  costos_historial:
+    descripcion: Historial de costos por producto.
+    campos:
+      producto_id: "producto"
+      fecha: "fecha del cambio"
+      costo: "costo desde esa fecha"
+  conteos:
+    descripcion: Conteos físicos e inventarios cíclicos.
+    campos:
+      id: "identificador"
+      fecha: "fecha"
+      producto_id: "producto"
+      sucursal_id: "sucursal"
+      cantidad_contada: "contada"
+      cantidad_sistema: "en sistema al contar"
+      usuario: "quién contó"
+
+  # ---------------- FINANZAS ----------------
+  cxc:
+    descripcion: Cuentas por cobrar (facturas, notas de crédito y débito de clientes).
+    campos:
+      id: "identificador"
+      tipo: "factura, nota_credito o nota_debito"
+      numero: "número"
+      cliente_id: "cliente"
+      vendedor_id: "vendedor"
+      fecha_emision: "emisión"
+      fecha_vencimiento: "vencimiento"
+      fecha_cobro: "fecha real de cobro (vacía si está pendiente)"
+      moneda: "moneda"
+      importe: "importe total"
+      saldo: "saldo pendiente (0 si se cobró)"
+  cobranzas:
+    descripcion: Cobranzas recibidas de clientes.
+    campos:
+      id: "identificador"
+      fecha: "fecha"
+      cliente_id: "cliente"
+      medio: "efectivo, transferencia, tarjeta, cheque, billetera u otro"
+      importe: "importe"
+      moneda: "moneda"
+      cxc_id: "factura a la que se aplicó"
+  cheques:
+    descripcion: Cheques recibidos y emitidos.
+    campos:
+      id: "identificador"
+      tipo: "recibido o emitido"
+      numero: "número"
+      banco: "banco"
+      cliente_id: "cliente (si es recibido)"
+      proveedor_id: "proveedor (si es emitido)"
+      fecha_emision: "emisión"
+      fecha_cobro: "fecha de cobro o pago"
+      importe: "importe"
+      moneda: "moneda"
+      estado: "cartera, depositado, cobrado, rechazado o entregado"
+  cxp:
+    descripcion: Cuentas por pagar (facturas de proveedores).
+    campos:
+      id: "identificador"
+      tipo: "factura, nota_credito o nota_debito"
+      numero: "número"
+      proveedor_id: "proveedor"
+      fecha_emision: "emisión"
+      fecha_vencimiento: "vencimiento"
+      fecha_pago: "fecha real de pago"
+      moneda: "moneda"
+      importe: "importe total"
+      saldo: "saldo pendiente"
+  pagos:
+    descripcion: Pagos realizados a proveedores.
+    campos:
+      id: "identificador"
+      fecha: "fecha"
+      proveedor_id: "proveedor"
+      medio: "medio de pago"
+      importe: "importe"
+      moneda: "moneda"
+      cxp_id: "factura pagada"
+  cuentas_bancarias:
+    descripcion: Bancos y cajas con su saldo.
+    campos:
+      id: "identificador"
+      nombre: "nombre"
+      tipo: "banco o caja"
+      moneda: "moneda"
+      saldo: "saldo actual"
+      fecha_saldo: "fecha del saldo"
+  movimientos_bancarios:
+    descripcion: Movimientos de bancos y cajas.
+    campos:
+      id: "identificador"
+      cuenta_id: "cuenta"
+      fecha: "fecha"
+      concepto: "concepto"
+      importe: "importe con signo"
+      conciliado: "1 si está conciliado"
+  gastos:
+    descripcion: Gastos operativos por cuenta y sucursal.
+    campos:
+      id: "identificador"
+      fecha: "fecha"
+      sucursal_id: "sucursal"
+      cuenta: "cuenta contable"
+      categoria: "personal, alquiler, energía, logística, mantenimiento, seguros, comisiones, marketing, sistemas, servicios u otros"
+      importe: "importe"
+      moneda: "moneda"
+  impuestos:
+    descripcion: Impuestos a pagar y sus vencimientos.
+    campos:
+      id: "identificador"
+      impuesto: "nombre"
+      periodo: "período"
+      vencimiento: "vencimiento"
+      importe: "importe"
+      estado: "pendiente o pagado"
+  prestamos:
+    descripcion: Préstamos y financiamiento.
+    campos:
+      id: "identificador"
+      entidad: "banco o entidad"
+      moneda: "moneda"
+      capital: "capital original"
+      tasa_anual: "tasa anual"
+      fecha_inicio: "inicio"
+      cuotas: "cantidad de cuotas"
+      cuota_importe: "importe de la cuota"
+      saldo: "saldo pendiente"
+      proximo_vencimiento: "próxima cuota"
+  tipos_cambio:
+    descripcion: Cotizaciones diarias de monedas.
+    campos:
+      fecha: "fecha"
+      moneda: "moneda"
+      cotizacion: "cotización en moneda de la empresa"
+  presupuesto:
+    descripcion: Presupuesto anual por mes.
+    campos:
+      mes: "mes AAAA-MM"
+      concepto: "venta, gasto o una categoría de gasto"
+      sucursal_id: "sucursal"
+      importe: "importe"
 
 relaciones:
   - ventas.cliente_id = clientes.id
@@ -75,29 +395,49 @@ relaciones:
   - ventas.sucursal_id = sucursales.id
   - ventas_lineas.venta_id = ventas.id
   - ventas_lineas.producto_id = productos.id
+  - clientes.vendedor_id = vendedores.id
+  - clientes.lista_precios_id = listas_precios.id
+  - devoluciones.venta_id = ventas.id
+  - pedidos_lineas.pedido_id = pedidos.id
+  - presupuestos.venta_id = ventas.id
+  - precios.lista_precios_id = listas_precios.id
   - productos.proveedor_id = proveedores.id
   - stock.producto_id = productos.id
+  - stock.sucursal_id = sucursales.id
+  - movimientos_stock.producto_id = productos.id
+  - compras.proveedor_id = proveedores.id
+  - compras_lineas.compra_id = compras.id
   - cxc.cliente_id = clientes.id
-  - clientes.vendedor_id = vendedores.id
+  - cobranzas.cxc_id = cxc.id
+  - cxp.proveedor_id = proveedores.id
+  - pagos.cxp_id = cxp.id
+  - movimientos_bancarios.cuenta_id = cuentas_bancarias.id
 
 definiciones:
-  venta_neta: SUM(ventas_lineas.cantidad * ventas_lineas.precio_unitario) excluyendo ventas.anulada = 1
+  venta_neta: SUM(ventas_lineas.cantidad * ventas_lineas.precio_unitario) excluyendo ventas.anulada = 1 (sin impuestos)
+  venta_con_impuestos: venta_neta + SUM(ventas_lineas.impuestos)
   margen_bruto: venta_neta - SUM(cantidad * costo_unitario)
   margen_porcentaje: margen_bruto / venta_neta
   deuda_vencida: SUM(cxc.saldo) donde fecha_vencimiento < hoy y saldo > 0
   dias_reales_cobro: promedio de (fecha_cobro - fecha_emision) en facturas cobradas
   atraso_promedio: promedio de (fecha_cobro - fecha_vencimiento) en facturas cobradas
+  deuda_proveedores: SUM(cxp.saldo)
+  dpo: deuda_proveedores / (compras facturadas de los últimos 90 días / 90)
+  caja_disponible: SUM(cuentas_bancarias.saldo)
+  merma: SUM(-movimientos_stock.cantidad * costo_unitario) donde tipo en (merma, vencimiento)
+  cumplimiento_proveedor: porcentaje de líneas de compra recibidas completas y en fecha
 
 sinonimos:
   "lo que me deben": deuda de clientes (cxc.saldo)
   "la calle": deuda de clientes (cxc.saldo)
   "cuenta corriente": cxc
   "facturación": venta_neta
-  "la Norte": sucursal Norte
-  "la Centro": sucursal Centro
+  "lo que debo": deuda con proveedores (cxp.saldo)
+  "la caja": cuentas_bancarias
+  "equipo de ventas": ventas.canal
 
 filtros_por_defecto:
   - Excluir ventas con anulada = 1.
 
 frescura:
-  todo: base de demostración estática
+  todo: la última sincronización o importación (ver Integraciones)
