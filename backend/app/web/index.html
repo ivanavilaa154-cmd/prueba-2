@@ -79,6 +79,10 @@ pre { background: var(--codigo); padding: 8px 10px; border-radius: 7px; white-sp
 .prueba { border: 1px solid var(--borde); border-radius: 8px; padding: 10px; font-size: 14px; }
 .prueba b { display: block; }
 ul { margin: 6px 0; padding-left: 20px; }
+.cuenta { font-size: 12px; background: var(--codigo); border-radius: 999px; padding: 1px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cuenta.activa { background: var(--alerta-fondo); color: var(--alerta); }
+.cuenta-panel { margin-top: 14px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.cuenta-panel b { font-size: 17px; }
 .plataformas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .plataforma { border: 1px solid var(--borde); border-radius: 9px; padding: 12px; display: grid; gap: 6px; align-content: start;
   text-align: left; background: var(--panel); color: var(--texto); font: inherit; cursor: pointer; }
@@ -107,7 +111,7 @@ ul { margin: 6px 0; padding-left: 20px; }
 <header>
   <div>
     <h1 id="empresa">Plataforma IA</h1>
-    <div class="sub"><span id="estado-fuente">…</span><span id="salir" hidden> · <a href="/salir">Salir</a></span></div>
+    <div class="sub"><span id="estado-fuente">…</span> <span id="cuenta-sync" class="cuenta" hidden></span><span id="salir" hidden> · <a href="/salir">Salir</a></span></div>
   </div>
   <label class="usuario">Ver como
     <select id="usuario"></select>
@@ -383,7 +387,51 @@ function pintarIntegraciones(d) {
   $("#odoo-chip").className = "estado-chip " + clase; $("#odoo-chip").textContent = texto;
   $("#fuente-odoo-desc").textContent = o.ultima_ok ? `Sincronizado el ${fechaCorta(o.ultima_ok.fecha)}` : "Todavía no sincronizaste Odoo.";
   pintarEstadoOdoo(o);
+  reloj.inicio = o.progreso.corriendo ? Date.now() - o.progreso.segundos * 1000 : null;
+  reloj.fin = o.segundos_para_proxima === null ? null : Date.now() + o.segundos_para_proxima * 1000;
+  reloj.configurado = o.config.clave_guardada;
+  if (o.progreso.corriendo && !siguiendo) seguirSincronizacion();
+  tic();
 }
+
+// Cuenta regresiva hasta la próxima sincronización automática
+const reloj = {inicio: null, fin: null, configurado: false, esperando: false};
+function duracion(seg) {
+  seg = Math.max(0, Math.round(seg));
+  const h = Math.floor(seg / 3600), m = Math.floor(seg % 3600 / 60), s = seg % 60;
+  if (h) return `${h} h ${String(m).padStart(2, "0")} min`;
+  if (m) return `${m} min ${String(s).padStart(2, "0")} s`;
+  return `${s} s`;
+}
+function tic() {
+  const cabecera = $("#cuenta-sync"), panel = $("#odoo-cuenta");
+  let corto = "", largo = "", activa = false;
+  if (reloj.inicio) {
+    activa = true;
+    corto = `Sincronizando Odoo · ${duracion((Date.now() - reloj.inicio) / 1000)}`;
+    largo = `Sincronizando ahora, hace <b>${duracion((Date.now() - reloj.inicio) / 1000)}</b>.`;
+  } else if (reloj.fin) {
+    const faltan = (reloj.fin - Date.now()) / 1000;
+    if (faltan > 0) {
+      corto = `Próxima sincronización en ${duracion(faltan)}`;
+      largo = `Próxima sincronización automática en <b>${duracion(faltan)}</b>.`;
+    } else {
+      activa = true;
+      corto = "Sincronizando en unos segundos…";
+      largo = "La sincronización automática arranca en unos segundos…";
+      if (!reloj.esperando) {  // el programador revisa cada 30 s: se consulta hasta que arranque
+        reloj.esperando = true;
+        setTimeout(async () => { await cargarIntegraciones().catch(() => null); reloj.esperando = false; }, 5000);
+      }
+    }
+  } else if (reloj.configurado) {
+    largo = "La sincronización automática está apagada: elegí cada cuánto en «Sincronizar automáticamente» y tocá Guardar.";
+  }
+  cabecera.hidden = !corto; cabecera.textContent = corto; cabecera.classList.toggle("activa", activa);
+  if (panel) panel.innerHTML = largo;
+}
+setInterval(tic, 1000);
+setInterval(() => { if (!siguiendo) cargarIntegraciones().catch(() => null); }, 60000);  // por si cambió algo en el servidor
 function llenarFormularioOdoo(c) {
   $("#odoo-cada").innerHTML = integ.intervalos.map(m => `<option value="${m}">${esc(MINUTOS[m] || m + " min")}</option>`).join("");
   $("#odoo-url").value = c.url; $("#odoo-db").value = c.db; $("#odoo-usuario").value = c.usuario;
@@ -395,14 +443,14 @@ function datosOdoo() {
     api_key: $("#odoo-clave").value.trim(), meses: Number($("#odoo-meses").value), cada_min: Number($("#odoo-cada").value)};
 }
 function pintarEstadoOdoo(o) {
-  let html = "";
+  let html = `<div class="cuenta-panel" id="odoo-cuenta"></div>`;
   if (o.progreso.corriendo) html += aviso("alerta", (o.progreso.paso || "Sincronizando…") + " Podés seguir usando la plataforma.");
   const u = o.historial[0];
   if (u && !u.ok) html += aviso("error", `La sincronización del ${fechaCorta(u.fecha)} falló: ${u.error}`);
   if (o.ultima_ok) {
     const n = o.ultima_ok.conteos;
     html += `<p style="margin:14px 0 6px"><b>Última sincronización:</b> ${fechaCorta(o.ultima_ok.fecha)} (${fmt.format(o.ultima_ok.segundos)} s)` +
-      (o.proxima ? ` · próxima: ${fechaCorta(o.proxima)}` : "") + `</p><div class="chips">` +
+      `</p><div class="chips">` +
       Object.entries(n).map(([t, c]) => `<span class="chip ${c ? "" : "vacia"}">${esc(t)}: ${fmt.format(c)}</span>`).join("") + "</div>";
     if (o.ultima_ok.avisos.length) html += `<details style="margin-top:8px"><summary>${o.ultima_ok.avisos.length} avisos sobre los datos</summary>` +
       o.ultima_ok.avisos.map(a => aviso("alerta", a)).join("") + "</details>";
@@ -449,6 +497,7 @@ $("#odoo-sincronizar").onclick = async () => {
   try {
     const estado = await api("/integraciones/odoo/sincronizar", {method: "POST"});
     pintarEstadoOdoo({...estado, config: integ.odoo.config});
+    reloj.inicio = Date.now(); tic();
     seguirSincronizacion();
   }
   catch (e) { $("#odoo-estado").innerHTML = aviso("error", e.message); }

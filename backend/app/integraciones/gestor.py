@@ -120,15 +120,27 @@ def _guardar_estado(estado: dict) -> None:
     RUTA_ESTADO.write_text(json.dumps(estado, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def _proxima_ts(historial: list[dict], cfg: dict) -> float | None:
+    """Cuándo corre la próxima sincronización automática (mismo criterio que el programador)."""
+    if not cfg["cada_min"] or not cfg["clave_guardada"]:
+        return None
+    if not historial:
+        return time.time()  # nunca se sincronizó: arranca en la próxima vuelta del programador
+    return historial[0]["ts"] + cfg["cada_min"] * 60
+
+
 def estado_odoo() -> dict:
     estado = _leer_estado()
     ultima = next((h for h in estado["historial"] if h["ok"]), None)
-    cada = config_odoo()["cada_min"]
-    proxima = None
-    if cada and ultima:
-        proxima = datetime.fromtimestamp(ultima["ts"] + cada * 60).isoformat(timespec="minutes")
-    return {"progreso": dict(_progreso), "historial": estado["historial"][:10], "ultima_ok": ultima,
-            "proxima": proxima, "base_disponible": RUTA_ODOO.exists()}
+    cfg = config_odoo()
+    proxima_ts = _proxima_ts(estado["historial"], cfg)
+    ahora = time.time()
+    progreso = dict(_progreso)
+    progreso["segundos"] = round(ahora - progreso["inicio"]) if progreso["corriendo"] and progreso["inicio"] else 0
+    return {"progreso": progreso, "historial": estado["historial"][:10], "ultima_ok": ultima,
+            "proxima": datetime.fromtimestamp(proxima_ts).isoformat(timespec="minutes") if proxima_ts else None,
+            "segundos_para_proxima": max(0, round(proxima_ts - ahora)) if proxima_ts else None,
+            "cada_min": cfg["cada_min"], "base_disponible": RUTA_ODOO.exists()}
 
 
 # --- sincronización ---------------------------------------------------------------
@@ -204,11 +216,8 @@ def iniciar_programador(al_terminar=None, cada_segundos: int = 30) -> None:
         while True:
             time.sleep(cada_segundos)
             try:
-                cfg = config_odoo()
-                if not cfg["cada_min"] or not cfg["clave_guardada"] or _progreso["corriendo"]:
-                    continue
-                ultima = next(iter(_leer_estado()["historial"]), None)
-                if not ultima or time.time() - ultima["ts"] >= cfg["cada_min"] * 60:
+                proxima = _proxima_ts(_leer_estado()["historial"], config_odoo())
+                if proxima is not None and not _progreso["corriendo"] and time.time() >= proxima:
                     sincronizar_en_segundo_plano(al_terminar)
             except Exception:
                 pass  # el programador nunca debe morir; el error queda en el historial

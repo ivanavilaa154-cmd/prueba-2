@@ -315,3 +315,16 @@ def test_sincronizacion_fallida_conserva_la_base(entorno, monkeypatch):
     assert not fallida["ok"] and "rechazó" in fallida["error"]
     assert gestor.RUTA_ODOO.read_bytes() == antes
     assert [h["ok"] for h in gestor.estado_odoo()["historial"]] == [False, True]
+
+
+def test_cuenta_regresiva(entorno, monkeypatch):
+    gestor.guardar_odoo("https://odoo.test", "empresa", "integracion@empresa.com", "secreta", 12, 0)
+    assert gestor.estado_odoo()["segundos_para_proxima"] is None  # automática apagada
+    gestor.guardar_odoo("https://odoo.test", "empresa", "integracion@empresa.com", None, 12, 60)
+    assert gestor.estado_odoo()["segundos_para_proxima"] == 0  # nunca sincronizó: arranca ya
+    entrada = gestor.sincronizar_odoo()
+    monkeypatch.setattr(gestor.time, "time", lambda: entrada["ts"] + 10 * 60)
+    estado = gestor.estado_odoo()
+    assert estado["segundos_para_proxima"] == 50 * 60 and estado["cada_min"] == 60
+    monkeypatch.setattr(gestor.time, "time", lambda: entrada["ts"] + 2 * 3600)
+    assert gestor.estado_odoo()["segundos_para_proxima"] == 0
