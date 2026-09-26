@@ -1,0 +1,63 @@
+id: INV-15
+nombre: SKUs a reponer (bajo punto de pedido)
+pregunta: ¿Qué tenemos que comprar ya?
+definicion: SKUs activos cuyo stock disponible + en tránsito ≤ punto de pedido; cantidad sugerida = objetivo − (disponible + tránsito).
+formula: 'punto_pedido = coalesce(pr.punto_pedido, vdp * (lead_time_dias + dias_seguridad))
+
+  objetivo = coalesce(pr.stock_maximo, vdp * (lead_time_dias + cobertura_objetivo))
+
+  sugerido = greatest(objetivo - (stock_disponible + stock_en_transito), 0) redondeado a múltiplo de compra
+
+  where stock_disponible + stock_en_transito <= punto_pedido
+
+  '
+cube: reposicion.skus_a_reponer, reposicion.valor_sugerido
+unidad: cantidad | moneda
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- proveedor
+- deposito
+- categoria
+- clasificacion_abc
+filtros_base:
+- producto activo
+- gestiona_stock
+parametros:
+  dias_seguridad: 7
+  cobertura_objetivo: 30
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_pedido_linea.cantidad
+  opcionales:
+  - fct_stock_diario.stock_en_transito
+  - fct_stock_diario.stock_reservado
+  - parametro_reposicion.punto_pedido
+  - parametro_reposicion.stock_maximo
+  alternativas:
+  - nombre: lead_time_parametro
+    obligatorias:
+    - parametro_reposicion.lead_time_dias
+  - nombre: lead_time_proveedor
+    obligatorias:
+    - dim_producto.proveedor_principal_id
+    - dim_proveedor.lead_time_dias_estandar
+  - nombre: lead_time_historico
+    obligatorias:
+    - fct_orden_compra.fecha_emision
+    - fct_recepcion.fecha_recepcion
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- Es sugerencia; el agente no genera OCs, solo lista (la creación de OC es fase 3 con aprobación humana).
+alertas:
+- condicion: SKU clase A bajo punto de pedido sin OC abierta
+  severidad: alta
+relacionados:
+- INV-05
+- INV-16
+- INV-17
+area: inventario

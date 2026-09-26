@@ -1,0 +1,40 @@
+id: VEN-12
+nombre: Tasa de recompra
+pregunta: ¿Qué porcentaje de clientes vuelve a comprar?
+definicion: Clientes con ≥2 pedidos en ventana / clientes con ≥1 pedido en ventana (12 meses móviles por defecto); y cohortes de recompra a 30/60/90/180
+  días.
+formula: "with c as (select cliente_id, count(distinct pedido_id) n from core.fct_pedido\n           where pedido_valido and fecha_pedido > :hasta\
+  \ - interval '12 months' and fecha_pedido <= :hasta group by 1)\nselect count(*) filter (where n >= 2)::numeric / nullif(count(*),0) from c;\n\
+  -- cohortes: marts.ven__cohortes_recompra (cohorte = mes de primera compra, % que recompra en N días)\n"
+cube: clientes.tasa_recompra, cohortes.recompra_n_dias
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- canal (de primera compra)
+- canal_marketing adquisición
+- categoria primera compra
+filtros_base:
+- pedido_valido
+- cliente identificado
+parametros:
+  ventana_meses: 12
+  dias_cohorte: 30|60|90|180
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- En marketplace el buyer id cambia poco pero no hay email; la recompra cross-canal puede subestimarse.
+alertas:
+- condicion: tasa_recompra 12m cae > 3 pp vs trimestre anterior
+  severidad: media
+relacionados:
+- VEN-13
+- VEN-14
+- VEN-15
+area: ventas

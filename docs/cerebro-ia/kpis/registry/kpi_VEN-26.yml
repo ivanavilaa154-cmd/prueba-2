@@ -1,0 +1,46 @@
+id: VEN-26
+nombre: Rendimiento de promociones (ROI)
+pregunta: ¿Las promociones nos hacen ganar o perder plata?
+definicion: Margen incremental neto de las promociones (con canibalización y efecto posterior) sobre su costo (descuento otorgado + comunicación
+  − aporte del proveedor); % de promociones que rindieron.
+formula: "select sum(margen_incremental_neto) margen_incremental, sum(margen_incremental_neto) / nullif(sum(costo_promocion),0) roi,\n       avg((roi\
+  \ >= :roi_minimo)::int) pct_rindieron\nfrom marts.act__promociones where fecha_fin between :desde and :hasta;\n"
+cube: promociones.roi, promociones.margen_incremental
+unidad: ratio | moneda | porcentaje
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- mecanica
+- objetivo
+- categoria
+- canal
+- sucursal
+filtros_base:
+- promociones finalizadas hace ≥ 14 días para incluir efecto posterior
+parametros:
+  roi_minimo: 0
+requisitos:
+  obligatorias:
+  - dim_promocion.fecha_inicio
+  - dim_promocion.fecha_fin
+  - fct_promocion_producto.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.importe_neto
+  - fct_pedido_linea.costo_total
+  opcionales:
+  - fct_pedido_linea.promocion_id
+  - dim_promocion.aporte_proveedor_monto
+  - dim_promocion.costo_comunicacion
+casos_borde:
+- Promociones superpuestas sobre el mismo producto se evalúan en conjunto y se informa la superposición.
+alertas:
+- condicion: margen incremental neto del mes < 0
+  severidad: alta
+relacionados:
+- VEN-08
+- VEN-18
+roles_minimos:
+- promociones
+- ventas
+area: ventas

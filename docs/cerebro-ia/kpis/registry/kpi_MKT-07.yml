@@ -1,0 +1,46 @@
+id: MKT-07
+nombre: MER / ROAS real
+pregunta: ¿Cuánto vendemos en total por cada unidad de moneda invertida en marketing?
+definicion: MER = venta neta total (VEN-01) / inversión total en marketing (ads + otros gastos de marketing opcionales). ROAS real por canal =
+  venta atribuida last-click al canal / gasto del canal.
+formula: "mer = VEN-01.venta_neta / nullif(MKT-01.inversion, 0)\nroas_real_canal = Σ fct_pedido.importe_neto join fct_atribucion_pedido(modelo='ultimo_clic_utm')\
+  \ por canal_marketing\n                  / Σ fct_ads_diario.gasto por canal_marketing\n"
+cube: marketing.mer, marketing.roas_real
+unidad: ratio
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia (semana recomendado)
+dimensiones:
+- canal_marketing
+- plataforma (solo roas_real)
+- campana (solo si utm consistente)
+filtros_base:
+- pedido_valido
+parametros:
+  incluir_canales: online|todos
+  modelo: ultimo_clic_utm
+  incluir_otros_gastos_mkt: false
+requisitos:
+  obligatorias:
+  - fct_pedido.importe_neto
+  - fct_ads_diario.gasto
+  opcionales:
+  - fct_atribucion_pedido.canal_marketing
+  - fct_atribucion_pedido.campana_id
+  - fct_pedido.utm_source
+  - fct_pedido.utm_medium
+  - fct_pedido.utm_campaign
+roles_minimos:
+- publicidad
+- ventas
+casos_borde:
+- MER con incluir_canales='online' excluye mostrador/mayorista para no inflar.
+- Last-click subestima plataformas de awareness (awareness); el agente lo menciona al comparar canales.
+alertas:
+- condicion: mer semanal cae > 20% vs promedio 4 semanas
+  severidad: alta
+relacionados:
+- MKT-06
+- MKT-08
+- MKT-22
+area: marketing

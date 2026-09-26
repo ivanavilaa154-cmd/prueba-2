@@ -1,0 +1,39 @@
+id: LOG-17
+nombre: Scorecard de transportistas
+pregunta: ¿Qué transportista funciona mejor y a qué costo?
+definicion: Vista por transportista × zona con envíos, costo por envío, tránsito P50/P90, OTD, primer intento, fallidos y siniestros.
+formula: vista compuesta LOG-01, LOG-11, LOG-05, LOG-06, LOG-08, LOG-09, LOG-10 con dimensiones transportista y zona_destino
+cube: view transportistas_scorecard
+unidad: varias
+direccion: mayor_mejor
+agregacion: vista
+grano_min: mes
+dimensiones:
+- transportista
+- servicio
+- zona_destino
+filtros_base:
+- mínimo 30 envíos por celda para mostrar
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.despacho_at
+  - fct_envio.entrega_at
+  - fct_envio.fecha_promesa
+  - fct_envio.estado
+  - fct_envio.costo_envio
+  opcionales:
+  - fct_envio.cantidad_intentos
+  - fct_envio.zona_destino
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas:
+- condicion: transportista peor en OTD y más caro en una zona con > 100 envíos/mes → sugerir revisión
+  severidad: media
+relacionados:
+- LOG-05
+- LOG-06
+- LOG-11
+area: logistica

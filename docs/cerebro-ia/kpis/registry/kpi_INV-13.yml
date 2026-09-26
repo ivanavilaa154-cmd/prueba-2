@@ -1,0 +1,36 @@
+id: INV-13
+nombre: Exactitud de inventario
+pregunta: ¿El stock del sistema coincide con el físico?
+definicion: '% de SKUs contados cuya diferencia está dentro de la tolerancia (default 0 unidades o ±2 %); valor absoluto de diferencias / valor
+  contado.'
+formula: "select count(*) filter (where abs(diferencia) <= greatest(:tol_unid, abs(cantidad_sistema)*:tol_pct))::numeric / nullif(count(*),0)\
+  \ exactitud,\n       sum(abs(valor_diferencia)) / nullif(sum(cantidad_contada * costo),0) error_valor\nfrom core.fct_conteo_inventario where\
+  \ fecha between :desde and :hasta;\n"
+cube: stock.exactitud_inventario
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- deposito
+- categoria
+- clasificacion_abc
+filtros_base: []
+parametros:
+  tol_unid: 0
+  tol_pct: 0.02
+requisitos:
+  obligatorias:
+  - fct_conteo_inventario.cantidad_sistema
+  - fct_conteo_inventario.cantidad_contada
+  opcionales: []
+roles_minimos:
+- inventario
+casos_borde:
+- Sin conteos en el período → KPI no disponible; se usa INV-14 como proxy.
+alertas:
+- condicion: exactitud < 95%
+  severidad: alta
+relacionados:
+- INV-14
+area: inventario

@@ -1,0 +1,40 @@
+id: LOG-08
+nombre: Entrega en primer intento
+pregunta: ¿Qué porcentaje de envíos se entrega en la primera visita?
+definicion: Envíos entregados con cantidad_intentos = 1 / envíos entregados + fallidos del período.
+formula: select count(*) filter (where estado='entregado' and cantidad_intentos <= 1)::numeric / nullif(count(*) filter (where estado in ('entregado','devuelto_origen')),0)
+  from core.fct_envio where local_date(coalesce(entrega_at, _actualizado_at)) between :desde and :hasta;
+cube: envios.primer_intento_pct
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- transportista
+- zona_destino
+- region_destino
+filtros_base:
+- domicilio (excluye retiro en sucursal)
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.estado
+  opcionales: []
+  alternativas:
+  - nombre: intentos
+    obligatorias:
+    - fct_envio.cantidad_intentos
+  - nombre: eventos
+    obligatorias:
+    - fct_evento_envio.evento_at
+    - fct_evento_envio.estado
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas:
+- condicion: primer_intento < 85%
+  severidad: media
+relacionados:
+- LOG-09
+area: logistica

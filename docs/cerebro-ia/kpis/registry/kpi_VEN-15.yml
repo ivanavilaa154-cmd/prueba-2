@@ -1,0 +1,41 @@
+id: VEN-15
+nombre: Churn de clientes (B2B / recurrentes)
+pregunta: ¿Cuántos clientes dejaron de comprarnos?
+definicion: Clientes activos al inicio del período que no compraron en los últimos N días (N = umbral tenant, default 2× su frecuencia típica
+  o 90 días) / clientes activos al inicio.
+formula: 'en_riesgo = clientes con dias_desde_ultima_compra > 1.5 × su dias_entre_compras mediano
+
+  churn = clientes activos(inicio) sin compra en ventana N / clientes activos(inicio)
+
+  '
+cube: clientes.churn, clientes.en_riesgo
+unidad: porcentaje | cantidad
+direccion: menor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- vendedor
+- tipo_cliente
+- region
+filtros_base:
+- tipo_cliente = 'empresa' por defecto
+parametros:
+  dias_inactividad: 90
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  opcionales:
+  - dim_cliente.tipo_cliente
+  - fct_pedido.vendedor_id
+roles_minimos:
+- ventas
+casos_borde:
+- En B2C de baja frecuencia (compra anual) churn no es significativo; el agente usa VEN-12.
+alertas:
+- condicion: cliente top 20 (por venta 12m) en riesgo
+  severidad: alta
+relacionados:
+- VEN-12
+- VEN-23
+area: ventas

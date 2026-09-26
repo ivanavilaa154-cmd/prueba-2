@@ -1,0 +1,36 @@
+id: VEN-05
+nombre: Mix y participación por canal
+pregunta: ¿Qué porcentaje de la venta viene de cada canal?
+definicion: Venta neta del canal / venta neta total.
+formula: select canal_id, sum(importe_neto) / sum(sum(importe_neto)) over () from core.fct_pedido where pedido_valido and fecha_pedido between
+  :desde and :hasta group by 1;
+cube: ventas.venta_neta (share calculado en MCP con `comparar='share'`)
+unidad: porcentaje
+direccion: neutral
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+- categoria
+- canal_marketing
+filtros_base:
+- pedido_valido
+parametros:
+  dimension_share: canal
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.importe_neto
+  - fct_pedido.canal_id
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- ''
+alertas:
+- condicion: un canal concentra > 70% de la venta (riesgo de dependencia)
+  severidad: media
+relacionados:
+- VEN-09
+area: ventas

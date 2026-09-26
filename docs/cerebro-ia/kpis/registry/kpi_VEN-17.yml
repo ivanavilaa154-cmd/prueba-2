@@ -1,0 +1,40 @@
+id: VEN-17
+nombre: Tasa de cancelación
+pregunta: ¿Qué porcentaje de pedidos se cancela?
+definicion: Pedidos cancelados (excluye borradores y carritos abandonados) / pedidos creados no borrador.
+formula: 'select count(*) filter (where estado=''cancelado'')::numeric / nullif(count(*) filter (where estado <> ''borrador''),0)
+
+  from core.fct_pedido where es_fuente_verdad and fecha_pedido between :desde and :hasta;
+
+  '
+cube: ventas.tasa_cancelacion
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal
+- medio_pago
+- motivo (si disponible)
+- deposito
+filtros_base:
+- es_fuente_verdad
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.estado
+  - fct_pedido.estado_pago
+  opcionales:
+  - fct_pedido.canal_id
+  - fct_pedido.medio_pago
+roles_minimos:
+- ventas
+casos_borde:
+- marketplace cancela por falta de stock y penaliza reputación → cruzar con INV-06.
+alertas:
+- condicion: tasa_cancelacion marketplace > 2%
+  severidad: alta
+relacionados:
+- INV-06
+- LOG-14
+area: ventas

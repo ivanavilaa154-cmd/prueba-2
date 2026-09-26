@@ -1,0 +1,36 @@
+id: LOG-09
+nombre: Envíos fallidos / devueltos a origen
+pregunta: ¿Qué porcentaje de envíos no llega al cliente?
+definicion: Envíos en estado devuelto_origen / envíos finalizados (entregado + devuelto_origen + extraviado) del período, con desglose de motivo.
+formula: select count(*) filter (where estado='devuelto_origen')::numeric / nullif(count(*) filter (where estado in ('entregado','devuelto_origen','extraviado_danado')),0)
+  from core.fct_envio where local_date(_actualizado_at) between :desde and :hasta;
+cube: envios.fallidos_pct
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- transportista
+- motivo_no_entrega
+- zona_destino
+- canal
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.estado
+  opcionales:
+  - fct_envio.motivo_no_entrega
+  - fct_envio.finalizado_at
+  - fct_evento_envio.evento_at
+roles_minimos:
+- logistica
+casos_borde:
+- Usar fecha del evento final (fct_evento_envio) cuando exista, no _actualizado_at.
+alertas:
+- condicion: fallidos > 3%
+  severidad: alta
+relacionados:
+- LOG-08
+- LOG-10
+area: logistica

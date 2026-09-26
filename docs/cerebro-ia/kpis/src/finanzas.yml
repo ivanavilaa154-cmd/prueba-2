@@ -1,0 +1,1022 @@
+area: finanzas
+prefijo: FIN
+titulo: KPIs de Finanzas
+intro: |
+  Cubre resultados (EERR), liquidez, capital de trabajo, cobranzas/pagos, costos de cobro y controles fiscales.
+  **Modo contable vs gestión:** si el tenant tiene contabilidad (`fct_asiento_linea`) los KPIs de EERR usan `modo='contable'`;
+  si no, `modo='gestion'` (docs/03 §1.3). El KPI siempre devuelve el modo usado para que el agente lo mencione.
+  Todos los montos: moneda base, sin impuesto indirecto (salvo CxC/CxP/tesorería, que son **con impuesto indirecto** porque representan dinero), con opción `ajuste='real'`.
+kpis:
+- id: FIN-01
+  nombre: Ventas netas contables
+  pregunta: ¿Cuánto facturamos netos de descuentos y devoluciones en el período?
+  definicion: Ventas brutas menos descuentos, bonificaciones y devoluciones reconocidas en el período (línea `ventas_netas` del EERR).
+  formula: |
+    -- modo contable
+    select -sum(a.saldo) as ventas_netas
+    from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)
+    where c.eerr_linea in ('ventas_brutas','descuentos_devoluciones')
+      and a.estado = 'publicado' and not a.es_cierre
+      and a.fecha_contable between :desde and :hasta;
+    -- modo gestion
+    select sum(importe_neto * signo) from core.fct_comprobante
+    where circuito = 'venta' and estado = 'emitido'
+      and computa_venta
+      and fecha_emision between :desde and :hasta;
+  cube: eerr.ventas_netas
+  unidad: moneda
+  direccion: mayor_mejor
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - sucursal
+  - centro_costo
+  - canal (solo gestión)
+  - cliente (solo gestión)
+  filtros_base:
+  - estado publicado
+  - excluye asientos de cierre
+  parametros:
+    modo: auto|contable|gestion
+    ajuste: nominal|real
+    moneda: base|<ISO>
+  requisitos:
+    obligatorias: []
+    opcionales: []
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+  roles_minimos:
+  - contabilidad o facturacion
+  casos_borde:
+  - Diferencia con VEN-01 (comercial) es esperada: fecha de pedido vs factura, pedidos sin facturar, envío. El agente debe explicarla si se comparan.
+  - Documentos en moneda extranjera se valúan con el tipo de cambio informado en el propio documento si la fuente lo trae (tc_aplicado); si no, con ref.tipo_cambio.
+  - Tickets con rango CbteDesde-CbteHasta cuentan una vez con el importe total.
+  alertas:
+  - condicion: variacion_real_vs_mismo_mes_anio_anterior < -10%
+    severidad: alta
+  - condicion: desvio_vs_presupuesto < -10% al cierre de mes
+    severidad: alta
+  relacionados:
+  - VEN-01
+  - FIN-19
+- id: FIN-02
+  nombre: Costo de mercadería vendida (CMV)
+  pregunta: ¿Cuánto nos costó lo que vendimos?
+  definicion: Costo de los bienes/servicios vendidos en el período.
+  formula: |
+    -- contable
+    select sum(a.saldo) from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)
+    where c.eerr_linea = 'cmv' and a.estado='publicado' and not a.es_cierre and a.fecha_contable between :desde and :hasta;
+    -- gestion: costo de líneas facturadas (o despachadas si no hay factura por línea)
+    select sum(-m.costo_total) from core.fct_movimiento_stock m
+    where m.tipo_movimiento in ('venta_despacho','devolucion_cliente') and m.fecha between :desde and :hasta;
+    -- fallback gestión sin movimientos: sum(pl.costo_total) de pedidos válidos
+  cube: eerr.cmv
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - sucursal
+  - categoria (gestión)
+  - producto (gestión)
+  - canal (gestión)
+  filtros_base:
+  - estado publicado
+  parametros:
+    modo: auto|contable|gestion
+  requisitos:
+    obligatorias: []
+    opcionales: []
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion_movimientos
+      obligatorias:
+      - fct_movimiento_stock.tipo_movimiento
+      - fct_movimiento_stock.cantidad
+      - fct_movimiento_stock.costo_unitario
+    - nombre: gestion_lineas
+      obligatorias:
+      - fct_pedido.fecha_pedido
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - contabilidad o inventario o ventas
+  casos_borde:
+  - Empresas que registran CMV solo al cierre mensual (inventario periódico) → CMV contable = 0 en meses intermedios; usar modo gestión y avisar.
+  - Si % de ventas sin costo > 5 % (DQ-07) el KPI se marca "incompleto".
+  alertas:
+  - condicion: cmv_sobre_ventas sube > 3 pp vs promedio 3 meses
+    severidad: media
+  relacionados:
+  - FIN-03
+  - VEN-08
+- id: FIN-03
+  nombre: Margen bruto ($ y %)
+  pregunta: ¿Cuánto nos queda después del costo de la mercadería?
+  definicion: Ventas netas − CMV; margen % = margen bruto / ventas netas.
+  formula: |
+    margen_bruto = FIN-01 - FIN-02
+    margen_bruto_pct = (FIN-01 - FIN-02) / nullif(FIN-01, 0)
+  cube: eerr.margen_bruto, eerr.margen_bruto_pct
+  unidad: moneda | porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio (recalcular, nunca promediar porcentajes)
+  grano_min: mes (contable) / dia (gestión)
+  dimensiones:
+  - sucursal
+  - canal
+  - categoria
+  - producto (gestión)
+  filtros_base: []
+  parametros:
+    modo: auto|contable|gestion
+  requisitos:
+    obligatorias: []
+    opcionales: []
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - contabilidad o facturacion+ventas
+  casos_borde:
+  - En alta inflación el margen a costo histórico sobreestima rentabilidad; ofrecer `costo='reposicion'` usando dim_producto.costo_estandar vigente.
+  alertas:
+  - condicion: margen_bruto_pct < umbral tenant (default 25%)
+    severidad: alta
+  - condicion: caida > 3 pp vs mes anterior
+    severidad: media
+  relacionados:
+  - VEN-08
+  - VEN-09
+  - INV-11
+- id: FIN-04
+  nombre: Gastos operativos por línea
+  pregunta: ¿Cuánto gastamos en comercialización, administración y personal?
+  definicion: Suma de gastos de las líneas gastos_comercializacion, gastos_administracion y gastos_personal; desglose por cuenta estándar y centro de costo.
+  formula: |
+    -- contable
+    select c.eerr_linea, c.codigo_estandar, sum(a.saldo) as gasto
+    from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)
+    where c.eerr_linea in ('gastos_comercializacion','gastos_administracion','gastos_personal')
+      and a.estado='publicado' and not a.es_cierre and a.fecha_contable between :desde and :hasta
+    group by 1,2;
+    -- gestion
+    select categoria_gasto, sum(importe_neto*signo) from core.fct_comprobante
+    where circuito='compra' and categoria_gasto <> 'mercaderia' and fecha_emision between :desde and :hasta group by 1
+    union all
+    select tipo, -sum(importe) from core.fct_movimiento_tesoreria
+    where tipo in ('sueldos_cargas','comisiones_bancarias') and fecha between :desde and :hasta group by 1;
+  cube: eerr.gastos_operativos
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: aditivo
+  grano_min: mes
+  dimensiones:
+  - eerr_linea
+  - codigo_estandar
+  - centro_costo
+  - sucursal
+  - proveedor (gestión)
+  - categoria_gasto (gestión)
+  filtros_base:
+  - estado publicado
+  parametros:
+    modo: auto|contable|gestion
+    ajuste: nominal|real
+  requisitos:
+    obligatorias: []
+    opcionales:
+    - fct_asiento_linea.centro_costo_id
+    - fct_movimiento_tesoreria.tipo
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_comprobante.categoria_gasto
+  roles_minimos:
+  - contabilidad o facturacion
+  casos_borde:
+  - Sueldos no pasan por comprobantes: en modo gestión se toman de tesorería (neto pagado, no costo laboral total) → avisar subestimación.
+  - Gastos anuales (seguros, patentes) generan picos; ofrecer vista `devengado_prorrateado` si el tenant carga prorrateos.
+  alertas:
+  - condicion: gasto real (ajustado índice de precios) de una cuenta estándar sube > 20% vs promedio 3 meses
+    severidad: media
+  - condicion: gastos_operativos / ventas_netas > umbral tenant
+    severidad: alta
+  relacionados:
+  - FIN-05
+  - FIN-22
+- id: FIN-05
+  nombre: EBITDA y margen EBITDA
+  pregunta: ¿Cuánto genera el negocio operativamente antes de amortizaciones, intereses e impuestos?
+  definicion: Margen bruto − gastos operativos (comercialización + administración + personal).
+  formula: |
+    ebitda = FIN-03.margen_bruto - FIN-04.gastos_operativos
+    ebitda_pct = ebitda / nullif(FIN-01, 0)
+  cube: eerr.ebitda, eerr.ebitda_pct
+  unidad: moneda | porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: mes
+  dimensiones:
+  - sucursal
+  - centro_costo
+  filtros_base: []
+  parametros:
+    modo: auto|contable|gestion
+    ajuste: nominal|real
+  requisitos:
+    obligatorias: []
+    opcionales:
+    - fct_asiento_linea.centro_costo_id
+    - fct_movimiento_tesoreria.tipo
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_comprobante.categoria_gasto
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - contabilidad o facturacion+ventas
+  casos_borde:
+  - Por sucursal requiere que los gastos tengan sucursal/centro de costo; gastos centrales sin asignar se muestran como "Estructura central".
+  alertas:
+  - condicion: ebitda < 0 en el mes
+    severidad: critica
+  - condicion: ebitda_pct cae > 5 pp vs promedio 3 meses
+    severidad: alta
+  relacionados:
+  - FIN-06
+  - FIN-20
+- id: FIN-06
+  nombre: Resultado neto
+  pregunta: ¿Ganamos o perdimos plata en el período (después de todo)?
+  definicion: EBITDA − amortizaciones ± resultado financiero ± otros resultados − impuesto a las ganancias.
+  formula: |
+    select -sum(a.saldo) from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)
+    where c.tipo in ('ingreso','costo','gasto') and a.estado='publicado' and not a.es_cierre
+      and a.fecha_contable between :desde and :hasta;
+  cube: eerr.resultado_neto
+  unidad: moneda
+  direccion: mayor_mejor
+  agregacion: aditivo
+  grano_min: mes
+  dimensiones:
+  - sucursal
+  - centro_costo
+  - eerr_linea
+  filtros_base:
+  - estado publicado
+  - excluye cierre
+  parametros:
+    ajuste: nominal|real
+  requisitos:
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+    opcionales: []
+  roles_minimos:
+  - contabilidad
+  casos_borde:
+  - Impuesto a las ganancias suele registrarse anual: mostrar resultado antes de impuestos por defecto en meses intermedios.
+  alertas:
+  - condicion: resultado_neto acumulado del ejercicio < 0
+    severidad: alta
+  relacionados:
+  - FIN-05
+- id: FIN-07
+  nombre: Caja disponible
+  pregunta: ¿Cuánta plata tenemos hoy disponible?
+  definicion: Suma de saldos al cierre del día de cuentas de tesorería con es_disponible = true (bancos, cajas, billeteras, FCI de rescate inmediato).
+  formula: |
+    select sum(s.saldo) from marts.fct_saldo_tesoreria_diario s
+    join core.dim_cuenta_tesoreria t using (cuenta_tesoreria_id)
+    where t.es_disponible and s.fecha = :fecha;
+  cube: tesoreria.caja_disponible
+  unidad: moneda
+  direccion: mayor_mejor
+  agregacion: snapshot (no sumar entre fechas; usar último valor del período)
+  grano_min: dia
+  dimensiones:
+  - cuenta_tesoreria
+  - tipo_cuenta
+  - entidad
+  - moneda
+  filtros_base:
+  - es_disponible
+  parametros:
+    moneda: base|<ISO>|original
+    fecha: hoy por defecto
+  requisitos:
+    obligatorias:
+    - dim_cuenta_tesoreria.es_disponible
+    - fct_movimiento_tesoreria.fecha
+    - fct_movimiento_tesoreria.importe
+    opcionales:
+    - fct_movimiento_tesoreria.saldo_informado
+  roles_minimos:
+  - tesoreria
+  casos_borde:
+  - Cuentas en moneda extranjera se valúan al TC del día (tipo default del tenant); mostrar también en moneda original.
+  - Si un extracto está desactualizado (> 2 días hábiles) el saldo se marca "desactualizado" con la fecha real.
+  - Dinero en MP pendiente de liberar no es disponible; se informa aparte (FIN-17 / fct_liquidacion_pasarela).
+  alertas:
+  - condicion: caja_disponible < caja_minima tenant
+    severidad: critica
+  - condicion: caja_disponible < pagos comprometidos próximos 7 días
+    severidad: critica
+  relacionados:
+  - FIN-08
+  - FIN-09
+  - FIN-16
+- id: FIN-08
+  nombre: Flujo de caja (operativo, inversión, financiación)
+  pregunta: ¿Cuánta plata entró y salió y por qué?
+  definicion: Suma de movimientos de tesorería por actividad, excluyendo transferencias internas.
+  formula: |
+    select actividad, tipo, sum(importe) as flujo
+    from core.fct_movimiento_tesoreria
+    where actividad <> 'interna' and fecha between :desde and :hasta
+    group by rollup(actividad, tipo);
+  cube: tesoreria.flujo_neto
+  unidad: moneda
+  direccion: mayor_mejor
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - actividad
+  - tipo
+  - cuenta_tesoreria
+  - contraparte
+  filtros_base:
+  - excluye transferencias internas
+  parametros:
+    ajuste: nominal|real
+  requisitos:
+    obligatorias:
+    - fct_movimiento_tesoreria.fecha
+    - fct_movimiento_tesoreria.importe
+    - fct_movimiento_tesoreria.tipo
+    opcionales: []
+  roles_minimos:
+  - tesoreria
+  casos_borde:
+  - Movimientos tipo 'otros' > 15 % del volumen → el KPI advierte "clasificación incompleta" (DQ-10).
+  alertas:
+  - condicion: flujo operativo negativo 2 meses consecutivos
+    severidad: alta
+  relacionados:
+  - FIN-07
+  - FIN-09
+- id: FIN-09
+  nombre: Burn rate y runway
+  pregunta: ¿Cuántos meses de caja nos quedan al ritmo actual?
+  definicion: Burn = promedio mensual de flujo neto negativo (operativo + financiación de deuda) de los últimos 3 meses; runway = caja disponible / burn.
+  formula: |
+    burn = -avg(flujo_neto_mensual) over últimos 3 meses cerrados (solo si < 0)
+    runway_meses = FIN-07 / nullif(burn, 0)   -- null si flujo positivo ("no aplica: el negocio genera caja")
+  cube: tesoreria.burn_rate, tesoreria.runway_meses
+  unidad: moneda | meses
+  direccion: mayor_mejor (runway)
+  agregacion: calculado
+  grano_min: mes
+  dimensiones: []
+  filtros_base:
+  - excluye transferencias internas
+  - excluye aportes de socios
+  parametros:
+    ventana_meses: 3
+  requisitos:
+    obligatorias:
+    - dim_cuenta_tesoreria.es_disponible
+    - fct_movimiento_tesoreria.fecha
+    - fct_movimiento_tesoreria.importe
+    - fct_movimiento_tesoreria.tipo
+    opcionales:
+    - fct_movimiento_tesoreria.saldo_informado
+  roles_minimos:
+  - tesoreria
+  historia_minima: ≥ 3 meses de historia
+  casos_borde:
+  - Estacionalidad fuerte (ej. aguinaldo en jun/dic) → usar ventana 6 meses si el tenant lo configura.
+  alertas:
+  - condicion: runway_meses < 3
+    severidad: critica
+  - condicion: runway_meses < 6
+    severidad: alta
+  relacionados:
+  - FIN-07
+  - FIN-08
+- id: FIN-10
+  nombre: Cuentas por cobrar (total, vencida y % vencida)
+  pregunta: ¿Cuánto nos deben y cuánto está vencido?
+  definicion: Saldo pendiente de documentos CxC a la fecha; vencido = saldo con fecha_vencimiento < fecha de corte.
+  formula: |
+    select sum(saldo) as cxc_total,
+           sum(saldo) filter (where dias_vencido > 0) as cxc_vencida,
+           sum(saldo) filter (where dias_vencido > 0) / nullif(sum(saldo),0) as pct_vencida
+    from marts.fct_saldo_cxc_diario where fecha = :fecha;
+  cube: cxc.saldo_total, cxc.saldo_vencido, cxc.pct_vencido
+  unidad: moneda | porcentaje
+  direccion: menor_mejor
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - cliente
+  - vendedor
+  - sucursal
+  - tramo_aging
+  - tipo_cliente
+  filtros_base:
+  - estado in (pendiente, parcial)
+  parametros:
+    fecha: hoy
+  requisitos:
+    obligatorias:
+    - fct_documento_cxc.fecha_vencimiento
+    - fct_documento_cxc.saldo_pendiente
+    opcionales: []
+  roles_minimos:
+  - cuentas_corrientes
+  casos_borde:
+  - Saldos a favor (NC sin aplicar, anticipos) restan; mostrar aparte "créditos a favor de clientes".
+  - Cheques/echeqs recibidos no depositados cuentan como cobrados (el riesgo va a FIN-16).
+  alertas:
+  - condicion: pct_vencida > 20%
+    severidad: alta
+  - condicion: un cliente concentra > 25% de la CxC vencida
+    severidad: media
+  relacionados:
+  - FIN-11
+  - FIN-12
+  - FIN-15
+- id: FIN-11
+  nombre: Aging de cuentas por cobrar
+  pregunta: ¿Cuánto de lo que nos deben tiene 0-30, 31-60, 61-90, >90 días de atraso?
+  definicion: Distribución del saldo CxC por tramos de días vencidos.
+  formula: |
+    tramo_aging = case when dias_vencido <= 0 then 'a_vencer'
+                       when dias_vencido <= 30 then '1_30'
+                       when dias_vencido <= 60 then '31_60'
+                       when dias_vencido <= 90 then '61_90'
+                       else 'mas_90' end
+    select tramo_aging, sum(saldo) from marts.fct_saldo_cxc_diario where fecha=:fecha group by 1;
+  cube: cxc.saldo_total (dimensión tramo_aging)
+  unidad: moneda
+  direccion: menor_mejor (tramos altos)
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - tramo_aging
+  - cliente
+  - vendedor
+  filtros_base: []
+  parametros:
+    tramos: configurables por tenant
+  requisitos:
+    obligatorias:
+    - fct_documento_cxc.fecha_vencimiento
+    - fct_documento_cxc.saldo_pendiente
+    opcionales: []
+  roles_minimos:
+  - cuentas_corrientes
+  casos_borde:
+  - Si no hay fecha de vencimiento se usa fecha_emision + condicion_pago_dias del cliente (marcar "vencimiento estimado").
+  alertas:
+  - condicion: saldo mas_90 > 10% de la CxC
+    severidad: alta
+  relacionados:
+  - FIN-10
+- id: FIN-12
+  nombre: DSO (días de cobro)
+  pregunta: ¿Cuántos días tardamos en promedio en cobrar?
+  definicion: CxC promedio del período / ventas a crédito con impuesto indirecto del período × días del período.
+  formula: |
+    dso = avg(cxc_total diario del período) / nullif(sum(importe_total*signo) ventas del período, 0) * dias_periodo
+    -- ventas = fct_comprobante venta emitido (con impuesto indirecto porque la CxC incluye impuesto indirecto)
+  cube: cxc.dso
+  unidad: dias
+  direccion: menor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones:
+  - cliente
+  - vendedor
+  - tipo_cliente
+  filtros_base:
+  - opcional excluir ventas contado (condicion_pago_dias = 0)
+  parametros:
+    solo_credito: true
+  requisitos:
+    obligatorias:
+    - fct_documento_cxc.saldo_pendiente
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_total
+    - fct_comprobante.estado
+    opcionales: []
+  roles_minimos:
+  - cuentas_corrientes
+  - facturacion
+  casos_borde:
+  - En negocios mixtos (contado + cuenta corriente) calcular con `solo_credito=true` para no subestimar.
+  alertas:
+  - condicion: dso > condicion_pago promedio + 15 días
+    severidad: alta
+  relacionados:
+  - FIN-14
+  - FIN-15
+- id: FIN-13
+  nombre: Cuentas por pagar y DPO
+  pregunta: ¿Cuánto debemos a proveedores, cuánto vence pronto y en cuántos días pagamos?
+  definicion: Saldo CxP a la fecha, vencido, a vencer en 7/30 días; DPO = CxP promedio / compras con impuesto indirecto × días.
+  formula: |
+    select sum(saldo) cxp_total,
+           sum(saldo) filter (where dias_vencido > 0) cxp_vencida,
+           sum(saldo) filter (where fecha_vencimiento between :fecha and :fecha + 7) vence_7d
+    from marts.fct_saldo_cxp_diario where fecha=:fecha;
+    dpo = avg(cxp_total diario) / nullif(sum(compras importe_total*signo), 0) * dias_periodo
+  cube: cxp.saldo_total, cxp.saldo_vencido, cxp.vence_7d, cxp.dpo
+  unidad: moneda | dias
+  direccion: neutral
+  agregacion: snapshot / calculado
+  grano_min: dia
+  dimensiones:
+  - proveedor
+  - categoria_proveedor
+  - tramo_aging
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_documento_cxp.fecha_vencimiento
+    - fct_documento_cxp.saldo_pendiente
+    - fct_comprobante.circuito
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_total
+    opcionales:
+    - fct_pago.fecha_pago
+    - fct_pago.importe
+    - dim_proveedor.categoria_proveedor
+  roles_minimos:
+  - cuentas_corrientes
+  - facturacion
+  casos_borde:
+  - Si solo hay documentos de compra sin pagos ni saldos (sin rol cuentas_corrientes) no se puede saber qué está pago → KPI no disponible.
+  alertas:
+  - condicion: vence_7d > caja_disponible
+    severidad: critica
+  - condicion: cxp_vencida > 15% del total
+    severidad: media
+  relacionados:
+  - FIN-14
+  - FIN-16
+- id: FIN-14
+  nombre: Ciclo de conversión de caja
+  pregunta: ¿Cuántos días pasa la plata atrapada en el negocio?
+  definicion: DSO + DIO − DPO.
+  formula: |
+    ccc = FIN-12.dso + INV-04.dio - FIN-13.dpo
+  cube: capital_trabajo.ciclo_caja
+  unidad: dias
+  direccion: menor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones: []
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_documento_cxc.saldo_pendiente
+    - fct_documento_cxp.saldo_pendiente
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    opcionales: []
+  roles_minimos:
+  - cuentas_corrientes
+  - inventario
+  casos_borde:
+  - Si falta un componente se informa cuál y no se calcula.
+  alertas:
+  - condicion: ccc aumenta > 15 días vs trimestre anterior
+    severidad: media
+  relacionados:
+  - FIN-12
+  - FIN-13
+  - INV-04
+- id: FIN-15
+  nombre: Efectividad de cobranza (CEI)
+  pregunta: ¿Qué porcentaje de lo cobrable efectivamente cobramos en el período?
+  definicion: (CxC inicial + ventas a crédito − CxC final) / (CxC inicial + ventas a crédito − CxC final corriente) × 100.
+  formula: |
+    cei = (cxc_ini + ventas_credito - cxc_fin) / nullif(cxc_ini + ventas_credito - cxc_fin_no_vencida, 0)
+  cube: cxc.cei
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones:
+  - vendedor
+  - tipo_cliente
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_documento_cxc.fecha_vencimiento
+    - fct_documento_cxc.saldo_pendiente
+    - fct_cobro.fecha_cobro
+    - fct_cobro.importe
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_total
+    opcionales: []
+  roles_minimos:
+  - cuentas_corrientes
+  - facturacion
+  casos_borde:
+  - Meses con pocas facturas a crédito generan ruido; mostrar con volumen.
+  alertas:
+  - condicion: cei < 80%
+    severidad: media
+  relacionados:
+  - FIN-10
+  - FIN-12
+- id: FIN-16
+  nombre: Proyección de caja 7/30/60/90 días
+  pregunta: ¿Cuánta plata vamos a tener en las próximas semanas?
+  definicion: Caja disponible hoy + cobros esperados (CxC por vencimiento ajustado por comportamiento histórico + liquidaciones pendientes de pasarelas) − pagos comprometidos
+    (CxP por vencimiento + gastos recurrentes estimados).
+  formula: |
+    proyeccion(d) = FIN-07(hoy)
+      + Σ cxc.saldo × prob_cobro(tramo) con fecha_esperada = fecha_vencimiento + atraso_medio_cliente
+      + Σ fct_liquidacion_pasarela.importe_neto where estado='aprobado' and fecha_acreditacion <= d
+      - Σ cxp.saldo con fecha_vencimiento <= d
+      - Σ recurrentes (sueldos, impuestos, alquiler: promedio 3 meses de fct_movimiento_tesoreria por tipo, en su día típico)
+  cube: tesoreria.proyeccion (mart marts.fin__proyeccion_caja)
+  unidad: moneda
+  direccion: mayor_mejor
+  agregacion: serie proyectada
+  grano_min: dia
+  dimensiones:
+  - componente (cobros, liquidaciones, pagos, recurrentes)
+  filtros_base: []
+  parametros:
+    horizonte_dias: 7|30|60|90
+  requisitos:
+    obligatorias:
+    - dim_cuenta_tesoreria.es_disponible
+    - fct_movimiento_tesoreria.fecha
+    - fct_movimiento_tesoreria.importe
+    opcionales:
+    - fct_movimiento_tesoreria.tipo
+    - fct_documento_cxc.fecha_vencimiento
+    - fct_documento_cxc.saldo_pendiente
+    - fct_documento_cxp.fecha_vencimiento
+    - fct_documento_cxp.saldo_pendiente
+    - fct_liquidacion_pasarela.fecha_acreditacion
+    - fct_liquidacion_pasarela.importe_neto
+  roles_minimos:
+  - tesoreria
+  casos_borde:
+  - Es una estimación: el agente siempre la presenta como proyección con sus supuestos.
+  alertas:
+  - condicion: proyeccion < 0 en algún día de los próximos 30
+    severidad: critica
+  relacionados:
+  - FIN-07
+  - FIN-13
+- id: FIN-17
+  nombre: Costo de cobro (comisiones de pasarelas, marketplaces y financiación)
+  pregunta: ¿Cuánto nos cuesta cobrar lo que vendemos?
+  definicion: (Comisiones de pasarelas + comisiones de canal + costo de cuotas sin interés + impuesto débitos/créditos) / venta bruta cobrada.
+  formula: |
+    select (sum(comision) + sum(costo_financiacion)) / nullif(sum(importe_bruto),0)
+    from core.fct_liquidacion_pasarela where fecha_operacion between :desde and :hasta and estado not in ('rechazado');
+    -- + comision_canal de fct_pedido (marketplace) + impuesto_debcred de tesorería (opcional)
+  cube: cobros.costo_cobro_pct
+  unidad: porcentaje
+  direccion: menor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - pasarela
+  - medio_pago
+  - cuotas
+  - canal
+  filtros_base: []
+  parametros:
+    incluir_debcred: false
+  requisitos:
+    obligatorias:
+    - fct_liquidacion_pasarela.importe_bruto
+    - fct_liquidacion_pasarela.comision
+    opcionales:
+    - fct_liquidacion_pasarela.costo_financiacion
+    - fct_liquidacion_pasarela.retenciones
+    - fct_pedido.comision_canal
+    - fct_pedido.costo_financiacion
+    - fct_pedido.medio_pago
+    - fct_movimiento_tesoreria.tipo
+  roles_minimos:
+  - pasarela_pagos
+  casos_borde:
+  - Retenciones de impuestos NO son costo (son pagos a cuenta); se informan aparte.
+  alertas:
+  - condicion: costo_cobro_pct sube > 1 pp vs mes anterior
+    severidad: media
+  relacionados:
+  - VEN-09
+- id: FIN-18
+  nombre: Conciliación con registro fiscal oficial
+  pregunta: ¿Todo lo registrado ante la autoridad fiscal está en el sistema de gestión y viceversa?
+  definicion: Cantidad e importe de documentos presentes en la fuente con rol registro_fiscal_oficial sin match en fct_comprobante (y al revés), comparando (clase,
+    punto_emision, numero) o codigo_autorizacion_fiscal.
+  formula: |
+    select count(*) filter (where e.comprobante_id is null) solo_registro_oficial,
+           count(*) filter (where o.source_key is null) solo_gestion,
+           sum(coalesce(o.importe_total,0) - coalesce(e.importe_total,0)) diferencia
+    from intermediate.int_comprobante_registro_oficial o
+    full join core.fct_comprobante e
+      on o.tenant_id = e.tenant_id
+     and coalesce(o.codigo_autorizacion_fiscal, o.clase||o.punto_emision||o.numero) = coalesce(e.codigo_autorizacion_fiscal, e.clase||e.punto_emision||e.numero)
+    where coalesce(o.fecha_emision, e.fecha_emision) between :desde and :hasta;
+  cube: control.conciliacion_fiscal
+  unidad: cantidad | moneda
+  direccion: menor_mejor (debe ser 0)
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - circuito
+  - punto_emision
+  - tipo_comprobante
+  filtros_base: []
+  parametros:
+    tolerancia_importe: 1
+  roles_extra:
+  - registro_fiscal_oficial
+  requisitos:
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.punto_emision
+    - fct_comprobante.numero
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_total
+    opcionales:
+    - fct_comprobante.codigo_autorizacion_fiscal
+  roles_minimos:
+  - facturacion
+  - registro_fiscal_oficial
+  casos_borde:
+  - Solo aplica si el país tiene registro oficial de documentos electrónicos y el tenant conectó esa fuente; si no, el KPI queda no_disponible.
+  - Documentos de compra que el sistema de gestión no registra (gastos menores) son esperables; permitir lista de identificadores fiscales excluidos.
+  alertas:
+  - condicion: solo_registro_oficial > 0 en ventas
+    severidad: alta
+  - condicion: compras en registro oficial no cargadas > 5% del importe
+    severidad: media
+  relacionados:
+  - FIN-01
+  - FIN-21
+- id: FIN-19
+  nombre: Desvío vs presupuesto (EERR)
+  pregunta: ¿Cómo venimos contra el presupuesto en cada línea del resultado?
+  definicion: Real − presupuesto por eerr_linea y período; % desvío = (real − ppto) / |ppto|.
+  formula: |
+    select p.eerr_linea, r.real, p.importe as presupuesto, r.real - p.importe as desvio,
+           (r.real - p.importe) / nullif(abs(p.importe),0) as desvio_pct
+    from core.fct_presupuesto p left join (EERR real por linea y mes) r using (periodo, eerr_linea)
+    where p.concepto = 'eerr_linea' and p.version = :version and p.periodo between :desde and :hasta;
+  cube: presupuesto.desvio_eerr
+  unidad: moneda | porcentaje
+  direccion: depende de la línea (ingresos mayor_mejor, gastos menor_mejor)
+  agregacion: aditivo (importes) / ratio (%)
+  grano_min: mes
+  dimensiones:
+  - eerr_linea
+  - codigo_estandar
+  - sucursal
+  - version
+  filtros_base:
+  - version = 'original' por defecto
+  parametros:
+    version: original|reforecast_n
+  requisitos:
+    obligatorias:
+    - fct_presupuesto.importe
+    - fct_presupuesto.eerr_linea
+    opcionales: []
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_comprobante.categoria_gasto
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - presupuesto
+  - contabilidad o facturacion+ventas
+  casos_borde:
+  - Presupuesto en valores nominales vs inflación real distinta a la presupuestada → ofrecer desvío en términos reales con índice de precios.
+  alertas:
+  - condicion: desvio_pct ventas < -10% o gastos > +10%
+    severidad: alta
+  relacionados:
+  - FIN-01
+  - VEN-07
+- id: FIN-20
+  nombre: Punto de equilibrio
+  pregunta: ¿Cuánto necesitamos vender por mes para no perder plata?
+  definicion: Costos fijos mensuales / margen de contribución %. Costos fijos = gastos_administracion + gastos_personal + parte fija de comercialización; margen de
+    contribución = (ventas − CMV − gastos variables) / ventas.
+  formula: |
+    margen_contribucion_pct = (ventas_netas - cmv - gastos_variables) / ventas_netas   -- promedio 3 meses
+    gastos_variables = comisiones + fletes + comisiones medios de pago + IIBB (cuentas 6.1.01, 6.1.02, 6.1.04, 6.1.05)
+    costos_fijos = gastos_operativos - gastos_variables
+    punto_equilibrio = costos_fijos / nullif(margen_contribucion_pct, 0)
+  cube: eerr.punto_equilibrio
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones: []
+  filtros_base: []
+  parametros:
+    ventana_meses: 3
+    cuentas_variables: configurable por tenant
+  requisitos:
+    obligatorias: []
+    opcionales: []
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_comprobante.categoria_gasto
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - contabilidad o facturacion+ventas
+  casos_borde:
+  - La clasificación fijo/variable es configurable; el agente menciona el supuesto.
+  alertas:
+  - condicion: ventas_netas proyectadas del mes (VEN-24) < punto_equilibrio
+    severidad: alta
+  relacionados:
+  - FIN-05
+  - VEN-24
+- id: FIN-21
+  nombre: Posición estimada de impuesto indirecto
+  pregunta: ¿Cuánto impuesto indirecto (valor agregado / ventas) vamos a tener que pagar este período?
+  definicion: Impuesto indirecto de ventas (débito) − impuesto indirecto de compras (crédito) − retenciones/percepciones sufridas del período.
+  formula: |
+    select sum(importe_impuesto*signo) filter (where circuito='venta')
+         - sum(importe_impuesto*signo) filter (where circuito='compra')
+    from core.fct_comprobante where estado='emitido' and fecha_emision between :desde and :hasta;
+    -- menos retenciones/percepciones de impuesto indirecto sufridas (fct_cobro.importe_retenciones tipo impuesto indirecto ⚠, fct_liquidacion_pasarela.retenciones)
+  cube: impuestos.posicion_iva
+  unidad: moneda
+  direccion: neutral
+  agregacion: aditivo
+  grano_min: mes
+  dimensiones:
+  - circuito
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.estado
+    - fct_comprobante.signo
+    - fct_comprobante.importe_impuesto
+    opcionales:
+    - fct_liquidacion_pasarela.retenciones
+    - fct_cobro.importe_retenciones
+  roles_minimos:
+  - facturacion
+  casos_borde:
+  - Es estimación de gestión, no reemplaza la declaración jurada; el agente lo aclara.
+  - Si el tenant está en un régimen simplificado sin impuesto indirecto discriminado, el KPI no aplica.
+  alertas:
+  - condicion: posicion_iva > caja proyectada a fecha de vencimiento
+    severidad: alta
+  relacionados:
+  - FIN-16
+  - FIN-18
+- id: FIN-22
+  nombre: Evolución real de gastos por categoría
+  pregunta: ¿Qué gastos crecen por encima de la inflación?
+  definicion: Gasto por cuenta estándar / categoría en términos reales (índice de precios) y su variación vs mismo período anterior.
+  formula: |
+    gasto_real = real_amount(gasto, fecha, periodo_base = mes actual)
+    var_real = gasto_real(periodo) / nullif(gasto_real(periodo_comparacion), 0) - 1
+  cube: eerr.gastos_operativos (ajuste='real')
+  unidad: moneda | porcentaje
+  direccion: menor_mejor
+  agregacion: aditivo / ratio
+  grano_min: mes
+  dimensiones:
+  - codigo_estandar
+  - categoria_gasto
+  - proveedor
+  - centro_costo
+  filtros_base: []
+  parametros:
+    comparacion: mes_anterior|mismo_mes_anio_anterior|promedio_3m
+  requisitos:
+    obligatorias:
+    - ref.indice_precios.indice
+    opcionales:
+    - fct_asiento_linea.centro_costo_id
+    alternativas:
+    - nombre: contable
+      obligatorias:
+      - fct_asiento_linea.fecha_contable
+      - fct_asiento_linea.saldo
+      - fct_asiento_linea.cuenta_id
+      - dim_cuenta_contable.codigo_estandar
+    - nombre: gestion
+      obligatorias:
+      - fct_comprobante.circuito
+      - fct_comprobante.clase
+      - fct_comprobante.fecha_emision
+      - fct_comprobante.importe_neto
+      - fct_comprobante.estado
+      - fct_comprobante.categoria_gasto
+  roles_minimos:
+  - referencia_indice_precios
+  - contabilidad o facturacion
+  casos_borde:
+  - índice de precios del último mes puede no estar publicado → se usa estimado y se marca.
+  alertas:
+  - condicion: var_real > 15% en categoría con peso > 5% del gasto
+    severidad: media
+  relacionados:
+  - FIN-04

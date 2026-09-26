@@ -1,0 +1,41 @@
+id: INV-10
+nombre: Sobrestock
+pregunta: ¿Qué productos tienen más stock del necesario?
+definicion: Valor del stock por encima de la cobertura objetivo (default 60 días o stock_maximo) para SKUs con VDP > 0.
+formula: 'exceso_unidades = greatest(stock_disponible - greatest(vdp * cobertura_objetivo, coalesce(stock_maximo,0)), 0)
+
+  valor_sobrestock = Σ exceso_unidades × costo_unitario
+
+  '
+cube: stock.valor_sobrestock
+unidad: moneda
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- categoria
+- proveedor
+- clasificacion_abc
+filtros_base:
+- vdp > 0
+parametros:
+  cobertura_objetivo_dias: A 30 / B 45 / C 60 (config)
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  - fct_pedido_linea.cantidad
+  opcionales:
+  - parametro_reposicion.stock_maximo
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- Compras anticipadas deliberadas (cobertura inflacionaria, temporada) → el tenant puede marcar excepciones.
+alertas:
+- condicion: sobrestock > 15% del valor de inventario
+  severidad: media
+relacionados:
+- INV-05
+- INV-09
+area: inventario

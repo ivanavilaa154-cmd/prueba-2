@@ -1,0 +1,51 @@
+id: MKT-15
+nombre: Leads y costo por lead (CPL)
+pregunta: ¿Cuántos leads generamos y cuánto nos cuesta cada uno?
+definicion: Leads creados en CRM en el período (fuente de verdad); CPL = gasto de campañas objetivo leads / leads atribuidos a esas campañas (o
+  total).
+formula: 'leads = count(fct_lead where fecha_creacion in periodo)
+
+  cpl = Σ gasto (objetivo=''leads'') / nullif(count(leads con canal pago), 0)
+
+  cpl_plataforma = Σ gasto / Σ leads_plataforma   (por plataforma)
+
+  '
+cube: leads.cantidad, leads.cpl, ads.cpl_plataforma
+unidad: cantidad | moneda
+direccion: menor_mejor (CPL)
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- canal_marketing
+- campana
+- formulario
+- vendedor
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias: []
+  opcionales:
+  - fct_ads_diario.gasto
+  - dim_campana.objetivo
+  - fct_lead.canal_marketing
+  - fct_lead.utm_campaign
+  alternativas:
+  - nombre: crm
+    obligatorias:
+    - fct_lead.fecha_creacion
+  - nombre: analitica_web
+    obligatorias:
+    - fct_web_diario.leads_web
+  - nombre: plataforma
+    obligatorias:
+    - fct_ads_diario.leads_plataforma
+roles_minimos:
+- crm o analitica_web o publicidad
+casos_borde:
+- Leads duplicados (mismo email/teléfono en 30 días) se cuentan una vez.
+alertas:
+- condicion: cpl sube > 30% vs 4 semanas
+  severidad: media
+relacionados:
+- MKT-16
+area: marketing

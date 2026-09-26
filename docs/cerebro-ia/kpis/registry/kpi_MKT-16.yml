@@ -1,0 +1,42 @@
+id: MKT-16
+nombre: Conversión de leads (lead → calificado → cliente) y velocidad de contacto
+pregunta: ¿Cuántos leads se convierten en clientes y qué tan rápido los atendemos?
+definicion: '% calificados, % convertidos (cohorte por fecha de creación); mediana de minutos hasta el primer contacto.'
+formula: 'pct_calificado = count(estado in (calificado, convertido)) / count(*)
+
+  pct_convertido = count(estado = convertido) / count(*)        -- cohorte, madurez ≥ ciclo de venta
+
+  tiempo_primer_contacto = median(primer_contacto_at - creado_at)
+
+  '
+cube: leads.pct_calificado, leads.pct_convertido, leads.minutos_primer_contacto
+unidad: porcentaje | minutos
+direccion: mayor_mejor (conversión) / menor_mejor (tiempo)
+agregacion: ratio / mediana
+grano_min: semana
+dimensiones:
+- canal_marketing
+- campana
+- vendedor
+- formulario
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_lead.fecha_creacion
+  - fct_lead.estado
+  opcionales:
+  - fct_lead.primer_contacto_at
+  - fct_lead.fecha_conversion
+  - fct_lead.canal_marketing
+roles_minimos:
+- crm
+casos_borde:
+- 'Cohortes recientes no maduraron: marcar.'
+alertas:
+- condicion: leads sin contactar > 24 h
+  severidad: alta
+relacionados:
+- MKT-15
+- VEN-20
+area: marketing

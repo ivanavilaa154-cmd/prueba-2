@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from . import acceso, config
+from .actividades import motor as actividades
+from .analisis import catalogo_kpis
 from .analisis import cobertura as cobertura_analisis
 from .analisis import tablero as tablero_analisis
 from .chat import motor
@@ -25,6 +28,22 @@ from .integraciones import gestor, odoo
 from .permisos import AccesoDenegado, Usuario, obtener_usuario, preparar_consulta
 
 WEB = Path(__file__).resolve().parent / "web"
+
+
+def _revisar_actividades() -> None:
+    """Vuelve a correr las reglas de actividades con los datos nuevos, sin frenar a quien llamó."""
+    def correr():
+        try:
+            actividades.ejecutar()
+        except Exception:  # una regla que falla no rompe la sincronización; se reintenta al abrir la pestaña
+            pass
+    threading.Thread(target=correr, daemon=True).start()
+
+
+def _usar_odoo(entrada: dict) -> None:
+    if entrada["ok"]:
+        fuente.usar("odoo")
+        _revisar_actividades()
 
 @asynccontextmanager
 async def _ciclo_de_vida(_app):
@@ -40,8 +59,8 @@ async def _ciclo_de_vida(_app):
         fuente.usar("odoo")
     elif odoo_listo:
         # En un servidor nuevo (o que se reinició) todavía no hay datos: se sincroniza al arrancar.
-        gestor.sincronizar_en_segundo_plano(lambda entrada: entrada["ok"] and fuente.usar("odoo"))
-    gestor.iniciar_programador(lambda entrada: entrada["ok"] and fuente.actual() == "demo" and fuente.usar("odoo"))
+        gestor.sincronizar_en_segundo_plano(_usar_odoo)
+    gestor.iniciar_programador(lambda entrada: _usar_odoo(entrada) if fuente.actual() in ("demo", "odoo") else None)
     yield
 
 
@@ -77,6 +96,13 @@ class ConsultaDirecta(BaseModel):
 
 class CambioFuente(BaseModel):
     fuente: str
+
+
+class CambioActividad(BaseModel):
+    usuario_id: str
+    estado: str                      # en_curso | resuelta | descartada
+    resolucion: str | None = None
+    comentario: str | None = None
 
 
 class ConfigOdoo(BaseModel):
@@ -145,6 +171,12 @@ def tablero(usuario_id: str, mes: str | None = None):
 def cobertura():
     """Qué datos trajo la fuente activa, tabla por tabla, y controles de calidad."""
     return cobertura_analisis.cobertura()
+
+
+@app.get("/kpis/catalogo")
+def kpis_catalogo():
+    """Los 111 KPIs estándar y cuáles tienen sus datos base en la fuente activa."""
+    return catalogo_kpis.estado()
 
 
 @app.get("/usuarios")
@@ -234,13 +266,48 @@ def sincronizar_odoo():
     if not gestor.config_odoo()["clave_guardada"]:
         raise HTTPException(status_code=400, detail="Primero guardá la conexión con Odoo.")
 
-    def al_terminar(entrada):
-        if entrada["ok"]:
-            fuente.usar("odoo")
-
-    if not gestor.sincronizar_en_segundo_plano(al_terminar):
+    if not gestor.sincronizar_en_segundo_plano(_usar_odoo):
         raise HTTPException(status_code=409, detail="Ya hay una sincronización en curso.")
     return gestor.estado_odoo()
+
+
+@app.get("/actividades")
+def ver_actividades(usuario_id: str):
+    """Tareas del usuario (según su rol), ordenadas por puntaje, con el catálogo y la precisión de cada actividad."""
+    return actividades.resumen(_usuario(usuario_id))
+
+
+@app.post("/actividades/revisar")
+def revisar_actividades(usuario_id: str):
+    """Corre ahora las 6 reglas sobre los datos actuales."""
+    _usuario(usuario_id)
+    actividades.ejecutar()
+    return actividades.resumen(_usuario(usuario_id))
+
+
+@app.post("/actividades/{tarea_id}")
+def cambiar_actividad(tarea_id: int, datos: CambioActividad):
+    try:
+        return actividades.cambiar_estado(tarea_id, _usuario(datos.usuario_id), datos.estado, datos.resolucion, datos.comentario)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e.args[0]))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/actividades/{tarea_id}/archivo.csv", response_class=PlainTextResponse)
+def archivo_actividad(tarea_id: int, usuario_id: str):
+    """Adjunto de la tarea (pedido sugerido, lista de remarcación) para revisar y cargar a mano en el sistema."""
+    try:
+        nombre, contenido = actividades.archivo_csv(tarea_id, _usuario(usuario_id))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e.args[0]))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    return PlainTextResponse("\ufeff" + contenido, media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
 @app.get("/plantillas/{tabla}.csv", response_class=PlainTextResponse)

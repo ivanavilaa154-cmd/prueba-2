@@ -1,0 +1,33 @@
+id: MKT-19
+nombre: Distribución de inversión y eficiencia por plataforma
+pregunta: ¿Cómo repartimos el presupuesto y dónde rinde más?
+definicion: '% del gasto por plataforma/campaña junto a su ROAS real (MKT-07), CAC pago (MKT-08) y ROAS plataforma (MKT-06).'
+formula: vista compuesta MKT-01 (share), MKT-06, MKT-07 (roas_real por plataforma), MKT-08 (cac_pago)
+cube: view marketing_scorecard
+unidad: varias
+direccion: neutral
+agregacion: vista
+grano_min: semana
+dimensiones:
+- plataforma
+- campana
+- objetivo
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  opcionales:
+  - fct_ads_diario.valor_conversiones_plataforma
+  - fct_ads_diario.conversiones_plataforma
+  - fct_atribucion_pedido.canal_marketing
+  - fct_atribucion_pedido.campana_id
+roles_minimos:
+- publicidad
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- MKT-07
+- MKT-08
+area: marketing

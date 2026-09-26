@@ -1,0 +1,38 @@
+id: VEN-11
+nombre: Clientes nuevos y participación de nuevos en la venta
+pregunta: ¿Cuántos clientes nuevos ganamos y cuánto aportan?
+definicion: Clientes cuya primera compra válida cae en el período; % venta de nuevos = venta de pedidos es_primera_compra / venta total.
+formula: "select count(distinct cliente_id) filter (where es_primera_compra) nuevos,\n       sum(importe_neto) filter (where es_primera_compra)\
+  \ / nullif(sum(importe_neto),0) pct_venta_nuevos\nfrom core.fct_pedido where pedido_valido and fecha_pedido between :desde and :hasta;\n"
+cube: clientes.nuevos, ventas.pct_venta_nuevos
+unidad: cantidad | porcentaje
+direccion: mayor_mejor
+agregacion: aditivo (nuevos) / ratio
+grano_min: dia
+dimensiones:
+- canal
+- canal_marketing
+- region
+- tipo_cliente
+filtros_base:
+- pedido_valido
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.canal_id
+  - fct_atribucion_pedido.canal_marketing
+roles_minimos:
+- ventas
+historia_minima: ≥ 12 meses (antes
+casos_borde:
+- 'La historia cargada define "nuevo": si el tenant trae solo 6 meses, un cliente viejo parece nuevo.'
+alertas:
+- condicion: nuevos cae > 20% vs mes anterior
+  severidad: media
+relacionados:
+- MKT-08
+area: ventas

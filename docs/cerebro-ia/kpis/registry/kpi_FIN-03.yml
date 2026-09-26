@@ -1,0 +1,54 @@
+id: FIN-03
+nombre: Margen bruto ($ y %)
+pregunta: ¿Cuánto nos queda después del costo de la mercadería?
+definicion: Ventas netas − CMV; margen % = margen bruto / ventas netas.
+formula: 'margen_bruto = FIN-01 - FIN-02
+
+  margen_bruto_pct = (FIN-01 - FIN-02) / nullif(FIN-01, 0)
+
+  '
+cube: eerr.margen_bruto, eerr.margen_bruto_pct
+unidad: moneda | porcentaje
+direccion: mayor_mejor
+agregacion: ratio (recalcular, nunca promediar porcentajes)
+grano_min: mes (contable) / dia (gestión)
+dimensiones:
+- sucursal
+- canal
+- categoria
+- producto (gestión)
+filtros_base: []
+parametros:
+  modo: auto|contable|gestion
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- contabilidad o facturacion+ventas
+casos_borde:
+- En alta inflación el margen a costo histórico sobreestima rentabilidad; ofrecer `costo='reposicion'` usando dim_producto.costo_estandar vigente.
+alertas:
+- condicion: margen_bruto_pct < umbral tenant (default 25%)
+  severidad: alta
+- condicion: caida > 3 pp vs mes anterior
+  severidad: media
+relacionados:
+- VEN-08
+- VEN-09
+- INV-11
+area: finanzas

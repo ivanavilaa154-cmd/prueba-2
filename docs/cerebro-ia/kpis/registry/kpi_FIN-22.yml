@@ -1,0 +1,53 @@
+id: FIN-22
+nombre: Evolución real de gastos por categoría
+pregunta: ¿Qué gastos crecen por encima de la inflación?
+definicion: Gasto por cuenta estándar / categoría en términos reales (índice de precios) y su variación vs mismo período anterior.
+formula: 'gasto_real = real_amount(gasto, fecha, periodo_base = mes actual)
+
+  var_real = gasto_real(periodo) / nullif(gasto_real(periodo_comparacion), 0) - 1
+
+  '
+cube: eerr.gastos_operativos (ajuste='real')
+unidad: moneda | porcentaje
+direccion: menor_mejor
+agregacion: aditivo / ratio
+grano_min: mes
+dimensiones:
+- codigo_estandar
+- categoria_gasto
+- proveedor
+- centro_costo
+filtros_base: []
+parametros:
+  comparacion: mes_anterior|mismo_mes_anio_anterior|promedio_3m
+requisitos:
+  obligatorias:
+  - ref.indice_precios.indice
+  opcionales:
+  - fct_asiento_linea.centro_costo_id
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_comprobante.categoria_gasto
+roles_minimos:
+- referencia_indice_precios
+- contabilidad o facturacion
+casos_borde:
+- índice de precios del último mes puede no estar publicado → se usa estimado y se marca.
+alertas:
+- condicion: var_real > 15% en categoría con peso > 5% del gasto
+  severidad: media
+relacionados:
+- FIN-04
+area: finanzas

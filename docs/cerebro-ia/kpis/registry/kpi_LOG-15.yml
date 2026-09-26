@@ -1,0 +1,38 @@
+id: LOG-15
+nombre: Precisión de preparación (picking)
+pregunta: ¿Qué porcentaje de pedidos preparamos sin errores?
+definicion: 1 − (pedidos con error de preparación / pedidos preparados). Error = línea con error registrada en preparación o devolución motivo
+  error_preparacion.
+formula: 1 - count(distinct pedido_id where lineas_con_error > 0 or devolucion.motivo = 'error_preparacion') / count(distinct pedidos preparados)
+cube: envios.precision_picking_pct
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: semana
+dimensiones:
+- deposito
+- operario
+- categoria
+filtros_base:
+- excluye envíos no controlables
+parametros: {}
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: registro_preparacion
+    obligatorias:
+    - fct_preparacion.lineas_con_error
+  - nombre: devoluciones
+    obligatorias:
+    - fct_devolucion.motivo
+roles_minimos:
+- logistica o ventas
+casos_borde:
+- ''
+alertas:
+- condicion: precision < 99%
+  severidad: media
+relacionados:
+- VEN-16
+area: logistica

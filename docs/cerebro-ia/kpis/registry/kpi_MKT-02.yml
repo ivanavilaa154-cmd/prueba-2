@@ -1,0 +1,33 @@
+id: MKT-02
+nombre: Impresiones y CPM
+pregunta: ¿Cuánta gente vio nuestros anuncios y a qué costo?
+definicion: Σ impresiones; CPM = gasto / impresiones × 1000.
+formula: select sum(impresiones), sum(gasto)/nullif(sum(impresiones),0)*1000 from core.fct_ads_diario where fecha between :desde and :hasta;
+cube: ads.impresiones, ads.cpm
+unidad: cantidad | moneda
+direccion: menor_mejor (CPM)
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- plataforma
+- campana
+- conjunto
+- anuncio
+- objetivo
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_ads_diario.impresiones
+  opcionales: []
+roles_minimos:
+- publicidad
+casos_borde:
+- 'Alcance no es aditivo entre días/campañas: solo se informa a nivel plataforma y período tal como lo devuelve la API.'
+alertas:
+- condicion: cpm real sube > 30% vs promedio 4 semanas
+  severidad: media
+relacionados:
+- MKT-20
+area: marketing

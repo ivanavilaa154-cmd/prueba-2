@@ -1,0 +1,44 @@
+id: MKT-05
+nombre: Conversiones y CPA de plataforma
+pregunta: ¿Cuántas compras/leads reporta cada plataforma y a qué costo?
+definicion: Σ conversiones_plataforma; CPA = gasto / conversiones (por plataforma, nunca sumado entre plataformas).
+formula: select plataforma, sum(conversiones_plataforma), sum(gasto)/nullif(sum(conversiones_plataforma),0) from core.fct_ads_diario where fecha
+  between :desde and :hasta group by 1;
+cube: ads.conversiones_plataforma, ads.cpa_plataforma
+unidad: cantidad | moneda
+direccion: menor_mejor (CPA)
+agregacion: aditivo dentro de plataforma / ratio
+grano_min: dia
+dimensiones:
+- plataforma (obligatoria)
+- campana
+- conjunto
+- anuncio
+- objetivo
+filtros_base:
+- objetivo in (ventas) para compras; (leads) para leads
+parametros:
+  conversion: compra|lead
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  opcionales:
+  - dim_campana.objetivo
+  alternativas:
+  - nombre: compras
+    obligatorias:
+    - fct_ads_diario.conversiones_plataforma
+  - nombre: leads
+    obligatorias:
+    - fct_ads_diario.leads_plataforma
+roles_minimos:
+- publicidad
+casos_borde:
+- Si se pide sin dimensión plataforma, el MCP fuerza el desglose y advierte que no son sumables.
+alertas:
+- condicion: cpa_plataforma de campaña de ventas > 1.5× CPA objetivo 3 días seguidos
+  severidad: media
+relacionados:
+- MKT-06
+- MKT-08
+area: marketing

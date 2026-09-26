@@ -1,0 +1,45 @@
+codigo_estandar,nombre,tipo,subtipo,eerr_linea,eerr_orden,es_corriente,naturaleza,es_variable
+1.1.01,Caja y bancos,activo,caja_bancos,,,true,D,
+1.1.02,Inversiones de corto plazo,activo,caja_bancos,,,true,D,
+1.1.03,Creditos por ventas,activo,cxc,,,true,D,
+1.1.04,Otros creditos (fiscales y otros),activo,otros_activos_corrientes,,,true,D,
+1.1.05,Inventario,activo,inventario,,,true,D,
+1.2.01,Bienes de uso,activo,bienes_uso,,,false,D,
+1.2.02,Activos intangibles,activo,bienes_uso,,,false,D,
+2.1.01,Deudas comerciales,pasivo,cxp,,,true,A,
+2.1.02,Deudas fiscales,pasivo,deudas_fiscales,,,true,A,
+2.1.03,Remuneraciones y cargas sociales a pagar,pasivo,deudas_sociales,,,true,A,
+2.1.04,Prestamos de corto plazo,pasivo,prestamos,,,true,A,
+2.1.05,Otras deudas,pasivo,otras_deudas,,,true,A,
+2.2.01,Prestamos de largo plazo,pasivo,prestamos,,,false,A,
+3.1.01,Capital y aportes,patrimonio,patrimonio,,,false,A,
+3.1.02,Resultados acumulados,patrimonio,patrimonio,,,false,A,
+4.1.01,Ventas de bienes,ingreso,ventas,ventas_brutas,10,,A,
+4.1.02,Ventas de servicios,ingreso,ventas,ventas_brutas,10,,A,
+4.1.03,Descuentos y bonificaciones sobre ventas,ingreso,descuentos_devoluciones,descuentos_devoluciones,20,,D,
+4.1.04,Devoluciones sobre ventas,ingreso,descuentos_devoluciones,descuentos_devoluciones,20,,D,
+5.1.01,Costo de mercaderias vendidas,costo,cmv,cmv,40,,D,true
+5.1.02,Costo de servicios prestados,costo,cmv,cmv,40,,D,true
+6.1.01,Comisiones de venta y de canales,gasto,gasto_comercial,gastos_comercializacion,60,,D,true
+6.1.02,Fletes y envios de venta,gasto,gasto_comercial,gastos_comercializacion,60,,D,true
+6.1.03,Publicidad y marketing,gasto,gasto_comercial,gastos_comercializacion,60,,D,false
+6.1.04,Impuestos sobre ventas brutas,gasto,gasto_comercial,gastos_comercializacion,60,,D,true
+6.1.05,Comisiones de medios de cobro,gasto,gasto_comercial,gastos_comercializacion,60,,D,true
+6.1.06,Otros gastos comerciales,gasto,gasto_comercial,gastos_comercializacion,60,,D,false
+6.2.01,Alquileres,gasto,gasto_administrativo,gastos_administracion,70,,D,false
+6.2.02,Servicios publicos,gasto,gasto_administrativo,gastos_administracion,70,,D,false
+6.2.03,Honorarios profesionales,gasto,gasto_administrativo,gastos_administracion,70,,D,false
+6.2.04,Software y sistemas,gasto,gasto_administrativo,gastos_administracion,70,,D,false
+6.2.05,Otros gastos administrativos,gasto,gasto_administrativo,gastos_administracion,70,,D,false
+6.3.01,Sueldos y jornales,gasto,gasto_personal,gastos_personal,80,,D,false
+6.3.02,Cargas sociales,gasto,gasto_personal,gastos_personal,80,,D,false
+6.4.01,Amortizaciones,gasto,amortizaciones,amortizaciones,100,,D,false
+7.1.01,Intereses ganados,ingreso,resultado_financiero,resultado_financiero,120,,A,
+7.1.02,Intereses perdidos,gasto,resultado_financiero,resultado_financiero,120,,D,
+7.1.03,Comisiones y gastos bancarios,gasto,resultado_financiero,resultado_financiero,120,,D,
+7.1.04,Impuestos sobre movimientos bancarios,gasto,resultado_financiero,resultado_financiero,120,,D,
+7.1.05,Diferencias de cambio,ingreso,resultado_financiero,resultado_financiero,120,,A,
+7.1.06,Resultado por exposicion a la inflacion,ingreso,resultado_financiero,resultado_financiero,120,,A,
+8.1.01,Otros ingresos,ingreso,otros_resultados,otros_resultados,130,,A,
+8.1.02,Otros egresos,gasto,otros_resultados,otros_resultados,130,,D,
+9.1.01,Impuesto a la renta,gasto,impuesto_renta,impuesto_renta,150,,D,

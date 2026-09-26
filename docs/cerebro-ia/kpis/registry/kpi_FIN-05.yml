@@ -1,0 +1,55 @@
+id: FIN-05
+nombre: EBITDA y margen EBITDA
+pregunta: ¿Cuánto genera el negocio operativamente antes de amortizaciones, intereses e impuestos?
+definicion: Margen bruto − gastos operativos (comercialización + administración + personal).
+formula: 'ebitda = FIN-03.margen_bruto - FIN-04.gastos_operativos
+
+  ebitda_pct = ebitda / nullif(FIN-01, 0)
+
+  '
+cube: eerr.ebitda, eerr.ebitda_pct
+unidad: moneda | porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- sucursal
+- centro_costo
+filtros_base: []
+parametros:
+  modo: auto|contable|gestion
+  ajuste: nominal|real
+requisitos:
+  obligatorias: []
+  opcionales:
+  - fct_asiento_linea.centro_costo_id
+  - fct_movimiento_tesoreria.tipo
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_comprobante.categoria_gasto
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- contabilidad o facturacion+ventas
+casos_borde:
+- Por sucursal requiere que los gastos tengan sucursal/centro de costo; gastos centrales sin asignar se muestran como "Estructura central".
+alertas:
+- condicion: ebitda < 0 en el mes
+  severidad: critica
+- condicion: ebitda_pct cae > 5 pp vs promedio 3 meses
+  severidad: alta
+relacionados:
+- FIN-06
+- FIN-20
+area: finanzas

@@ -1,0 +1,37 @@
+id: INV-02
+nombre: Unidades en stock y SKUs con stock
+pregunta: ¿Cuántas unidades y cuántos productos distintos tenemos disponibles?
+definicion: Σ stock disponible; cantidad de SKUs activos con stock disponible > 0.
+formula: 'select sum(stock_disponible), count(distinct producto_id) filter (where stock_disponible > 0)
+
+  from marts.fct_stock_diario_kpi where fecha = :fecha;
+
+  '
+cube: stock.unidades_disponibles, stock.skus_con_stock
+unidad: unidades | cantidad
+direccion: neutral
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- deposito
+- categoria
+- marca
+filtros_base:
+- depósitos vendibles
+- producto activo
+parametros:
+  tipo_stock: fisico|disponible|reservado|en_transito
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  opcionales:
+  - fct_stock_diario.stock_reservado
+  - fct_stock_diario.stock_en_transito
+roles_minimos:
+- inventario
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- INV-06
+area: inventario

@@ -1,0 +1,43 @@
+id: MKT-01
+nombre: Inversión publicitaria
+pregunta: ¿Cuánto invertimos en publicidad?
+definicion: Σ gasto de fct_ads_diario en el período.
+formula: select sum(gasto) from core.fct_ads_diario where fecha between :desde and :hasta;
+cube: ads.inversion
+unidad: moneda
+direccion: neutral
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- plataforma
+- cuenta_ads
+- campana
+- objetivo
+- tipo_campana
+- canal_marketing
+filtros_base: []
+parametros:
+  costo: plataforma|total
+  moneda: base|<ISO>|original
+  ajuste: nominal|real
+requisitos:
+  obligatorias:
+  - fct_ads_diario.fecha
+  - fct_ads_diario.gasto
+  opcionales:
+  - dim_campana.objetivo
+  - dim_campana.canal_marketing
+  - ref.tipo_cambio.valor
+roles_minimos:
+- publicidad
+casos_borde:
+- Cuentas facturadas en moneda extranjera → TC del día del gasto; mostrar también en una moneda de referencia para comparar sin efecto de devaluación.
+alertas:
+- condicion: gasto diario > 1.5× presupuesto diario configurado
+  severidad: alta
+- condicion: gasto del mes proyectado > presupuesto de marketing
+  severidad: alta
+relacionados:
+- MKT-07
+- MKT-22
+area: marketing

@@ -1,0 +1,31 @@
+id: LOG-19
+nombre: Distribución geográfica de envíos
+pregunta: ¿A dónde enviamos y cómo nos va en cada zona?
+definicion: Envíos, % del total, costo promedio y lead time por region/zona.
+formula: vista agregada de fct_envio por region_destino / zona_destino con LOG-01, LOG-11, LOG-04
+cube: envios.despachados (dimensiones geográficas)
+unidad: varias
+direccion: neutral
+agregacion: vista
+grano_min: mes
+dimensiones:
+- region_destino
+- zona_destino
+- localidad_destino
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.costo_envio
+  - fct_envio.despacho_at
+  - fct_envio.entrega_at
+  opcionales:
+  - fct_envio.zona_destino
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- LOG-17
+area: logistica

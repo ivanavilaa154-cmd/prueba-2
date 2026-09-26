@@ -1,0 +1,135 @@
+id: ACT-03
+nombre: Rotación y productos que no se mueven
+caso_de_negocio: Detectar mercadería que inmoviliza plata (no se vende o se vende muy lento) y decidir qué hacer con cada producto antes de que
+  se desvalorice.
+entidad: producto × depósito/sucursal
+frecuencia: semanal (lunes) + mensual (revisión de surtido)
+responsable_principal: comercial
+deteccion:
+  universo: productos con stock físico > 0, dados de alta hace más de 60 días.
+  condiciones:
+  - 'Sin movimiento: 0 ventas en los últimos N días (default 60) con stock > 0.'
+  - 'Rotación lenta: cobertura (stock / VDP) > 2 × cobertura objetivo de su categoría.'
+  - 'En caída: VDP de las últimas 4 semanas < 50 % de la VDP de las 12 semanas previas, sin quiebre que lo explique.'
+  - 'Desbalance entre sucursales: el mismo producto sin venta en una sucursal y con cobertura < objetivo en otra.'
+parametros:
+  dias_sin_movimiento: 60
+  factor_lento: 2
+  caida_pct: 0.5
+  antiguedad_min_dias: 60
+  valor_minimo_para_tarea: configurable (default 1 % del inventario de la sucursal o importe fijo)
+calculo: "-- marts.act__rotacion: una fila por producto × punto con segmento asignado (primer caso que aplica en orden C4, C1, C2, C3)\nselect\
+  \ producto_id, punto_id, stock_fisico, valor_stock, dias_sin_venta, vdp, cobertura_dias, vdp_4s, vdp_12s_previas,\n       case when … end as\
+  \ caso\nfrom marts.fct_stock_diario_kpi join marts.inv__demanda_sku … where fecha = :hoy;\n"
+impacto: capital inmovilizado = valor del stock a costo (C1/C2), o valor del exceso sobre la cobertura objetivo (C2); C4 = venta recuperable en
+  la sucursal destino.
+casos:
+- codigo: C1
+  nombre: Sin movimiento
+  condicion: 0 ventas en los últimos 60 días con stock > 0.
+  prioridad: alta si valor a costo ≥ umbral; media en otro caso
+  acciones:
+  - orden: 1
+    accion: Bloquear la reposición del producto (marcar 'a_discontinuar' o poner cantidad 0 en el pedido sugerido).
+    responsable: comprador
+    plazo: 48 h
+  - orden: 2
+    accion: 'Si el proveedor acepta devolución o cambio: gestionar la devolución.'
+    responsable: comprador
+    plazo: 15 días
+  - orden: 3
+    accion: 'Si no: lanzar liquidación con el descuento sugerido (el mayor que respeta el margen mínimo o, si es necesario, llega a costo) y exhibición
+      destacada; se crea la promoción y se evalúa con ACT-05.'
+    responsable: comercial
+    plazo: 7 días
+  - orden: 4
+    accion: 'Si a los 30 días de liquidación sigue sin venderse: decidir baja/donación y registrar merma.'
+    responsable: gerente_general
+    plazo: 30 días
+  cierre: Se cierra al vender ≥ 80 % del stock, al registrar la devolución/baja, o por decisión documentada de mantenerlo.
+- codigo: C2
+  nombre: Rotación lenta (sobrestock)
+  condicion: Cobertura > 2 × objetivo de la categoría, con ventas > 0.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Suspender compras del producto hasta que la cobertura vuelva al objetivo (se refleja en el pedido sugerido).
+    responsable: comprador
+    plazo: 48 h
+  - orden: 2
+    accion: Mejorar exhibición (punta de góndola, cercanía a caja) o incluirlo en una promoción cruzada con un producto de alta rotación.
+    responsable: comercial
+    plazo: 7 días
+  - orden: 3
+    accion: Revisar el tamaño de compra y el bulto con el proveedor para las próximas compras.
+    responsable: comprador
+    plazo: 30 días
+  cierre: Cobertura ≤ 1,2 × objetivo o decisión documentada.
+- codigo: C3
+  nombre: Producto en caída
+  condicion: VDP últimas 4 semanas < 50 % de las 12 previas, sin quiebre ni cambio de temporada.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Verificar si hubo cambio de precio propio o de la competencia, de ubicación o de calidad (la tarea muestra el historial de precio
+      y de ubicación si existe).
+    responsable: comercial
+    plazo: 7 días
+  - orden: 2
+    accion: Ajustar el pedido sugerido a la nueva demanda (se aplica automáticamente) y reducir el stock de seguridad.
+    responsable: comprador
+    plazo: próximo pedido
+  - orden: 3
+    accion: 'Si la caída persiste 8 semanas: evaluar reemplazo del producto en el surtido.'
+    responsable: comercial
+    plazo: 60 días
+  cierre: Recuperación de VDP ≥ 80 % de la previa o decisión documentada.
+- codigo: C4
+  nombre: Desbalance entre sucursales
+  condicion: Sin venta ≥ 30 días en una sucursal con stock, mientras otra sucursal del tenant tiene cobertura < objetivo del mismo producto.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Transferir la cantidad sugerida (mínimo entre el stock sobrante del origen y la necesidad del destino) a la sucursal que sí lo vende.
+    responsable: gerente_operaciones
+    plazo: 7 días
+  - orden: 2
+    accion: Registrar la transferencia en el sistema de gestión para que el stock refleje la nueva ubicación.
+    responsable: encargado_sucursal
+    plazo: al despachar
+  cierre: Movimiento de transferencia registrado entre esas sucursales.
+resoluciones:
+- reposicion_bloqueada
+- devuelto_a_proveedor
+- liquidacion_lanzada
+- transferido
+- baja_registrada
+- se_mantiene_justificado
+- falso_positivo
+resolucion_confirmada:
+- reposicion_bloqueada
+- devuelto_a_proveedor
+- liquidacion_lanzada
+- transferido
+- baja_registrada
+ejemplo: 142 productos sin movimiento hace 60+ días inmovilizan $ 3.850.000 a costo. Top 10 adjunto con acción sugerida; 12 se pueden transferir
+  a Sucursal Norte, donde sí se venden.
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_pedido.fecha_pedido
+  opcionales:
+  - dim_producto.fecha_alta
+  - dim_producto.categoria_n1
+  - dim_proveedor.acepta_devolucion_vencidos
+  - fct_precio_venta.precio
+  - dim_deposito.sucursal_id
+kpis_relacionados:
+- INV-03
+- INV-09
+- INV-10
+- INV-11
+- INV-12

@@ -1,0 +1,42 @@
+id: VEN-04
+nombre: Unidades vendidas y unidades por pedido
+pregunta: ¿Cuántas unidades vendimos y cuántas lleva cada pedido?
+definicion: Suma de cantidad de líneas de pedidos válidos; UPT = unidades / pedidos.
+formula: 'select sum(l.cantidad) unidades, sum(l.cantidad)/nullif(count(distinct l.pedido_id),0) upt
+
+  from core.fct_pedido_linea l join core.fct_pedido p using (pedido_id)
+
+  where pedido_valido and p.fecha_pedido between :desde and :hasta;
+
+  '
+cube: ventas.unidades, ventas.unidades_por_pedido
+unidad: unidades
+direccion: mayor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- producto
+- categoria
+- marca
+- canal
+- sucursal
+filtros_base:
+- pedido_valido
+- excluye es_servicio
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_pedido.fecha_pedido
+  - fct_pedido.estado
+  - fct_pedido.es_fuente_verdad
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- Productos vendidos por kg/metro no se suman con unidades; agrupar por unidad_medida.
+alertas: []
+relacionados:
+- INV-05
+area: ventas

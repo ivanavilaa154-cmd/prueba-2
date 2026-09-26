@@ -1,0 +1,42 @@
+id: VEN-23
+nombre: Concentración de ventas (Pareto clientes/productos)
+pregunta: ¿Dependemos de pocos clientes o productos?
+definicion: '% de la venta que explica el top 10 / top 20 % de clientes o productos; índice HHI opcional.'
+formula: 'with r as (select cliente_id, sum(importe_neto) v from core.fct_pedido where pedido_valido and fecha_pedido between :desde and :hasta
+  group by 1)
+
+  select sum(v) filter (where rk <= 10) / sum(v) top10_pct
+
+  from (select *, rank() over (order by v desc) rk from r) x;
+
+  '
+cube: ventas.concentracion
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- entidad (cliente|producto|categoria)
+filtros_base:
+- pedido_valido
+parametros:
+  entidad: cliente|producto
+  top_n: 10
+requisitos:
+  obligatorias:
+  - fct_pedido.importe_neto
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.importe_neto
+  opcionales:
+  - fct_pedido.cliente_id
+roles_minimos:
+- ventas
+casos_borde:
+- ''
+alertas:
+- condicion: un solo cliente > 20% de la venta 12m
+  severidad: alta
+relacionados:
+- VEN-15
+- INV-12
+area: ventas

@@ -1,0 +1,30 @@
+id: LOG-13
+nombre: Subsidio de envío
+pregunta: ¿Cuánto ponemos de nuestro bolsillo en envíos gratis?
+definicion: Σ (costo_envio − importe_envio_cobrado) donde costo > cobrado; % de envíos con envío gratis.
+formula: select sum(greatest(costo_envio - coalesce(importe_envio_cobrado,0),0)), avg((coalesce(importe_envio_cobrado,0)=0)::int) from core.fct_envio
+  where not es_devolucion and local_date(despacho_at) between :desde and :hasta;
+cube: envios.subsidio, envios.pct_envio_gratis
+unidad: moneda | porcentaje
+direccion: menor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- canal
+- zona_destino
+- rango_ticket
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.costo_envio
+  opcionales:
+  - fct_pedido.importe_envio_cobrado
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- LOG-12
+area: logistica

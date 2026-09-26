@@ -1,0 +1,41 @@
+id: VEN-03
+nombre: Ticket promedio
+pregunta: ¿Cuánto gasta en promedio cada pedido?
+definicion: Venta neta de pedidos válidos / cantidad de pedidos válidos (sin descontar devoluciones).
+formula: select sum(importe_neto)/nullif(count(distinct pedido_id),0) from core.fct_pedido where pedido_valido and fecha_pedido between :desde
+  and :hasta;
+cube: ventas.ticket_promedio
+unidad: moneda
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+- vendedor
+- tipo_cliente
+- canal_marketing
+- es_primera_compra
+filtros_base:
+- pedido_valido
+parametros:
+  ajuste: nominal|real
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.estado
+  - fct_pedido.es_fuente_verdad
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.es_primera_compra
+roles_minimos:
+- ventas
+casos_borde:
+- Comparaciones interanuales siempre en términos reales por inflación.
+alertas:
+- condicion: ticket real cae > 10% vs promedio 3 meses
+  severidad: media
+relacionados:
+- VEN-01
+- VEN-04
+area: ventas

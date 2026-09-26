@@ -1,0 +1,532 @@
+titulo: Actividades según el caso
+intro: |
+  Los KPIs **miden**; las alertas de KPI **avisan**; las **actividades** le dicen a una persona concreta **qué hacer hoy, con qué producto, en qué lugar**.
+  Cada actividad es una regla determinística (SQL/Python sobre `core` y `marts`, sin modelo de lenguaje) que recorre el negocio, detecta casos
+  y genera tareas en `ops.actividad` (docs/04 §4.7).
+
+  **Regla central: ninguna alerta sin acción.** Cada actividad tiene una **tabla de casos**: cada caso tiene una condición de detección y una o más
+  **acciones prescriptas**, cada una con responsable, plazo y criterio de cierre. El build rechaza un caso sin acción. Si una detección no encaja en ningún caso,
+  no se emite (se registra en `ops.actividad_descartes` para revisar la regla).
+
+  **Anatomía de una tarea** (lo que recibe el responsable):
+  1. Título claro ("Revisar góndola: Producto X en Sucursal Centro").
+  2. Evidencia en números (por qué se detectó).
+  3. Caso detectado y **acciones en orden**, cada una con plazo.
+  4. Impacto estimado en dinero (para priorizar).
+  5. Botones de resolución (valores permitidos por actividad) + comentario.
+
+  **Ciclo de vida:** `nueva` → `en_curso` → `resuelta` / `descartada` (con resolución obligatoria) · `vencida` si pasa el plazo sin resolver (escala al rol superior) ·
+  `cerrada_automatica` si la condición desaparece sola (ej. el producto volvió a venderse). Una sola tarea abierta por `clave_dedupe`.
+
+  **Aprendizaje:** por actividad y tenant se mide la **precisión** (resueltas con resolución "confirmada" / total cerradas). Si baja de 60 % durante 4 semanas,
+  se propone al operador endurecer parámetros; si supera 90 % con pocas detecciones, se propone relajarlos. Los parámetros se ajustan en `ops.tenant_config_kpi(<ACT>, …)`.
+
+  **Priorización:** `puntaje = impacto_estimado × urgencia` (urgencia: 3 crítica, 2 alta, 1 media, 0,5 baja). Cada responsable recibe su lista ordenada;
+  tope configurable de tareas por persona por día (default 15) para no saturar: el resto queda visible pero no se notifica.
+
+  **Configuración de negocio usada por las actividades** (por tenant, editable en la interfaz):
+  - `ops.politica_precio(alcance_tipo, alcance_valor, metodo, margen_objetivo_pct, margen_minimo_pct, base_costo, redondeo, tolerancia_pct)` — alcance: categoría, marca, proveedor o producto (gana el más específico).
+  - `ops.politica_producto(alcance_tipo, alcance_valor, dias_retiro_antes_vencimiento, cobertura_objetivo_dias, dias_seguridad, nivel_servicio)`.
+  - `ops.responsable(rol, sucursal_id, usuario, canal_notificacion)` — a quién le llega cada tarea.
+
+actividades:
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-01
+  nombre: Quiebre oculto (falta en góndola con stock en sistema)
+  caso_de_negocio: Un producto que se vende todos los días deja de venderse aunque el sistema dice que hay stock. Probablemente no está exhibido (quedó en depósito, está mal ubicado, se dañó, se lo robaron o el stock del sistema está mal).
+  entidad: producto × punto de venta (sucursal o depósito vendible)
+  frecuencia: diaria (06:00 hora local, sobre el día anterior) + opcional cada 2 h en horario operativo (versión intradía)
+  responsable_principal: encargado_sucursal
+  deteccion:
+    universo: productos activos con venta regular en el punto de venta — vendió en ≥ 80 % de los días abiertos de las últimas 4 semanas (sin contar los días evaluados) y su venta media λ ≥ 1 unidad/día.
+    condiciones:
+      - "Días consecutivos sin venta k tal que la probabilidad de no vender por azar sea < 1 %: P = e^(−λ·k) < 0,01 (ej. λ = 2/día → k ≥ 3; λ = 5/día → k ≥ 1)."
+      - El punto de venta estuvo abierto y con actividad normal esos días (tickets totales ≥ 70 % de su promedio del mismo día de semana).
+      - Stock disponible en sistema > 0 durante esos días en ese punto de venta.
+    exclusiones:
+      - Stock en sistema = 0 → no es oculto; lo trata INV-06 / ACT-02.
+      - Terminó una promoción del producto en los 3 días previos (caída natural).
+      - Subió el precio de venta > 15 % en los últimos 7 días (se evalúa en ACT-04, caso C5).
+      - Producto `estacional_fuera_temporada`, `discontinuado` o con CV de demanda semanal > 1 (irregular).
+    intradia: "Con curva horaria del producto (share de venta por hora, 8 semanas): si a la hora h la venta acumulada del día = 0 y la esperada ≥ 4 unidades, se adelanta la detección."
+  parametros: {ventana_base_dias: 28, pct_dias_con_venta_min: 0.8, lambda_min: 1, prob_umbral: 0.01, actividad_local_min: 0.7, variacion_precio_excluir: 0.15}
+  calculo: |
+    -- marts.act__quiebre_oculto (sobre marts.ven__venta_diaria_sku_punto y marts.fct_stock_diario_kpi)
+    with base as (
+      select tenant_id, producto_id, punto_id,
+             avg(unidades) filter (where dia_abierto)                           as lambda,
+             avg((unidades > 0)::int) filter (where dia_abierto)                as pct_dias_con_venta,
+             stddev(unidades) filter (where dia_abierto)                        as sigma
+      from marts.ven__venta_diaria_sku_punto
+      where fecha between :hoy - 35 and :hoy - 8
+      group by 1,2,3),
+    racha as (   -- días consecutivos recientes sin venta, con local abierto y stock > 0
+      select v.tenant_id, v.producto_id, v.punto_id, count(*) as k, min(s.stock_disponible) as stock_min
+      from marts.ven__venta_diaria_sku_punto v
+      join marts.fct_stock_diario_kpi s using (tenant_id, producto_id, fecha)   -- s.deposito del punto
+      where v.fecha > coalesce((select max(fecha) from marts.ven__venta_diaria_sku_punto x
+                                where x.producto_id = v.producto_id and x.punto_id = v.punto_id and x.unidades > 0), '1900-01-01')
+        and v.dia_abierto and v.actividad_relativa >= :actividad_local_min and s.stock_disponible > 0
+      group by 1,2,3)
+    select b.*, r.k, r.stock_min, exp(-b.lambda * r.k) as p_azar,
+           b.lambda * r.k * precio_neto_prom as venta_perdida_estimada
+    from base b join racha r using (tenant_id, producto_id, punto_id)
+    where b.pct_dias_con_venta >= :pct_dias_con_venta_min and b.lambda >= :lambda_min
+      and exp(-b.lambda * r.k) < :prob_umbral;
+  impacto: venta_perdida_estimada = λ × k × precio neto medio (y margen perdido = × margen %); se proyecta λ × precio por cada día adicional sin resolver.
+  casos:
+    - codigo: C1
+      nombre: Stock en depósito, no en exhibición
+      condicion: Se detecta el patrón y el punto de venta tiene depósito trasero o stock en otra ubicación del mismo punto (o no se puede distinguir la ubicación).
+      prioridad: alta (crítica si el producto es clase A)
+      acciones:
+        - {orden: 1, accion: "Ir a la góndola/exhibición y verificar si el producto está visible, con precio y en su lugar.", responsable: repositor, plazo: "2 h hábiles"}
+        - {orden: 2, accion: "Si no está: buscarlo en depósito y reponer la exhibición completa.", responsable: repositor, plazo: "mismo día"}
+        - {orden: 3, accion: "Si no aparece en ningún lado: hacer conteo físico y registrar el ajuste de inventario con motivo 'faltante' (pasa al caso C3).", responsable: encargado_sucursal, plazo: "mismo día"}
+      cierre: Se resuelve con la resolución elegida; se cierra automáticamente si el producto vuelve a venderse ≥ 50 % de λ en las 24 h siguientes.
+    - codigo: C2
+      nombre: Producto exhibido pero sin venta (problema de exhibición o precio)
+      condicion: La tarea C1 se resolvió como "estaba exhibido" y la venta no se recupera en 48 h.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Verificar que el precio de góndola coincida con el precio del sistema y que la etiqueta sea legible.", responsable: repositor, plazo: "mismo día"}
+        - {orden: 2, accion: "Verificar ubicación (altura, frente, cantidad de frentes) contra el planograma o la ubicación anterior; restituirla.", responsable: encargado_sucursal, plazo: "24 h"}
+        - {orden: 3, accion: "Si hay un cambio de precio reciente, derivar a comercial para revisar (ACT-04 C5).", responsable: comercial, plazo: "48 h"}
+      cierre: Venta vuelve a ≥ 50 % de λ durante 2 días, o resolución manual.
+    - codigo: C3
+      nombre: Stock fantasma confirmado (el sistema dice que hay y no hay)
+      condicion: Resolución de C1 = "no hay stock físico", o conteo físico < 50 % del stock de sistema.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Registrar el ajuste de inventario por la diferencia contada (motivo 'faltante' o 'error_carga').", responsable: encargado_sucursal, plazo: "mismo día"}
+        - {orden: 2, accion: "Generar reposición urgente: incluir el producto en el próximo pedido sugerido del proveedor (ACT-02) o transferir desde otra sucursal con stock.", responsable: comprador, plazo: "24 h"}
+        - {orden: 3, accion: "Si el mismo producto/sucursal tiene 2 o más stock fantasma en 60 días: programar conteo cíclico de la categoría y revisar posible robo.", responsable: gerente_operaciones, plazo: "7 días"}
+      cierre: Ajuste registrado (se verifica por movimiento de stock tipo ajuste en la fecha) + pedido/transferencia creada.
+    - codigo: C4
+      nombre: Producto dañado o vencido en exhibición
+      condicion: Resolución de C1 = "estaba dañado/vencido".
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Retirar las unidades de la exhibición y registrar merma con motivo 'rotura' o 'vencimiento'.", responsable: repositor, plazo: "inmediato"}
+        - {orden: 2, accion: "Reponer con unidades en buen estado; si no hay, pedir reposición urgente.", responsable: encargado_sucursal, plazo: "mismo día"}
+        - {orden: 3, accion: "Si es vencimiento: revisar el resto de los lotes del producto (dispara ACT-06).", responsable: encargado_sucursal, plazo: "24 h"}
+      cierre: Merma registrada.
+  resoluciones: [repuesto_desde_deposito, estaba_exhibido, no_hay_stock_fisico_ajustado, danado_o_vencido_retirado, precio_o_etiqueta_corregidos, falso_positivo]
+  resolucion_confirmada: [repuesto_desde_deposito, no_hay_stock_fisico_ajustado, danado_o_vencido_retirado, precio_o_etiqueta_corregidos]
+  ejemplo: "Sucursal Centro — Producto X (clase A) vende 6 u/día y lleva 2 días sin ventas; el sistema indica 48 u. Venta perdida estimada: $ 23.400. Acción 1: verificar góndola antes de las 11:00."
+  requisitos:
+    obligatorias: [fct_pedido.pedido_at, fct_pedido_linea.producto_id, fct_pedido_linea.cantidad, fct_stock_diario.stock_disponible]
+    opcionales: [fct_precio_venta.precio, dim_promocion.fecha_fin, dim_producto.estado_surtido, dim_producto.clasificacion_abc]
+    alternativas:
+      - {nombre: punto_por_deposito, obligatorias: [fct_pedido.deposito_id]}
+      - {nombre: punto_por_sucursal, obligatorias: [fct_pedido.sucursal_id, dim_deposito.sucursal_id]}
+  kpis_relacionados: [INV-06, INV-07, INV-13, INV-21]
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-02
+  nombre: Pedido sugerido
+  caso_de_negocio: Saber qué comprarle a cada proveedor, cuánto y cuándo, para no quedarse sin stock ni sobrestockearse, respetando mínimos, bultos y vencimientos.
+  entidad: proveedor (con líneas producto × depósito)
+  frecuencia: según los días de pedido de cada proveedor (`dim_proveedor.dias_pedido`); si no hay, diaria. Urgencias (caso C1) se evalúan todos los días.
+  responsable_principal: comprador
+  deteccion:
+    universo: productos activos (`estado_surtido = 'activo'`) con `gestiona_stock` y proveedor principal asignado.
+    condiciones:
+      - "Demanda diaria d = VDP corregida por quiebres (marts.inv__demanda_sku); σ = desvío de la demanda diaria (28-90 días)."
+      - "Período a cubrir T = lead time + días hasta el próximo día de pedido del proveedor (revisión)."
+      - "Stock de seguridad SS = z(nivel de servicio) × σ × √(lead time); z por clase ABC: A 1,65 (95 %), B 1,28 (90 %), C 0,84 (80 %)."
+      - "Necesidad = d × T + SS − (stock disponible + en tránsito)."
+      - "Cantidad sugerida = redondeo hacia arriba a múltiplo de unidades_por_bulto de max(0, Necesidad)."
+      - "Tope por vencimiento (perecederos): cantidad ≤ d × (vida_util_dias − dias_retiro_antes_vencimiento) × 0,9 − stock disponible."
+      - "Tope por sobrestock: la cobertura resultante no puede superar la cobertura objetivo × 1,5 (salvo compra de oportunidad aprobada)."
+    exclusiones:
+      - Productos `a_discontinuar` / `discontinuado` → cantidad 0 y se listan aparte para confirmar que no se repongan.
+      - Productos clase C con cobertura actual > 60 días.
+  parametros: {nivel_servicio_por_abc: {A: 0.95, B: 0.90, C: 0.80}, dias_revision_default: 7, tope_cobertura_factor: 1.5, factor_vida_util: 0.9}
+  calculo: |
+    -- marts.act__pedido_sugerido
+    select p.proveedor_id, pr.producto_id, pr.deposito_id, d.vdp, d.sigma, lt.lead_time, rv.dias_revision,
+           z(pr.clase_abc) * d.sigma * sqrt(lt.lead_time)                                         as ss,
+           d.vdp * (lt.lead_time + rv.dias_revision) + ss - (s.stock_disponible + s.stock_en_transito) as necesidad,
+           ceil(greatest(necesidad,0) / coalesce(pr.unidades_por_bulto,1)) * coalesce(pr.unidades_por_bulto,1) as cantidad,
+           least(cantidad, tope_vencimiento, tope_cobertura)                                        as cantidad_final,
+           cantidad_final * lpp.costo_neto                                                         as importe
+    from … ;  -- lead_time: parametro_reposicion → dim_proveedor.lead_time_dias_estandar → mediana real (INV-17)
+  impacto: importe del pedido; para C1 = venta perdida evitada (d × días hasta quiebre sin pedir × precio).
+  casos:
+    - codigo: C1
+      nombre: Quiebre inminente (urgente)
+      condicion: "Cobertura actual (disponible + tránsito) / d < lead time del proveedor y el producto es clase A o B."
+      prioridad: critica
+      acciones:
+        - {orden: 1, accion: "Emitir hoy el pedido del producto aunque no sea día de pedido del proveedor (pedido urgente con las cantidades sugeridas).", responsable: comprador, plazo: "mismo día"}
+        - {orden: 2, accion: "Si el proveedor no puede entregar a tiempo: transferir stock desde otra sucursal con cobertura > 2× objetivo (la tarea lista cuáles).", responsable: gerente_operaciones, plazo: "24 h"}
+        - {orden: 3, accion: "Si no hay alternativa: activar sustituto (producto de la misma categoría con stock) y avisar a ventas/sucursales.", responsable: comercial, plazo: "24 h"}
+      cierre: Existe orden de compra o transferencia creada para el producto con fecha ≥ detección.
+    - codigo: C2
+      nombre: Pedido regular del proveedor
+      condicion: Es día de pedido del proveedor y hay ≥ 1 línea con cantidad_final > 0.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Revisar el borrador de pedido (archivo adjunto con producto, stock, venta diaria, cobertura, cantidad sugerida, costo e importe).", responsable: comprador, plazo: "mismo día"}
+        - {orden: 2, accion: "Aprobar o corregir cantidades (cada corrección pide motivo: 'promoción planificada', 'cambio de proveedor', 'otro').", responsable: comprador, plazo: "mismo día"}
+        - {orden: 3, accion: "Enviar el pedido al proveedor y cargar la orden de compra en el sistema de gestión.", responsable: comprador, plazo: "mismo día"}
+      cierre: Orden de compra al proveedor creada en los 2 días siguientes; se compara lo pedido vs lo sugerido para aprendizaje.
+    - codigo: C3
+      nombre: Pedido por debajo del mínimo del proveedor
+      condicion: Importe total sugerido < `monto_minimo_pedido` del proveedor.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Completar el mínimo adelantando productos del mismo proveedor con menor cobertura (la tarea propone cuáles, sin superar tope de cobertura).", responsable: comprador, plazo: "mismo día"}
+        - {orden: 2, accion: "Si no conviene completar: posponer al próximo día de pedido, salvo que haya líneas del caso C1.", responsable: comprador, plazo: "mismo día"}
+      cierre: Pedido emitido con el mínimo o pospuesto con motivo.
+    - codigo: C4
+      nombre: Compra limitada por vencimiento
+      condicion: Producto perecedero donde el tope por vida útil recortó la cantidad sugerida.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Pedir solo la cantidad tope indicada y aumentar la frecuencia de pedido de este producto (la tarea sugiere cada cuántos días).", responsable: comprador, plazo: "mismo día"}
+        - {orden: 2, accion: "Negociar con el proveedor entregas más chicas o más frecuentes si el bulto obliga a comprar de más.", responsable: comprador, plazo: "30 días"}
+      cierre: Pedido emitido con cantidad ≤ tope.
+    - codigo: C5
+      nombre: Productos a discontinuar con reposición pendiente
+      condicion: Producto `a_discontinuar` con órdenes abiertas o incluido por error en la última compra.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Cancelar o reducir la orden de compra abierta del producto.", responsable: comprador, plazo: "48 h"}
+        - {orden: 2, accion: "Derivar el stock remanente a liquidación (ACT-03 C1).", responsable: comercial, plazo: "7 días"}
+      cierre: Orden cancelada/ajustada o confirmación de que se mantiene.
+  resoluciones: [pedido_emitido_como_sugerido, pedido_emitido_corregido, transferencia_realizada, sustituto_activado, pospuesto, descartado]
+  resolucion_confirmada: [pedido_emitido_como_sugerido, pedido_emitido_corregido, transferencia_realizada, sustituto_activado]
+  ejemplo: "Proveedor Y — pedido del martes: 34 productos, $ 1.240.000. 3 productos en quiebre inminente (cobertura 2 días, entrega en 4). Adjunto: pedido_sugerido_Y.csv."
+  requisitos:
+    obligatorias: [fct_stock_diario.stock_disponible, fct_pedido_linea.producto_id, fct_pedido_linea.cantidad, dim_producto.proveedor_principal_id]
+    opcionales: [fct_stock_diario.stock_en_transito, dim_producto.unidades_por_bulto, dim_producto.vida_util_dias, dim_producto.estado_surtido, dim_proveedor.dias_pedido, dim_proveedor.monto_minimo_pedido, fct_lista_precio_proveedor.costo_neto]
+    alternativas:
+      - {nombre: lead_time_parametro, obligatorias: [parametro_reposicion.lead_time_dias]}
+      - {nombre: lead_time_proveedor, obligatorias: [dim_proveedor.lead_time_dias_estandar]}
+      - {nombre: lead_time_historico, obligatorias: [fct_orden_compra.fecha_emision, fct_recepcion.fecha_recepcion]}
+  kpis_relacionados: [INV-05, INV-06, INV-10, INV-15, INV-17]
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-03
+  nombre: Rotación y productos que no se mueven
+  caso_de_negocio: Detectar mercadería que inmoviliza plata (no se vende o se vende muy lento) y decidir qué hacer con cada producto antes de que se desvalorice.
+  entidad: producto × depósito/sucursal
+  frecuencia: semanal (lunes) + mensual (revisión de surtido)
+  responsable_principal: comercial
+  deteccion:
+    universo: productos con stock físico > 0, dados de alta hace más de 60 días.
+    condiciones:
+      - "Sin movimiento: 0 ventas en los últimos N días (default 60) con stock > 0."
+      - "Rotación lenta: cobertura (stock / VDP) > 2 × cobertura objetivo de su categoría."
+      - "En caída: VDP de las últimas 4 semanas < 50 % de la VDP de las 12 semanas previas, sin quiebre que lo explique."
+      - "Desbalance entre sucursales: el mismo producto sin venta en una sucursal y con cobertura < objetivo en otra."
+  parametros: {dias_sin_movimiento: 60, factor_lento: 2, caida_pct: 0.5, antiguedad_min_dias: 60, valor_minimo_para_tarea: "configurable (default 1 % del inventario de la sucursal o importe fijo)"}
+  calculo: |
+    -- marts.act__rotacion: una fila por producto × punto con segmento asignado (primer caso que aplica en orden C4, C1, C2, C3)
+    select producto_id, punto_id, stock_fisico, valor_stock, dias_sin_venta, vdp, cobertura_dias, vdp_4s, vdp_12s_previas,
+           case when … end as caso
+    from marts.fct_stock_diario_kpi join marts.inv__demanda_sku … where fecha = :hoy;
+  impacto: capital inmovilizado = valor del stock a costo (C1/C2), o valor del exceso sobre la cobertura objetivo (C2); C4 = venta recuperable en la sucursal destino.
+  casos:
+    - codigo: C1
+      nombre: Sin movimiento
+      condicion: 0 ventas en los últimos 60 días con stock > 0.
+      prioridad: alta si valor a costo ≥ umbral; media en otro caso
+      acciones:
+        - {orden: 1, accion: "Bloquear la reposición del producto (marcar 'a_discontinuar' o poner cantidad 0 en el pedido sugerido).", responsable: comprador, plazo: "48 h"}
+        - {orden: 2, accion: "Si el proveedor acepta devolución o cambio: gestionar la devolución.", responsable: comprador, plazo: "15 días"}
+        - {orden: 3, accion: "Si no: lanzar liquidación con el descuento sugerido (el mayor que respeta el margen mínimo o, si es necesario, llega a costo) y exhibición destacada; se crea la promoción y se evalúa con ACT-05.", responsable: comercial, plazo: "7 días"}
+        - {orden: 4, accion: "Si a los 30 días de liquidación sigue sin venderse: decidir baja/donación y registrar merma.", responsable: gerente_general, plazo: "30 días"}
+      cierre: Se cierra al vender ≥ 80 % del stock, al registrar la devolución/baja, o por decisión documentada de mantenerlo.
+    - codigo: C2
+      nombre: Rotación lenta (sobrestock)
+      condicion: Cobertura > 2 × objetivo de la categoría, con ventas > 0.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Suspender compras del producto hasta que la cobertura vuelva al objetivo (se refleja en el pedido sugerido).", responsable: comprador, plazo: "48 h"}
+        - {orden: 2, accion: "Mejorar exhibición (punta de góndola, cercanía a caja) o incluirlo en una promoción cruzada con un producto de alta rotación.", responsable: comercial, plazo: "7 días"}
+        - {orden: 3, accion: "Revisar el tamaño de compra y el bulto con el proveedor para las próximas compras.", responsable: comprador, plazo: "30 días"}
+      cierre: Cobertura ≤ 1,2 × objetivo o decisión documentada.
+    - codigo: C3
+      nombre: Producto en caída
+      condicion: VDP últimas 4 semanas < 50 % de las 12 previas, sin quiebre ni cambio de temporada.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Verificar si hubo cambio de precio propio o de la competencia, de ubicación o de calidad (la tarea muestra el historial de precio y de ubicación si existe).", responsable: comercial, plazo: "7 días"}
+        - {orden: 2, accion: "Ajustar el pedido sugerido a la nueva demanda (se aplica automáticamente) y reducir el stock de seguridad.", responsable: comprador, plazo: "próximo pedido"}
+        - {orden: 3, accion: "Si la caída persiste 8 semanas: evaluar reemplazo del producto en el surtido.", responsable: comercial, plazo: "60 días"}
+      cierre: Recuperación de VDP ≥ 80 % de la previa o decisión documentada.
+    - codigo: C4
+      nombre: Desbalance entre sucursales
+      condicion: Sin venta ≥ 30 días en una sucursal con stock, mientras otra sucursal del tenant tiene cobertura < objetivo del mismo producto.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Transferir la cantidad sugerida (mínimo entre el stock sobrante del origen y la necesidad del destino) a la sucursal que sí lo vende.", responsable: gerente_operaciones, plazo: "7 días"}
+        - {orden: 2, accion: "Registrar la transferencia en el sistema de gestión para que el stock refleje la nueva ubicación.", responsable: encargado_sucursal, plazo: "al despachar"}
+      cierre: Movimiento de transferencia registrado entre esas sucursales.
+  resoluciones: [reposicion_bloqueada, devuelto_a_proveedor, liquidacion_lanzada, transferido, baja_registrada, se_mantiene_justificado, falso_positivo]
+  resolucion_confirmada: [reposicion_bloqueada, devuelto_a_proveedor, liquidacion_lanzada, transferido, baja_registrada]
+  ejemplo: "142 productos sin movimiento hace 60+ días inmovilizan $ 3.850.000 a costo. Top 10 adjunto con acción sugerida; 12 se pueden transferir a Sucursal Norte, donde sí se venden."
+  requisitos:
+    obligatorias: [fct_stock_diario.stock_fisico, fct_stock_diario.costo_unitario, fct_pedido_linea.producto_id, fct_pedido_linea.cantidad, fct_pedido.fecha_pedido]
+    opcionales: [dim_producto.fecha_alta, dim_producto.categoria_n1, dim_proveedor.acepta_devolucion_vencidos, fct_precio_venta.precio, dim_deposito.sucursal_id]
+  kpis_relacionados: [INV-03, INV-09, INV-10, INV-11, INV-12]
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-04
+  nombre: Remarcación y margen según listas de proveedores
+  caso_de_negocio: Cuando un proveedor cambia su lista de precios hay que actualizar los precios de venta para sostener el margen; también detectar productos que ya venden por debajo del margen mínimo o del costo.
+  entidad: producto (y lista de precios / sucursal / canal)
+  frecuencia: al recibir una lista nueva de proveedor (evento) + diaria para erosión de margen + semanal para listas desactualizadas
+  responsable_principal: comercial
+  deteccion:
+    universo: productos activos con precio de venta vigente.
+    condiciones:
+      - "Costo de reposición vigente = costo_neto de la lista vigente del proveedor principal (o último costo de compra si no hay lista)."
+      - "Margen actual = (precio − costo_reposicion) / precio (método margen_sobre_precio) o markup = (precio − costo) / costo, según ops.politica_precio."
+      - "Precio sugerido = costo_reposicion / (1 − margen_objetivo) (o costo × (1 + markup_objetivo)), redondeado con la regla de redondeo del tenant (terminaciones y múltiplos)."
+      - "Se sugiere remarcar solo si |precio sugerido − precio actual| / precio actual > tolerancia (default 2 %)."
+    exclusiones:
+      - Precio promocional vigente (se evalúa al terminar la promoción).
+      - Productos con precio fijado por contrato o precio sugerido de fabricante bloqueado (marca en ops.politica_precio).
+  parametros: {tolerancia_pct: 0.02, dias_lista_desactualizada: 45, variacion_costo_alerta_pct: 0.03, politica_stock_existente: "reposicion (remarcar todo el stock) | promedio (remarcar al ingresar la nueva mercadería)"}
+  calculo: |
+    -- marts.act__remarcacion
+    select pv.producto_id, pv.lista_precios, pv.sucursal_id, pv.precio as precio_actual,
+           lpp.costo_neto as costo_nuevo, lpp_ant.costo_neto as costo_anterior,
+           (lpp.costo_neto / nullif(lpp_ant.costo_neto,0) - 1) as var_costo,
+           (pv.precio - lpp.costo_neto) / nullif(pv.precio,0) as margen_actual,
+           redondear(lpp.costo_neto / (1 - pol.margen_objetivo_pct/100), pol.redondeo) as precio_sugerido,
+           vdp * 30 * (precio_sugerido - pv.precio) as impacto_mensual_venta
+    from core.fct_precio_venta pv
+    join core.fct_lista_precio_proveedor lpp on lpp.es_vigente and …
+    left join lateral (anterior vigencia) lpp_ant on true
+    join ops.politica_precio pol on (alcance más específico)
+    where pv.vigente_hasta is null and not pv.es_promocional;
+  impacto: margen mensual recuperado = VDP × 30 × (margen unitario objetivo − margen unitario actual); C3 = pérdida mensual evitada.
+  casos:
+    - codigo: C1
+      nombre: Aumento de lista del proveedor
+      condicion: Llegó una lista con costo_neto mayor al anterior en > 3 % para uno o más productos.
+      prioridad: alta (crítica si el aumento promedio de la lista > 10 %)
+      acciones:
+        - {orden: 1, accion: "Revisar el archivo de remarcación: precio actual, costo nuevo, margen actual, precio sugerido, margen resultante e impacto (ordenado por impacto).", responsable: comercial, plazo: "24 h"}
+        - {orden: 2, accion: "Aprobar o ajustar los precios sugeridos (ajuste manual pide motivo) y cargarlos en el sistema de gestión con la fecha de vigencia.", responsable: comercial, plazo: "48 h"}
+        - {orden: 3, accion: "Imprimir y cambiar las etiquetas de góndola de los productos remarcados (listado por sucursal y pasillo/categoría).", responsable: encargado_sucursal, plazo: "24 h desde la carga"}
+        - {orden: 4, accion: "Si la política es 'promedio': programar la remarcación para el día de ingreso de la mercadería al nuevo costo (la tarea queda en espera de esa recepción).", responsable: comercial, plazo: "al recibir"}
+      cierre: Existe un nuevo precio vigente ≥ precio sugerido × (1 − tolerancia) para los productos aprobados; las etiquetas se confirman con la resolución.
+    - codigo: C2
+      nombre: Erosión de margen (sin lista nueva)
+      condicion: Margen actual con costo de reposición < margen mínimo de la política, aunque no haya llegado una lista (ej. subió el costo por compra reciente).
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Remarcar al precio sugerido o documentar por qué se sostiene el precio (competencia, producto gancho).", responsable: comercial, plazo: "48 h"}
+        - {orden: 2, accion: "Si se sostiene el precio: marcar el producto como 'margen bajo aceptado' con fecha de revisión (se re-evalúa en 30 días).", responsable: comercial, plazo: "48 h"}
+      cierre: Nuevo precio cargado o excepción registrada con fecha de revisión.
+    - codigo: C3
+      nombre: Venta por debajo del costo
+      condicion: Precio de venta vigente (sin promoción) < costo de reposición.
+      prioridad: critica
+      acciones:
+        - {orden: 1, accion: "Corregir el precio hoy (puede ser error de carga) o confirmar que es una decisión comercial.", responsable: comercial, plazo: "mismo día"}
+        - {orden: 2, accion: "Si fue error de carga: revisar otros productos cargados en la misma actualización (la tarea los lista).", responsable: comercial, plazo: "24 h"}
+      cierre: Precio ≥ costo o excepción aprobada por gerente_general.
+    - codigo: C4
+      nombre: Baja de costo del proveedor
+      condicion: Lista con costo_neto menor al anterior en > 3 %.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Decidir: trasladar la baja al precio (más competitivo) o sostener el precio y ganar margen. La tarea muestra ambos escenarios con su impacto.", responsable: comercial, plazo: "7 días"}
+        - {orden: 2, accion: "Aprovechar la baja para aumentar la compra si el producto es clase A con buena rotación (ajuste del pedido sugerido).", responsable: comprador, plazo: "próximo pedido"}
+      cierre: Decisión registrada.
+    - codigo: C5
+      nombre: Aumento de precio que frenó la venta
+      condicion: Tras una remarcación > 15 %, la VDP de las 2 semanas siguientes cayó > 40 % vs las 4 previas (sin quiebre).
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Revisar el precio contra la competencia y el precio de productos sustitutos; ajustar si quedó fuera de mercado.", responsable: comercial, plazo: "7 días"}
+        - {orden: 2, accion: "Si el margen lo permite, bajar al margen objetivo mínimo; si no, evaluar reemplazar el producto (ACT-03 C3).", responsable: comercial, plazo: "14 días"}
+      cierre: Nuevo precio o decisión documentada.
+    - codigo: C6
+      nombre: Lista de proveedor desactualizada
+      condicion: El proveedor no envía lista hace más de 45 días y su última compra fue a un costo > 3 % del costo de lista (o el índice de precios subió > 5 % desde la última lista).
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Pedir al proveedor la lista de precios vigente y cargarla (o subir el archivo para que se procese automáticamente).", responsable: comprador, plazo: "7 días"}
+      cierre: Nueva lista cargada para ese proveedor.
+    - codigo: C7
+      nombre: Precios inconsistentes entre sucursales o canales
+      condicion: El mismo producto tiene precios distintos entre sucursales/canales por encima de la diferencia permitida por la política.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Unificar los precios según la política (o documentar la diferencia intencional por canal).", responsable: comercial, plazo: "7 días"}
+      cierre: Diferencia dentro de la política o excepción registrada.
+  resoluciones: [remarcado_como_sugerido, remarcado_ajustado, se_mantiene_precio_justificado, error_de_carga_corregido, lista_solicitada, etiquetas_cambiadas, falso_positivo]
+  resolucion_confirmada: [remarcado_como_sugerido, remarcado_ajustado, error_de_carga_corregido, lista_solicitada, etiquetas_cambiadas]
+  ejemplo: "Llegó la lista del Proveedor Z con +8,4 % promedio en 212 productos. Si no se remarca, el margen de la categoría cae de 32 % a 26 % (−$ 410.000/mes). Archivo de remarcación y etiquetas por sucursal adjuntos."
+  requisitos:
+    obligatorias: [fct_lista_precio_proveedor.costo_neto, fct_lista_precio_proveedor.fecha_vigencia_desde, fct_precio_venta.precio, fct_precio_venta.vigente_desde]
+    opcionales: [fct_precio_venta.precio_final, fct_precio_venta.sucursal_id, fct_precio_venta.canal_id, fct_pedido_linea.cantidad, fct_orden_compra_linea.precio_unitario, ref.indice_precios.indice]
+  kpis_relacionados: [FIN-03, VEN-08, VEN-27]
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-05
+  nombre: Promociones que no rindieron
+  caso_de_negocio: Saber si cada promoción generó venta y margen adicionales o si solo regaló margen, y cortarla o corregirla a tiempo.
+  entidad: promoción (con detalle por producto y sucursal)
+  frecuencia: día 3 de cada promoción activa (control temprano) + al finalizar + 14 días después (efecto posterior)
+  responsable_principal: comercial
+  deteccion:
+    universo: promociones con fecha de inicio ≤ hoy y al menos un producto vinculado.
+    condiciones:
+      - "Línea base (sin promo) por producto × sucursal = venta diaria media del mismo día de semana en las 6 semanas previas, ajustada por la tendencia de la sucursal (grupo de control: productos de la misma categoría no promocionados)."
+      - "Incremento de unidades = unidades en promo − línea base; lift = unidades promo / línea base − 1."
+      - "Margen incremental = margen bruto en promo − margen bruto de la línea base − costo de comunicación + aporte del proveedor."
+      - "Canibalización = caída de venta de productos de la misma categoría no promocionados vs su línea base."
+      - "Efecto posterior = caída de venta del producto en las 2 semanas siguientes vs línea base (compra adelantada)."
+      - "ROI = margen incremental neto (con canibalización y efecto posterior) / costo de la promoción (descuento otorgado + comunicación − aporte proveedor)."
+      - "Tráfico: variación de tickets de la sucursal y del ticket medio en los tickets que incluyeron el producto promocionado."
+  parametros: {semanas_base: 6, roi_minimo: 0, lift_minimo_esperado_por_mecanica: {descuento_pct: 0.3, precio_especial: 0.3, nxm: 0.5, segunda_unidad: 0.4, combo: 0.2, cupon: 0.1}, dia_control_temprano: 3}
+  calculo: |
+    -- marts.act__promociones: una fila por promoción (y detalle producto × sucursal)
+    select pr.promocion_id, pr.mecanica, pr.objetivo, unidades_promo, unidades_base, lift, venta_incremental,
+           margen_promo, margen_base, margen_incremental, canibalizacion, efecto_posterior, costo_promocion, roi,
+           quiebre_durante_promo_pct, var_tickets, var_ticket_medio, caso
+    from core.dim_promocion pr join … ;
+  impacto: margen incremental neto (negativo = plata perdida); en control temprano, pérdida proyectada al fin de la promoción.
+  casos:
+    - codigo: C1
+      nombre: Promoción en curso que no despega (control temprano)
+      condicion: En el día 3, lift < 50 % del lift mínimo esperado para su mecánica y no hubo quiebre de stock del producto.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Verificar ejecución en el punto de venta: cartel de promoción visible, precio promocional cargado en caja, producto exhibido (checklist por sucursal).", responsable: encargado_sucursal, plazo: "24 h"}
+        - {orden: 2, accion: "Si la ejecución está bien: reforzar comunicación o cambiar mecánica; si no hay margen para eso, cortar la promoción antes de su fin.", responsable: comercial, plazo: "48 h"}
+      cierre: Checklist completo + decisión (seguir, reforzar, cortar).
+    - codigo: C2
+      nombre: Quiebre durante la promoción
+      condicion: Stock disponible = 0 en ≥ 20 % de los días × sucursales de la promoción.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Reponer de inmediato (pedido urgente o transferencia) o suspender la comunicación en las sucursales sin stock.", responsable: comprador, plazo: "mismo día"}
+        - {orden: 2, accion: "Para próximas promociones: calcular el stock previo con el lift esperado (se agrega automáticamente al pedido sugerido cuando la promoción está 'planificada').", responsable: comprador, plazo: "próxima promoción"}
+      cierre: Stock repuesto o comunicación suspendida.
+    - codigo: C3
+      nombre: Vendió más pero perdió margen
+      condicion: Al finalizar, venta incremental > 0 pero margen incremental neto < 0.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "No repetir con el mismo descuento: la ficha sugiere el descuento máximo que deja margen incremental ≥ 0 con el lift observado.", responsable: comercial, plazo: "antes de la próxima planificación"}
+        - {orden: 2, accion: "Negociar aporte del proveedor para repetirla (el monto necesario para que el ROI sea ≥ 0 está en la ficha).", responsable: comprador, plazo: "30 días"}
+      cierre: Ficha revisada y decisión registrada (no repetir / repetir con cambios / repetir con aporte).
+    - codigo: C4
+      nombre: No movió la venta
+      condicion: Al finalizar, lift < 10 %.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Descartar esta mecánica para este producto/categoría; la ficha propone la mecánica con mejor resultado histórico en la categoría.", responsable: comercial, plazo: "antes de la próxima planificación"}
+      cierre: Decisión registrada.
+    - codigo: C5
+      nombre: Solo canibalizó o adelantó compras
+      condicion: Lift > 0 pero la venta incremental neta (con canibalización y efecto posterior) ≤ 0.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Evitar promocionar productos con sustitutos directos del mismo margen; preferir promociones cruzadas o de categoría.", responsable: comercial, plazo: "próxima planificación"}
+        - {orden: 2, accion: "Si el objetivo era tráfico: validar con la variación de tickets; si no subió, no repetir.", responsable: comercial, plazo: "próxima planificación"}
+      cierre: Decisión registrada.
+    - codigo: C6
+      nombre: Promoción que rindió (para replicar)
+      condicion: ROI ≥ umbral y margen incremental neto > 0.
+      prioridad: baja
+      acciones:
+        - {orden: 1, accion: "Agregar a la biblioteca de promociones exitosas y evaluar replicarla en otras sucursales/canales o en productos similares.", responsable: comercial, plazo: "30 días"}
+      cierre: Registrada en la biblioteca.
+  resoluciones: [ejecucion_corregida, reforzada, cortada_anticipadamente, no_repetir, repetir_con_cambios, repetir_con_aporte_proveedor, replicar, falso_positivo]
+  resolucion_confirmada: [ejecucion_corregida, reforzada, cortada_anticipadamente, no_repetir, repetir_con_cambios, repetir_con_aporte_proveedor, replicar]
+  ejemplo: "Promo '2x1 Categoría Q' (terminó ayer): +38 % unidades, pero margen incremental −$ 186.000 y 40 % de la suba canibalizó a productos de la misma categoría. No repetir con 2x1; con 3x2 el margen incremental estimado sería +$ 22.000."
+  requisitos:
+    obligatorias: [dim_promocion.fecha_inicio, dim_promocion.fecha_fin, fct_promocion_producto.producto_id, fct_pedido_linea.producto_id, fct_pedido_linea.cantidad, fct_pedido_linea.importe_neto, fct_pedido.fecha_pedido]
+    opcionales: [fct_pedido_linea.promocion_id, fct_pedido_linea.costo_total, dim_promocion.aporte_proveedor_monto, dim_promocion.costo_comunicacion, dim_promocion.campana_id, fct_stock_diario.stock_disponible, fct_pedido.sucursal_id]
+  kpis_relacionados: [VEN-08, VEN-18, VEN-26, MKT-07]
+
+# ---------------------------------------------------------------------------------------------
+- id: ACT-06
+  nombre: Vencimientos
+  caso_de_negocio: Evitar que la mercadería se venza en góndola o en depósito, retirar a tiempo lo que ya no se puede vender y recuperar valor antes de perderlo.
+  entidad: lote (producto × depósito × lote)
+  frecuencia: diaria (06:00)
+  responsable_principal: encargado_sucursal
+  deteccion:
+    universo: lotes con cantidad > 0 y fecha de vencimiento conocida (foto por lote o estimación FEFO desde recepciones).
+    condiciones:
+      - "Días a vencer = fecha_vencimiento − hoy; fecha límite de venta = fecha_vencimiento − dias_retiro_antes_vencimiento."
+      - "Consumo FEFO: para cada lote, la venta esperada antes de su fecha límite = VDP del producto en ese depósito × días hasta la fecha límite, restando lo que consumen antes los lotes que vencen primero."
+      - "Unidades en riesgo = max(0, cantidad del lote − venta esperada disponible para ese lote)."
+      - "Velocidad necesaria = cantidad / días hasta fecha límite; multiplicador = velocidad necesaria / VDP."
+  parametros: {dias_retiro_default: 0, ventana_alerta_dias: 30, elasticidad_default: -2, descuento_maximo_pct: 0.5}
+  calculo: |
+    -- marts.act__vencimientos
+    select l.producto_id, l.deposito_id, l.lote, l.fecha_vencimiento, l.cantidad, l.costo_unitario,
+           l.fecha_vencimiento - :hoy as dias_a_vencer,
+           greatest(0, l.cantidad - greatest(0, d.vdp * (fecha_limite - :hoy) - consumo_lotes_previos)) as unidades_en_riesgo,
+           unidades_en_riesgo * l.costo_unitario as valor_en_riesgo,
+           (l.cantidad / nullif(fecha_limite - :hoy,0)) / nullif(d.vdp,0) as multiplicador_necesario
+    from core.fct_stock_lote l join marts.inv__demanda_sku d using (tenant_id, producto_id)
+    where l.fecha = :hoy and l.cantidad > 0;
+  impacto: valor a costo en riesgo (y margen si se vende a tiempo); C1 = valor a registrar como merma.
+  casos:
+    - codigo: C1
+      nombre: Vencido o pasado de la fecha límite de venta
+      condicion: dias_a_vencer ≤ 0, o hoy > fecha límite de venta.
+      prioridad: critica
+      acciones:
+        - {orden: 1, accion: "Retirar HOY todas las unidades del lote de la exhibición y separarlas en depósito identificadas.", responsable: repositor, plazo: "inmediato"}
+        - {orden: 2, accion: "Si el proveedor acepta devolución de vencidos y está dentro del plazo de aviso: gestionar la devolución o nota de crédito.", responsable: comprador, plazo: "según dias_aviso_devolucion del proveedor"}
+        - {orden: 3, accion: "Si no: registrar la merma con motivo 'vencimiento' y disponer según la normativa aplicable.", responsable: encargado_sucursal, plazo: "24 h"}
+      cierre: Movimiento de merma o devolución a proveedor registrado por la cantidad del lote.
+    - codigo: C2
+      nombre: Vence pronto y no llega a venderse a precio normal
+      condicion: Unidades en riesgo > 0 y días hasta fecha límite ≤ 30 (o el umbral de su categoría); multiplicador necesario entre 1,2 y 4.
+      prioridad: alta (crítica si faltan ≤ 7 días)
+      acciones:
+        - {orden: 1, accion: "Aplicar el descuento sugerido para acelerar la venta (calculado con la elasticidad e del producto o la default: descuento = 1 − multiplicador^(1/e); con e = −2 y multiplicador 2 → 29 %; acotado al descuento máximo y nunca por debajo del costo salvo en C3), con cartel de 'consumo preferente'.", responsable: comercial, plazo: "24 h"}
+        - {orden: 2, accion: "Ubicar el lote al frente de la exhibición (FEFO) y verificar que no haya lotes más nuevos adelante.", responsable: repositor, plazo: "mismo día"}
+        - {orden: 3, accion: "Re-evaluar en 3 días: si la velocidad no alcanza, profundizar descuento o pasar al caso C3.", responsable: comercial, plazo: "3 días"}
+      cierre: Unidades en riesgo = 0 (vendidas) o pasa a C1/C3.
+    - codigo: C3
+      nombre: Vence pronto y ni con descuento llega
+      condicion: Multiplicador necesario > 4, o C2 sin mejora al re-evaluar.
+      prioridad: alta
+      acciones:
+        - {orden: 1, accion: "Transferir las unidades a la sucursal/canal donde el producto rota más rápido (la tarea indica destino y cantidad que sí llega a venderse).", responsable: gerente_operaciones, plazo: "48 h"}
+        - {orden: 2, accion: "Si el proveedor acepta cambio por vencimiento próximo: solicitarlo.", responsable: comprador, plazo: "48 h"}
+        - {orden: 3, accion: "Si nada de lo anterior: donar antes del vencimiento o liquidar a costo en canal alternativo.", responsable: gerente_general, plazo: "antes de la fecha límite"}
+      cierre: Transferencia, cambio, donación o venta registrada.
+    - codigo: C4
+      nombre: Sobrecompra de perecederos (causa raíz)
+      condicion: El mismo producto generó casos C1-C3 en 2 o más lotes en 90 días.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Reducir la cantidad por pedido y aumentar la frecuencia (el tope por vida útil del pedido sugerido pasa a ser obligatorio para este producto).", responsable: comprador, plazo: "próximo pedido"}
+        - {orden: 2, accion: "Revisar con el proveedor la vida útil con la que entrega (lotes que llegan con poca vida remanente).", responsable: comprador, plazo: "30 días"}
+      cierre: Parámetro de compra ajustado y registrado.
+    - codigo: C5
+      nombre: Lote sin fecha de vencimiento cargada
+      condicion: Producto perecedero con recepción en los últimos 30 días sin fecha_vencimiento.
+      prioridad: media
+      acciones:
+        - {orden: 1, accion: "Cargar la fecha de vencimiento del lote recibido (sin ese dato no se puede alertar).", responsable: encargado_sucursal, plazo: "48 h"}
+      cierre: Fecha de vencimiento cargada.
+  resoluciones: [retirado_y_mermado, devuelto_a_proveedor, descuento_aplicado_y_vendido, transferido, donado, cambio_por_proveedor, fecha_cargada, falso_positivo]
+  resolucion_confirmada: [retirado_y_mermado, devuelto_a_proveedor, descuento_aplicado_y_vendido, transferido, donado, cambio_por_proveedor, fecha_cargada]
+  ejemplo: "Sucursal Sur — Lote L-2231 de Producto W: 64 unidades vencen en 9 días; al ritmo actual se venden 27. En riesgo: 37 u ($ 55.500 a costo). Acción: 25 % de descuento hoy y ubicar al frente; revisar el viernes."
+  requisitos:
+    obligatorias: [fct_pedido_linea.producto_id, fct_pedido_linea.cantidad]
+    opcionales: [dim_producto.dias_retiro_antes_vencimiento, dim_producto.es_perecedero, dim_proveedor.acepta_devolucion_vencidos, dim_proveedor.dias_aviso_devolucion, fct_stock_lote.costo_unitario]
+    alternativas:
+      - {nombre: stock_por_lote, obligatorias: [fct_stock_lote.fecha_vencimiento, fct_stock_lote.cantidad]}
+      - {nombre: recepciones_con_vencimiento, obligatorias: [fct_recepcion.fecha_vencimiento, fct_recepcion.cantidad_recibida, fct_stock_diario.stock_fisico]}
+  kpis_relacionados: [INV-14, INV-20]

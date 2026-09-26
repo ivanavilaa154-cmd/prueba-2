@@ -1,0 +1,54 @@
+id: FIN-19
+nombre: Desvío vs presupuesto (EERR)
+pregunta: ¿Cómo venimos contra el presupuesto en cada línea del resultado?
+definicion: Real − presupuesto por eerr_linea y período; % desvío = (real − ppto) / |ppto|.
+formula: "select p.eerr_linea, r.real, p.importe as presupuesto, r.real - p.importe as desvio,\n       (r.real - p.importe) / nullif(abs(p.importe),0)\
+  \ as desvio_pct\nfrom core.fct_presupuesto p left join (EERR real por linea y mes) r using (periodo, eerr_linea)\nwhere p.concepto = 'eerr_linea'\
+  \ and p.version = :version and p.periodo between :desde and :hasta;\n"
+cube: presupuesto.desvio_eerr
+unidad: moneda | porcentaje
+direccion: depende de la línea (ingresos mayor_mejor, gastos menor_mejor)
+agregacion: aditivo (importes) / ratio (%)
+grano_min: mes
+dimensiones:
+- eerr_linea
+- codigo_estandar
+- sucursal
+- version
+filtros_base:
+- version = 'original' por defecto
+parametros:
+  version: original|reforecast_n
+requisitos:
+  obligatorias:
+  - fct_presupuesto.importe
+  - fct_presupuesto.eerr_linea
+  opcionales: []
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_comprobante.categoria_gasto
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- presupuesto
+- contabilidad o facturacion+ventas
+casos_borde:
+- Presupuesto en valores nominales vs inflación real distinta a la presupuestada → ofrecer desvío en términos reales con índice de precios.
+alertas:
+- condicion: desvio_pct ventas < -10% o gastos > +10%
+  severidad: alta
+relacionados:
+- FIN-01
+- VEN-07
+area: finanzas

@@ -1,0 +1,40 @@
+id: MKT-21
+nombre: Peso del tráfico orgánico
+pregunta: ¿Cuánto del tráfico y la venta no depende de pagar publicidad?
+definicion: Sesiones y venta atribuida de canales no pagos (busqueda_organica, social_organico, directo, referral, email) / total.
+formula: 'pct_sesiones_organicas = Σ sesiones where not es_pago / Σ sesiones
+
+  pct_venta_no_paga = Σ venta atribuida canal no pago / Σ venta atribuida
+
+  '
+cube: web.pct_organico, ventas.pct_venta_no_paga
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: semana
+dimensiones:
+- canal_marketing
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: web
+    obligatorias:
+    - fct_web_diario.sesiones
+    - fct_web_diario.canal_marketing
+  - nombre: pedidos
+    obligatorias:
+    - fct_atribucion_pedido.canal_marketing
+roles_minimos:
+- analitica_web o ventas (con UTM)
+casos_borde:
+- ''
+alertas:
+- condicion: pct_venta_no_paga cae > 10 pp en el trimestre
+  severidad: media
+relacionados:
+- MKT-10
+- MKT-14
+area: marketing

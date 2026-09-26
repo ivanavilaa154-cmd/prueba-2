@@ -1,0 +1,34 @@
+id: MKT-03
+nombre: CTR
+pregunta: ¿Qué porcentaje de quienes ven el anuncio hace clic?
+definicion: Clics al sitio (link clicks) / impresiones.
+formula: select sum(clics_enlace)::numeric/nullif(sum(impresiones),0) from core.fct_ads_diario where fecha between :desde and :hasta;
+cube: ads.ctr
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- plataforma
+- campana
+- conjunto
+- anuncio
+- tipo_campana
+filtros_base: []
+parametros:
+  tipo_clic: enlace|todos
+requisitos:
+  obligatorias:
+  - fct_ads_diario.impresiones
+  - fct_ads_diario.clics_enlace
+  opcionales: []
+roles_minimos:
+- publicidad
+casos_borde:
+- Comparar CTR solo dentro de la misma plataforma y tipo de campaña (search vs social difieren por naturaleza).
+alertas:
+- condicion: anuncio con ctr cae > 30% vs su primera semana y frecuencia > 3 (fatiga)
+  severidad: media
+relacionados:
+- MKT-20
+area: marketing

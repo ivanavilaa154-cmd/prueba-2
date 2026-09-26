@@ -1,0 +1,39 @@
+id: INV-16
+nombre: Cumplimiento de proveedores (OTIF proveedor)
+pregunta: ¿Los proveedores entregan a tiempo y completo?
+definicion: Líneas de OC recibidas completas (≥ 98 % de lo pedido) y a tiempo (fecha_ultima_recepcion ≤ fecha_entrega_prometida + tolerancia)
+  / líneas de OC con fecha prometida vencida en el período.
+formula: "select count(*) filter (where cantidad_recibida >= 0.98*cantidad_pedida\n                        and fecha_ultima_recepcion <= fecha_entrega_prometida\
+  \ + :tol)::numeric / nullif(count(*),0)\nfrom core.fct_orden_compra_linea l join core.fct_orden_compra o using (orden_compra_id)\nwhere o.estado\
+  \ <> 'cancelada' and l.fecha_entrega_prometida between :desde and :hasta;\n"
+cube: compras.otif_proveedor
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- proveedor
+- categoria
+filtros_base:
+- OC no cancelada
+parametros:
+  tolerancia_dias: 2
+requisitos:
+  obligatorias:
+  - fct_orden_compra.fecha_emision
+  - fct_orden_compra_linea.fecha_entrega_prometida
+  - fct_orden_compra_linea.cantidad_pedida
+  - fct_orden_compra_linea.cantidad_recibida
+  - fct_recepcion.fecha_recepcion
+  - fct_orden_compra.estado
+  opcionales: []
+roles_minimos:
+- compras
+casos_borde:
+- ''
+alertas:
+- condicion: proveedor principal con otif < 80%
+  severidad: media
+relacionados:
+- INV-17
+area: inventario

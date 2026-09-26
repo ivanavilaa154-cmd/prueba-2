@@ -1,0 +1,42 @@
+id: FIN-16
+nombre: Proyección de caja 7/30/60/90 días
+pregunta: ¿Cuánta plata vamos a tener en las próximas semanas?
+definicion: Caja disponible hoy + cobros esperados (CxC por vencimiento ajustado por comportamiento histórico + liquidaciones pendientes de pasarelas)
+  − pagos comprometidos (CxP por vencimiento + gastos recurrentes estimados).
+formula: "proyeccion(d) = FIN-07(hoy)\n  + Σ cxc.saldo × prob_cobro(tramo) con fecha_esperada = fecha_vencimiento + atraso_medio_cliente\n  +\
+  \ Σ fct_liquidacion_pasarela.importe_neto where estado='aprobado' and fecha_acreditacion <= d\n  - Σ cxp.saldo con fecha_vencimiento <= d\n\
+  \  - Σ recurrentes (sueldos, impuestos, alquiler: promedio 3 meses de fct_movimiento_tesoreria por tipo, en su día típico)\n"
+cube: tesoreria.proyeccion (mart marts.fin__proyeccion_caja)
+unidad: moneda
+direccion: mayor_mejor
+agregacion: serie proyectada
+grano_min: dia
+dimensiones:
+- componente (cobros, liquidaciones, pagos, recurrentes)
+filtros_base: []
+parametros:
+  horizonte_dias: 7|30|60|90
+requisitos:
+  obligatorias:
+  - dim_cuenta_tesoreria.es_disponible
+  - fct_movimiento_tesoreria.fecha
+  - fct_movimiento_tesoreria.importe
+  opcionales:
+  - fct_movimiento_tesoreria.tipo
+  - fct_documento_cxc.fecha_vencimiento
+  - fct_documento_cxc.saldo_pendiente
+  - fct_documento_cxp.fecha_vencimiento
+  - fct_documento_cxp.saldo_pendiente
+  - fct_liquidacion_pasarela.fecha_acreditacion
+  - fct_liquidacion_pasarela.importe_neto
+roles_minimos:
+- tesoreria
+casos_borde:
+- Es una estimación: el agente siempre la presenta como proyección con sus supuestos.
+alertas:
+- condicion: proyeccion < 0 en algún día de los próximos 30
+  severidad: critica
+relacionados:
+- FIN-07
+- FIN-13
+area: finanzas

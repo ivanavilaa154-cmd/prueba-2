@@ -70,7 +70,7 @@ def test_lineas_sin_join_solo_de_su_cartera(base_demo, laura):
 
 def test_catalogo_sin_filtro(base_demo, laura):
     r = conector.consultar("SELECT COUNT(*) FROM productos", url=base_demo, usuario=laura)
-    assert r["filas"][0][0] == 15
+    assert r["filas"][0][0] == 16  # 15 con ventas + 1 sin movimiento (caso de actividades)
 
 
 def test_cte_con_nombre_de_tabla_se_rechaza(base_demo, laura):

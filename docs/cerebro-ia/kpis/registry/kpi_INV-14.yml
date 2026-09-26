@@ -1,0 +1,39 @@
+id: INV-14
+nombre: Ajustes y mermas
+pregunta: ¿Cuánto stock perdemos por ajustes, roturas o faltantes?
+definicion: Valor neto de ajustes negativos + mermas − ajustes positivos / CMV del período.
+formula: "select -sum(costo_total) filter (where tipo_movimiento in ('ajuste_negativo','merma','ajuste_positivo')) valor_ajustes,\n       -sum(costo_total)\
+  \ filter (where tipo_movimiento in ('ajuste_negativo','merma','ajuste_positivo')) / nullif(cmv,0) pct_cmv\nfrom core.fct_movimiento_stock where\
+  \ fecha between :desde and :hasta;\n"
+cube: stock.valor_ajustes, stock.merma_pct
+unidad: moneda | porcentaje
+direccion: menor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- deposito
+- motivo_ajuste
+- categoria
+- producto
+filtros_base:
+- excluye inventario_inicial
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_movimiento_stock.tipo_movimiento
+  - fct_movimiento_stock.cantidad
+  - fct_movimiento_stock.costo_unitario
+  opcionales:
+  - fct_movimiento_stock.motivo_ajuste
+roles_minimos:
+- inventario
+casos_borde:
+- ''
+alertas:
+- condicion: merma_pct > 1% del CMV
+  severidad: alta
+- condicion: ajuste negativo único > umbral tenant
+  severidad: media
+relacionados:
+- INV-13
+area: inventario

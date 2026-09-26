@@ -1,0 +1,38 @@
+id: INV-08
+nombre: Fill rate (tasa de cumplimiento de pedidos)
+pregunta: ¿Qué porcentaje de lo que nos piden podemos entregar completo?
+definicion: Líneas (o unidades) entregadas completas / líneas pedidas, en pedidos válidos despachados.
+formula: "select sum(least(cantidad_entregada, cantidad)) / nullif(sum(cantidad),0) fill_rate_unidades,\n       count(*) filter (where cantidad_entregada\
+  \ >= cantidad)::numeric / nullif(count(*),0) fill_rate_lineas\nfrom core.fct_pedido_linea l join core.fct_pedido p using (pedido_id)\nwhere\
+  \ pedido_valido and p.estado in ('despachado','entregado') and p.fecha_pedido between :desde and :hasta;\n"
+cube: stock.fill_rate
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- deposito
+- categoria
+- cliente (B2B)
+- canal
+filtros_base:
+- pedido_valido
+- estado despachado/entregado
+parametros:
+  medida: unidades|lineas
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.cantidad_entregada
+  - fct_pedido.estado
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- En B2C la falta de stock se refleja como cancelación (VEN-17) más que como entrega parcial.
+alertas:
+- condicion: fill_rate_lineas < 95%
+  severidad: alta
+relacionados:
+- LOG-07
+area: inventario

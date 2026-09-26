@@ -1,0 +1,33 @@
+id: INV-17
+nombre: Lead time real de proveedores
+pregunta: ¿Cuánto tardan de verdad los proveedores en entregar?
+definicion: Mediana y P90 de días entre fecha de emisión/aprobación de la OC y primera recepción, por proveedor.
+formula: select proveedor_id, percentile_cont(0.5) within group (order by fecha_primera_recepcion - fecha_emision) from core.fct_orden_compra_linea
+  join core.fct_orden_compra using (orden_compra_id) where fecha_primera_recepcion between :desde and :hasta group by 1;
+cube: compras.lead_time_mediana, compras.lead_time_p90
+unidad: dias
+direccion: menor_mejor
+agregacion: mediana
+grano_min: mes
+dimensiones:
+- proveedor
+- categoria
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_orden_compra.fecha_emision
+  - fct_orden_compra_linea.fecha_entrega_prometida
+  - fct_recepcion.fecha_recepcion
+  opcionales: []
+roles_minimos:
+- compras
+casos_borde:
+- Alimenta MB-REPOSICION.lead_time_dias cuando el sistema de gestión no lo tiene.
+alertas:
+- condicion: lead time P90 > lead_time_dias_estandar × 1.5
+  severidad: media
+relacionados:
+- INV-15
+- INV-16
+area: inventario

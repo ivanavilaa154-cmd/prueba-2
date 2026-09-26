@@ -1,0 +1,35 @@
+id: MKT-22
+nombre: Inversión en marketing sobre ventas
+pregunta: ¿Qué porcentaje de la venta reinvertimos en marketing?
+definicion: Inversión en marketing (ads + otros gastos de marketing de cuentas cuenta estándar 6.1.03 si incluir_otros) / venta neta.
+formula: mkt_pct_venta = (MKT-01.inversion + otros_gastos_mkt) / nullif(VEN-01.venta_neta, 0)
+cube: marketing.inversion_pct_venta
+unidad: porcentaje
+direccion: neutral (objetivo tenant)
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- canal (online vs total)
+filtros_base: []
+parametros:
+  incluir_otros_gastos_mkt: true
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_asiento_linea.saldo
+  - dim_cuenta_contable.codigo_estandar
+roles_minimos:
+- publicidad
+- ventas
+casos_borde:
+- 'Evitar doble conteo: si las facturas de las plataformas publicitarias están contabilizadas en cuenta estándar 6.1.03, no sumar fct_ads_diario
+  además.'
+alertas:
+- condicion: mkt_pct_venta > objetivo tenant + 3 pp
+  severidad: media
+relacionados:
+- MKT-07
+- FIN-04
+area: marketing

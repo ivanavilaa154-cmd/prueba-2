@@ -1,0 +1,38 @@
+id: INV-19
+nombre: Compras en tránsito / OC abiertas
+pregunta: ¿Cuánto tenemos comprado que todavía no llegó?
+definicion: Σ (cantidad pedida − recibida) × precio de OCs confirmadas no canceladas; atrasadas = fecha_entrega_prometida < hoy.
+formula: "select sum((cantidad_pedida - cantidad_recibida) * precio_unitario) valor_abierto,\n       sum(...) filter (where l.fecha_entrega_prometida\
+  \ < current_date) valor_atrasado\nfrom core.fct_orden_compra_linea l join core.fct_orden_compra o using (orden_compra_id)\nwhere o.estado in\
+  \ ('confirmada','recibida_parcial') and cantidad_recibida < cantidad_pedida;\n"
+cube: compras.valor_oc_abiertas, compras.valor_oc_atrasadas
+unidad: moneda
+direccion: neutral
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- proveedor
+- deposito
+- categoria
+filtros_base:
+- OC confirmada
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_orden_compra_linea.cantidad_pedida
+  - fct_orden_compra_linea.cantidad_recibida
+  - fct_orden_compra.fecha_emision
+  - fct_orden_compra_linea.fecha_entrega_prometida
+  - fct_orden_compra.estado
+  opcionales: []
+roles_minimos:
+- compras
+casos_borde:
+- OCs viejas nunca cerradas (> 180 días) se listan para limpieza (DQ-14).
+alertas:
+- condicion: OC atrasada de SKU en quiebre
+  severidad: alta
+relacionados:
+- INV-15
+- FIN-13
+area: inventario

@@ -1,0 +1,46 @@
+id: VEN-07
+nombre: Cumplimiento de presupuesto / cuota
+pregunta: ¿Qué porcentaje del objetivo llevamos?
+definicion: Venta neta real / presupuesto (o cuota) del período; también % esperado a la fecha según días hábiles transcurridos.
+formula: 'cumplimiento = venta_neta / nullif(ppto, 0)
+
+  esperado_a_la_fecha = dias_habiles_transcurridos / dias_habiles_mes
+
+  ritmo = cumplimiento / nullif(esperado_a_la_fecha, 0)
+
+  '
+cube: presupuesto.cumplimiento_ventas
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- canal
+- sucursal
+- vendedor
+- categoria
+filtros_base:
+- presupuesto concepto in (venta_neta, cuota_vendedor)
+parametros:
+  version: original
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.importe_neto
+  - fct_presupuesto.importe
+  opcionales:
+  - fct_pedido.vendedor_id
+  - fct_pedido.canal_id
+  - ref.feriado.fecha
+roles_minimos:
+- presupuesto
+- ventas
+casos_borde:
+- Presupuesto anual sin apertura mensual → se distribuye por estacionalidad del año anterior (marcar).
+alertas:
+- condicion: ritmo < 0.9 después del día hábil 10
+  severidad: alta
+relacionados:
+- FIN-19
+- VEN-24
+area: ventas

@@ -1,0 +1,31 @@
+id: MKT-04
+nombre: CPC
+pregunta: ¿Cuánto nos cuesta cada clic?
+definicion: Gasto / clics al sitio.
+formula: select sum(gasto)/nullif(sum(clics_enlace),0) from core.fct_ads_diario where fecha between :desde and :hasta;
+cube: ads.cpc
+unidad: moneda
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- plataforma
+- campana
+- conjunto
+- anuncio
+filtros_base: []
+parametros:
+  ajuste: real por defecto en comparaciones
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_ads_diario.clics_enlace
+  opcionales: []
+roles_minimos:
+- publicidad
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- MKT-03
+area: marketing

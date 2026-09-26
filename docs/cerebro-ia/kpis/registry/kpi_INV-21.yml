@@ -1,0 +1,40 @@
+id: INV-21
+nombre: Quiebres ocultos (falta en góndola)
+pregunta: ¿Cuántos productos dejamos de vender por no estar exhibidos aunque había stock?
+definicion: Cantidad de casos de quiebre oculto detectados (ACT-01), tasa de confirmación y venta perdida estimada por esos casos.
+formula: 'select count(*) casos, avg((resolucion = any(:confirmadas))::int) tasa_confirmacion, sum(impacto_estimado) venta_perdida
+
+  from ops.actividad where tipo = ''ACT-01'' and detectada_at::date between :desde and :hasta;
+
+  '
+cube: actividades.quiebres_ocultos
+unidad: cantidad | porcentaje | moneda
+direccion: menor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- sucursal
+- categoria
+- caso
+- resolucion
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.pedido_at
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_stock_diario.stock_disponible
+casos_borde:
+- La venta perdida es una estimación (λ × días × precio); el agente la presenta como 'hasta'.
+alertas:
+- condicion: sucursal con > 10 quiebres ocultos confirmados en la semana
+  severidad: alta
+relacionados:
+- INV-06
+- INV-07
+- INV-13
+roles_minimos:
+- inventario
+- ventas
+area: inventario

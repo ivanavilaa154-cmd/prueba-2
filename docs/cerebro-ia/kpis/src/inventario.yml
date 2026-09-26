@@ -1,0 +1,837 @@
+area: inventario
+prefijo: INV
+titulo: KPIs de Inventario
+intro: |
+  Cubre valor y salud del stock, rotación, cobertura, quiebres, inmovilizado, exactitud, reposición y proveedores.
+  **Base:** `fct_stock_diario` (foto) + `fct_movimiento_stock` (flujo) + ventas de `fct_pedido_linea` (demanda).
+  **Venta diaria promedio (VDP)** = unidades vendidas en pedidos válidos en los últimos N días (default 90) / **días con stock disponible > 0** en esa ventana
+  (corrige la subestimación de demanda por quiebres). Definida en `marts.inv__demanda_sku` y reutilizada por INV-05, 06, 07, 10, 15.
+  Depósitos con `incluir_en_kpis = false` o `tipo in ('transito','virtual')` se excluyen salvo que se pidan explícitamente. Productos `gestiona_stock = false` o `es_servicio` siempre excluidos.
+kpis:
+- id: INV-01
+  nombre: Valor del inventario
+  pregunta: ¿Cuánta plata tenemos en stock?
+  definicion: Σ stock físico × costo unitario a la fecha (costo); opcional a precio de venta.
+  formula: |
+    select sum(valor_stock) valor_costo, sum(valor_stock_precio_venta) valor_venta
+    from marts.fct_stock_diario_kpi where fecha = :fecha;   -- vista con filtros base aplicados
+  cube: stock.valor
+  unidad: moneda
+  direccion: neutral
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - deposito
+  - tipo_deposito
+  - categoria
+  - marca
+  - proveedor
+  - clasificacion_abc
+  filtros_base:
+  - depósitos incluidos
+  - gestiona_stock
+  parametros:
+    valuacion: costo|reposicion|precio_venta
+    moneda: base|<ISO>
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    opcionales:
+    - dim_producto.categoria_n1
+    alternativas:
+    - nombre: costo_foto
+      obligatorias:
+      - fct_stock_diario.costo_unitario
+    - nombre: costo_estandar
+      obligatorias:
+      - dim_producto.costo_estandar
+  roles_minimos:
+  - inventario
+  - inventario o ventas|inventario
+  casos_borde:
+  - Stock negativo (errores de carga) se trata como 0 en valor y se informa en DQ-12.
+  - En inflación, valuación `reposicion` (costo_estandar vigente) refleja mejor el capital inmovilizado.
+  alertas:
+  - condicion: valor real del stock crece > 15% mientras ventas reales caen
+    severidad: alta
+  relacionados:
+  - INV-03
+  - INV-09
+- id: INV-02
+  nombre: Unidades en stock y SKUs con stock
+  pregunta: ¿Cuántas unidades y cuántos productos distintos tenemos disponibles?
+  definicion: Σ stock disponible; cantidad de SKUs activos con stock disponible > 0.
+  formula: |
+    select sum(stock_disponible), count(distinct producto_id) filter (where stock_disponible > 0)
+    from marts.fct_stock_diario_kpi where fecha = :fecha;
+  cube: stock.unidades_disponibles, stock.skus_con_stock
+  unidad: unidades | cantidad
+  direccion: neutral
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - deposito
+  - categoria
+  - marca
+  filtros_base:
+  - depósitos vendibles
+  - producto activo
+  parametros:
+    tipo_stock: fisico|disponible|reservado|en_transito
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    opcionales:
+    - fct_stock_diario.stock_reservado
+    - fct_stock_diario.stock_en_transito
+  roles_minimos:
+  - inventario
+  casos_borde:
+  - ''
+  alertas: []
+  relacionados:
+  - INV-06
+- id: INV-03
+  nombre: Rotación de inventario
+  pregunta: ¿Cuántas veces al año renovamos el stock?
+  definicion: CMV del período / valor promedio de inventario a costo del período, anualizado.
+  formula: |
+    rotacion = sum(cmv periodo) / nullif(avg(valor_stock diario periodo), 0) * (365 / dias_periodo)
+    -- cmv = Σ -costo_total de fct_movimiento_stock tipo venta_despacho/devolucion_cliente (o FIN-02 gestión)
+  cube: stock.rotacion_anual
+  unidad: veces
+  direccion: mayor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones:
+  - categoria
+  - marca
+  - proveedor
+  - deposito
+  - producto
+  filtros_base:
+  - depósitos incluidos
+  parametros:
+    periodo_dias: 90
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    opcionales: []
+    alternativas:
+    - nombre: cmv_movimientos
+      obligatorias:
+      - fct_movimiento_stock.tipo_movimiento
+      - fct_movimiento_stock.costo_unitario
+    - nombre: cmv_lineas
+      obligatorias:
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - inventario
+  - inventario o ventas
+  casos_borde:
+  - Productos nuevos (< periodo) distorsionan; excluirlos o marcar.
+  alertas:
+  - condicion: rotacion de una categoría cae > 25% vs trimestre anterior
+    severidad: media
+  relacionados:
+  - INV-04
+  - INV-11
+- id: INV-04
+  nombre: Días de inventario (DIO)
+  pregunta: ¿Para cuántos días de venta nos alcanza el stock (en valor)?
+  definicion: Valor de inventario promedio / CMV diario promedio del período.
+  formula: dio = avg(valor_stock) / nullif(sum(cmv) / dias_periodo, 0)
+  cube: stock.dio
+  unidad: dias
+  direccion: menor_mejor (dentro de un rango sano)
+  agregacion: calculado
+  grano_min: mes
+  dimensiones:
+  - categoria
+  - deposito
+  - proveedor
+  filtros_base:
+  - depósitos incluidos
+  parametros:
+    periodo_dias: 90
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    opcionales: []
+    alternativas:
+    - nombre: cmv_movimientos
+      obligatorias:
+      - fct_movimiento_stock.tipo_movimiento
+      - fct_movimiento_stock.costo_unitario
+    - nombre: cmv_lineas
+      obligatorias:
+      - fct_pedido_linea.costo_total
+  roles_minimos:
+  - inventario
+  - inventario o ventas
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: dio > objetivo tenant (default 90)
+    severidad: media
+  relacionados:
+  - INV-03
+  - FIN-14
+- id: INV-05
+  nombre: Cobertura de stock por SKU (días)
+  pregunta: ¿Para cuántos días nos alcanza el stock de cada producto?
+  definicion: Stock disponible (+ en tránsito opcional) / venta diaria promedio (VDP) del SKU.
+  formula: |
+    select s.producto_id, s.stock_disponible / nullif(d.vdp, 0) cobertura_dias
+    from marts.fct_stock_diario_kpi s join marts.inv__demanda_sku d using (tenant_id, producto_id)
+    where s.fecha = :fecha;   -- agregado por producto sumando depósitos vendibles
+  cube: stock.cobertura_dias
+  unidad: dias
+  direccion: neutral (rango objetivo por clasificación ABC)
+  agregacion: calculado por SKU (no promediar; usar mediana ponderada por venta al agregar)
+  grano_min: dia
+  dimensiones:
+  - producto
+  - categoria
+  - clasificacion_abc
+  - deposito
+  - proveedor
+  filtros_base:
+  - producto activo
+  - vdp > 0
+  parametros:
+    ventana_vdp_dias: 90
+    incluir_transito: false
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_pedido_linea.producto_id
+    - fct_pedido_linea.cantidad
+    opcionales:
+    - fct_stock_diario.stock_reservado
+    - fct_stock_diario.stock_en_transito
+  roles_minimos:
+  - inventario
+  - ventas
+  casos_borde:
+  - VDP = 0 → cobertura "infinita" → va a INV-09 (inmovilizado).
+  - Productos estacionales: permitir `ventana_vdp='mismo_periodo_anio_anterior'`.
+  alertas:
+  - condicion: SKU clase A con cobertura < lead_time_dias del proveedor
+    severidad: alta
+  relacionados:
+  - INV-06
+  - INV-10
+  - INV-15
+- id: INV-06
+  nombre: Tasa de quiebre de stock
+  pregunta: ¿Qué porcentaje de nuestros productos está sin stock?
+  definicion: SKUs activos con demanda (VDP > 0) y stock disponible = 0 / SKUs activos con demanda; versión ponderada por venta.
+  formula: |
+    select count(*) filter (where s.stock_disponible <= 0)::numeric / nullif(count(*),0) quiebre_skus,
+           sum(d.vdp * d.precio_neto_prom) filter (where s.stock_disponible <= 0) / nullif(sum(d.vdp * d.precio_neto_prom),0) quiebre_ponderado
+    from marts.inv__demanda_sku d left join marts.fct_stock_sku_dia s using (tenant_id, producto_id)
+    where s.fecha = :fecha and d.vdp > 0;
+  cube: stock.tasa_quiebre, stock.tasa_quiebre_ponderada
+  unidad: porcentaje
+  direccion: menor_mejor
+  agregacion: ratio (snapshot) / promedio diario en períodos
+  grano_min: dia
+  dimensiones:
+  - categoria
+  - clasificacion_abc
+  - deposito
+  - canal (stock asignado)
+  - proveedor
+  filtros_base:
+  - producto activo
+  - vdp > 0
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_pedido_linea.producto_id
+    - fct_pedido_linea.cantidad
+    - dim_producto.activo
+    opcionales:
+    - fct_stock_diario.stock_reservado
+  roles_minimos:
+  - inventario
+  - ventas
+  - ventas|inventario
+  casos_borde:
+  - Si hay depósitos de fulfillment de terceros y propios, reportar quiebre por depósito (sin stock en el de terceros pero con stock propio = oportunidad de reposición).
+  alertas:
+  - condicion: quiebre_ponderado > 5%
+    severidad: alta
+  - condicion: SKU clase A sin stock
+    severidad: critica
+  relacionados:
+  - INV-07
+  - VEN-17
+- id: INV-07
+  nombre: Venta perdida estimada por quiebre
+  pregunta: ¿Cuánta venta perdimos por no tener stock?
+  definicion: Σ por SKU de (días sin stock en el período × VDP × precio neto promedio).
+  formula: |
+    select sum(d.dias_sin_stock * v.vdp * v.precio_neto_prom)
+    from (select producto_id, count(*) dias_sin_stock from marts.fct_stock_sku_dia
+          where stock_disponible <= 0 and fecha between :desde and :hasta group by 1) d
+    join marts.inv__demanda_sku v using (producto_id);
+  cube: stock.venta_perdida
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - producto
+  - categoria
+  - proveedor
+  filtros_base:
+  - producto activo con vdp > 0
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_pedido_linea.cantidad
+    - fct_pedido_linea.importe_neto
+    opcionales: []
+  roles_minimos:
+  - inventario
+  - ventas
+  historia_minima: ≥ 30 días de fotos
+  casos_borde:
+  - Es estimación; el agente la presenta como "hasta" y no la suma a ventas.
+  alertas:
+  - condicion: venta_perdida del mes > 5% de la venta neta
+    severidad: alta
+  relacionados:
+  - INV-06
+- id: INV-08
+  nombre: Fill rate (tasa de cumplimiento de pedidos)
+  pregunta: ¿Qué porcentaje de lo que nos piden podemos entregar completo?
+  definicion: Líneas (o unidades) entregadas completas / líneas pedidas, en pedidos válidos despachados.
+  formula: |
+    select sum(least(cantidad_entregada, cantidad)) / nullif(sum(cantidad),0) fill_rate_unidades,
+           count(*) filter (where cantidad_entregada >= cantidad)::numeric / nullif(count(*),0) fill_rate_lineas
+    from core.fct_pedido_linea l join core.fct_pedido p using (pedido_id)
+    where pedido_valido and p.estado in ('despachado','entregado') and p.fecha_pedido between :desde and :hasta;
+  cube: stock.fill_rate
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - deposito
+  - categoria
+  - cliente (B2B)
+  - canal
+  filtros_base:
+  - pedido_valido
+  - estado despachado/entregado
+  parametros:
+    medida: unidades|lineas
+  requisitos:
+    obligatorias:
+    - fct_pedido_linea.cantidad
+    - fct_pedido_linea.cantidad_entregada
+    - fct_pedido.estado
+    opcionales: []
+  roles_minimos:
+  - ventas
+  casos_borde:
+  - En B2C la falta de stock se refleja como cancelación (VEN-17) más que como entrega parcial.
+  alertas:
+  - condicion: fill_rate_lineas < 95%
+    severidad: alta
+  relacionados:
+  - LOG-07
+- id: INV-09
+  nombre: Stock inmovilizado (sin movimiento)
+  pregunta: ¿Cuánta plata tenemos en productos que no se venden?
+  definicion: Valor de stock de SKUs sin ventas en los últimos N días (default 90) y con stock > 0.
+  formula: |
+    select sum(valor_stock), count(distinct producto_id)
+    from marts.fct_stock_diario_kpi where fecha = :fecha and stock_fisico > 0
+      and coalesce(dias_sin_venta, 9999) > :dias;
+  cube: stock.valor_inmovilizado
+  unidad: moneda | cantidad
+  direccion: menor_mejor
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - categoria
+  - marca
+  - proveedor
+  - deposito
+  - tramo_dias_sin_venta (90-180, 180-365, >365)
+  filtros_base:
+  - stock > 0
+  parametros:
+    dias: 90
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    - fct_pedido_linea.producto_id
+    - fct_pedido.fecha_pedido
+    opcionales: []
+  roles_minimos:
+  - inventario
+  - ventas
+  casos_borde:
+  - Productos dados de alta hace < N días no cuentan como inmovilizados.
+  alertas:
+  - condicion: inmovilizado > 20% del valor de inventario
+    severidad: alta
+  relacionados:
+  - INV-10
+  - INV-01
+- id: INV-10
+  nombre: Sobrestock
+  pregunta: ¿Qué productos tienen más stock del necesario?
+  definicion: Valor del stock por encima de la cobertura objetivo (default 60 días o stock_maximo) para SKUs con VDP > 0.
+  formula: |
+    exceso_unidades = greatest(stock_disponible - greatest(vdp * cobertura_objetivo, coalesce(stock_maximo,0)), 0)
+    valor_sobrestock = Σ exceso_unidades × costo_unitario
+  cube: stock.valor_sobrestock
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - categoria
+  - proveedor
+  - clasificacion_abc
+  filtros_base:
+  - vdp > 0
+  parametros:
+    cobertura_objetivo_dias: A 30 / B 45 / C 60 (config)
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    - fct_pedido_linea.cantidad
+    opcionales:
+    - parametro_reposicion.stock_maximo
+  roles_minimos:
+  - inventario
+  - ventas
+  casos_borde:
+  - Compras anticipadas deliberadas (cobertura inflacionaria, temporada) → el tenant puede marcar excepciones.
+  alertas:
+  - condicion: sobrestock > 15% del valor de inventario
+    severidad: media
+  relacionados:
+  - INV-05
+  - INV-09
+- id: INV-11
+  nombre: GMROI
+  pregunta: ¿Cuánto margen bruto nos devuelve cada unidad de moneda invertida en stock?
+  definicion: Margen bruto del período (anualizado) / valor promedio de inventario a costo.
+  formula: gmroi = (Σ (importe_neto - costo_total) líneas del periodo * 365/dias) / nullif(avg(valor_stock), 0)
+  cube: stock.gmroi
+  unidad: ratio
+  direccion: mayor_mejor
+  agregacion: calculado
+  grano_min: mes
+  dimensiones:
+  - categoria
+  - marca
+  - proveedor
+  - producto
+  filtros_base:
+  - pedido_valido
+  parametros:
+    periodo_dias: 90
+  requisitos:
+    obligatorias:
+    - fct_pedido_linea.importe_neto
+    - fct_pedido_linea.costo_total
+    - fct_stock_diario.stock_fisico
+    - fct_stock_diario.costo_unitario
+    opcionales: []
+  roles_minimos:
+  - inventario
+  - ventas
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: categoría con gmroi < 1
+    severidad: media
+  relacionados:
+  - INV-03
+  - VEN-08
+- id: INV-12
+  nombre: Clasificación ABC (y XYZ)
+  pregunta: ¿Cuáles son los productos que más importan?
+  definicion: ABC por venta neta (o margen) de 12 meses — A = 80 % acumulado, B = siguiente 15 %, C = último 5 %; XYZ por coeficiente de variación de la demanda semanal
+    (X < 0.5, Y < 1, Z ≥ 1).
+  formula: |
+    -- marts.inv__abc (mensual, escribe dim_producto.clasificacion_abc)
+    with v as (select producto_id, sum(importe_neto) venta from core.fct_pedido_linea l join core.fct_pedido p using(pedido_id)
+               where pedido_valido and p.fecha_pedido > current_date - 365 group by 1)
+    select producto_id, case when acum <= 0.8 then 'A' when acum <= 0.95 then 'B' else 'C' end
+    from (select *, sum(venta) over (order by venta desc) / sum(venta) over () acum from v) x;
+  cube: productos.clasificacion_abc (dimensión) + conteos
+  unidad: categoría
+  direccion: neutral
+  agregacion: dimensión
+  grano_min: mes
+  dimensiones:
+  - categoria
+  - deposito
+  filtros_base:
+  - pedido_valido
+  parametros:
+    base: venta|margen|unidades
+    ventana_meses: 12
+  requisitos:
+    obligatorias:
+    - fct_pedido_linea.producto_id
+    - fct_pedido_linea.importe_neto
+    - fct_pedido_linea.cantidad
+    - fct_pedido_linea.costo_total
+    opcionales: []
+  roles_minimos:
+  - ventas
+  casos_borde:
+  - Productos sin ventas en 12 meses → clase 'D' (candidatos a discontinuar).
+  alertas: []
+  relacionados:
+  - INV-05
+  - INV-06
+  - VEN-23
+- id: INV-13
+  nombre: Exactitud de inventario
+  pregunta: ¿El stock del sistema coincide con el físico?
+  definicion: '% de SKUs contados cuya diferencia está dentro de la tolerancia (default 0 unidades o ±2 %); valor absoluto de diferencias / valor contado.'
+  formula: |
+    select count(*) filter (where abs(diferencia) <= greatest(:tol_unid, abs(cantidad_sistema)*:tol_pct))::numeric / nullif(count(*),0) exactitud,
+           sum(abs(valor_diferencia)) / nullif(sum(cantidad_contada * costo),0) error_valor
+    from core.fct_conteo_inventario where fecha between :desde and :hasta;
+  cube: stock.exactitud_inventario
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - deposito
+  - categoria
+  - clasificacion_abc
+  filtros_base: []
+  parametros:
+    tol_unid: 0
+    tol_pct: 0.02
+  requisitos:
+    obligatorias:
+    - fct_conteo_inventario.cantidad_sistema
+    - fct_conteo_inventario.cantidad_contada
+    opcionales: []
+  roles_minimos:
+  - inventario
+  casos_borde:
+  - Sin conteos en el período → KPI no disponible; se usa INV-14 como proxy.
+  alertas:
+  - condicion: exactitud < 95%
+    severidad: alta
+  relacionados:
+  - INV-14
+- id: INV-14
+  nombre: Ajustes y mermas
+  pregunta: ¿Cuánto stock perdemos por ajustes, roturas o faltantes?
+  definicion: Valor neto de ajustes negativos + mermas − ajustes positivos / CMV del período.
+  formula: |
+    select -sum(costo_total) filter (where tipo_movimiento in ('ajuste_negativo','merma','ajuste_positivo')) valor_ajustes,
+           -sum(costo_total) filter (where tipo_movimiento in ('ajuste_negativo','merma','ajuste_positivo')) / nullif(cmv,0) pct_cmv
+    from core.fct_movimiento_stock where fecha between :desde and :hasta;
+  cube: stock.valor_ajustes, stock.merma_pct
+  unidad: moneda | porcentaje
+  direccion: menor_mejor
+  agregacion: aditivo / ratio
+  grano_min: dia
+  dimensiones:
+  - deposito
+  - motivo_ajuste
+  - categoria
+  - producto
+  filtros_base:
+  - excluye inventario_inicial
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_movimiento_stock.tipo_movimiento
+    - fct_movimiento_stock.cantidad
+    - fct_movimiento_stock.costo_unitario
+    opcionales:
+    - fct_movimiento_stock.motivo_ajuste
+  roles_minimos:
+  - inventario
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: merma_pct > 1% del CMV
+    severidad: alta
+  - condicion: ajuste negativo único > umbral tenant
+    severidad: media
+  relacionados:
+  - INV-13
+- id: INV-15
+  nombre: SKUs a reponer (bajo punto de pedido)
+  pregunta: ¿Qué tenemos que comprar ya?
+  definicion: SKUs activos cuyo stock disponible + en tránsito ≤ punto de pedido; cantidad sugerida = objetivo − (disponible + tránsito).
+  formula: |
+    punto_pedido = coalesce(pr.punto_pedido, vdp * (lead_time_dias + dias_seguridad))
+    objetivo = coalesce(pr.stock_maximo, vdp * (lead_time_dias + cobertura_objetivo))
+    sugerido = greatest(objetivo - (stock_disponible + stock_en_transito), 0) redondeado a múltiplo de compra
+    where stock_disponible + stock_en_transito <= punto_pedido
+  cube: reposicion.skus_a_reponer, reposicion.valor_sugerido
+  unidad: cantidad | moneda
+  direccion: menor_mejor
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - proveedor
+  - deposito
+  - categoria
+  - clasificacion_abc
+  filtros_base:
+  - producto activo
+  - gestiona_stock
+  parametros:
+    dias_seguridad: 7
+    cobertura_objetivo: 30
+  requisitos:
+    obligatorias:
+    - fct_stock_diario.stock_fisico
+    - fct_pedido_linea.cantidad
+    opcionales:
+    - fct_stock_diario.stock_en_transito
+    - fct_stock_diario.stock_reservado
+    - parametro_reposicion.punto_pedido
+    - parametro_reposicion.stock_maximo
+    alternativas:
+    - nombre: lead_time_parametro
+      obligatorias:
+      - parametro_reposicion.lead_time_dias
+    - nombre: lead_time_proveedor
+      obligatorias:
+      - dim_producto.proveedor_principal_id
+      - dim_proveedor.lead_time_dias_estandar
+    - nombre: lead_time_historico
+      obligatorias:
+      - fct_orden_compra.fecha_emision
+      - fct_recepcion.fecha_recepcion
+  roles_minimos:
+  - inventario
+  - ventas
+  - inventario o compras|contabilidad+ventas|inventario o compras
+  casos_borde:
+  - Es sugerencia; el agente no genera OCs, solo lista (la creación de OC es fase 3 con aprobación humana).
+  alertas:
+  - condicion: SKU clase A bajo punto de pedido sin OC abierta
+    severidad: alta
+  relacionados:
+  - INV-05
+  - INV-16
+  - INV-17
+- id: INV-16
+  nombre: Cumplimiento de proveedores (OTIF proveedor)
+  pregunta: ¿Los proveedores entregan a tiempo y completo?
+  definicion: Líneas de OC recibidas completas (≥ 98 % de lo pedido) y a tiempo (fecha_ultima_recepcion ≤ fecha_entrega_prometida + tolerancia) / líneas de OC con
+    fecha prometida vencida en el período.
+  formula: |
+    select count(*) filter (where cantidad_recibida >= 0.98*cantidad_pedida
+                            and fecha_ultima_recepcion <= fecha_entrega_prometida + :tol)::numeric / nullif(count(*),0)
+    from core.fct_orden_compra_linea l join core.fct_orden_compra o using (orden_compra_id)
+    where o.estado <> 'cancelada' and l.fecha_entrega_prometida between :desde and :hasta;
+  cube: compras.otif_proveedor
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: mes
+  dimensiones:
+  - proveedor
+  - categoria
+  filtros_base:
+  - OC no cancelada
+  parametros:
+    tolerancia_dias: 2
+  requisitos:
+    obligatorias:
+    - fct_orden_compra.fecha_emision
+    - fct_orden_compra_linea.fecha_entrega_prometida
+    - fct_orden_compra_linea.cantidad_pedida
+    - fct_orden_compra_linea.cantidad_recibida
+    - fct_recepcion.fecha_recepcion
+    - fct_orden_compra.estado
+    opcionales: []
+  roles_minimos:
+  - compras
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: proveedor principal con otif < 80%
+    severidad: media
+  relacionados:
+  - INV-17
+- id: INV-17
+  nombre: Lead time real de proveedores
+  pregunta: ¿Cuánto tardan de verdad los proveedores en entregar?
+  definicion: Mediana y P90 de días entre fecha de emisión/aprobación de la OC y primera recepción, por proveedor.
+  formula: select proveedor_id, percentile_cont(0.5) within group (order by fecha_primera_recepcion - fecha_emision) from core.fct_orden_compra_linea join core.fct_orden_compra
+    using (orden_compra_id) where fecha_primera_recepcion between :desde and :hasta group by 1;
+  cube: compras.lead_time_mediana, compras.lead_time_p90
+  unidad: dias
+  direccion: menor_mejor
+  agregacion: mediana
+  grano_min: mes
+  dimensiones:
+  - proveedor
+  - categoria
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_orden_compra.fecha_emision
+    - fct_orden_compra_linea.fecha_entrega_prometida
+    - fct_recepcion.fecha_recepcion
+    opcionales: []
+  roles_minimos:
+  - compras
+  casos_borde:
+  - Alimenta MB-REPOSICION.lead_time_dias cuando el sistema de gestión no lo tiene.
+  alertas:
+  - condicion: lead time P90 > lead_time_dias_estandar × 1.5
+    severidad: media
+  relacionados:
+  - INV-15
+  - INV-16
+- id: INV-18
+  nombre: Sell-through
+  pregunta: ¿Qué porcentaje de lo que recibimos ya vendimos?
+  definicion: Unidades vendidas / (unidades vendidas + stock final) en el período, o por lote/temporada desde la recepción.
+  formula: sell_through = unidades_vendidas / nullif(unidades_vendidas + stock_fisico_final, 0)
+  cube: stock.sell_through
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: semana
+  dimensiones:
+  - categoria
+  - marca
+  - temporada (atributo producto)
+  - proveedor
+  filtros_base: []
+  parametros:
+    desde_recepcion: false
+  requisitos:
+    obligatorias:
+    - fct_pedido_linea.cantidad
+    - fct_stock_diario.stock_fisico
+    opcionales:
+    - fct_recepcion.fecha_recepcion
+    - dim_producto.temporada
+  roles_minimos:
+  - inventario
+  - ventas
+  casos_borde:
+  - Clave en moda/temporada; el atributo temporada viene de categoría o campo custom ⚠.
+  alertas:
+  - condicion: temporada con sell_through < 50% a mitad de temporada
+    severidad: media
+  relacionados:
+  - INV-09
+- id: INV-19
+  nombre: Compras en tránsito / OC abiertas
+  pregunta: ¿Cuánto tenemos comprado que todavía no llegó?
+  definicion: Σ (cantidad pedida − recibida) × precio de OCs confirmadas no canceladas; atrasadas = fecha_entrega_prometida < hoy.
+  formula: |
+    select sum((cantidad_pedida - cantidad_recibida) * precio_unitario) valor_abierto,
+           sum(...) filter (where l.fecha_entrega_prometida < current_date) valor_atrasado
+    from core.fct_orden_compra_linea l join core.fct_orden_compra o using (orden_compra_id)
+    where o.estado in ('confirmada','recibida_parcial') and cantidad_recibida < cantidad_pedida;
+  cube: compras.valor_oc_abiertas, compras.valor_oc_atrasadas
+  unidad: moneda
+  direccion: neutral
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones:
+  - proveedor
+  - deposito
+  - categoria
+  filtros_base:
+  - OC confirmada
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_orden_compra_linea.cantidad_pedida
+    - fct_orden_compra_linea.cantidad_recibida
+    - fct_orden_compra.fecha_emision
+    - fct_orden_compra_linea.fecha_entrega_prometida
+    - fct_orden_compra.estado
+    opcionales: []
+  roles_minimos:
+  - compras
+  casos_borde:
+  - OCs viejas nunca cerradas (> 180 días) se listan para limpieza (DQ-14).
+  alertas:
+  - condicion: OC atrasada de SKU en quiebre
+    severidad: alta
+  relacionados:
+  - INV-15
+  - FIN-13
+- id: INV-20
+  nombre: Stock en riesgo de vencimiento
+  pregunta: ¿Cuánta mercadería se nos puede vencer antes de venderla?
+  definicion: Valor a costo de las unidades que, al ritmo de venta actual y consumiendo por FEFO, no se venderían antes de su fecha límite de venta; más el valor ya vencido sin retirar.
+  formula: |
+    select sum(valor_en_riesgo) filter (where dias_a_vencer > 0) as valor_en_riesgo,
+           sum(cantidad * costo_unitario) filter (where dias_a_vencer <= 0) as valor_vencido
+    from marts.act__vencimientos where fecha = :fecha;
+  cube: stock.valor_riesgo_vencimiento
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: snapshot
+  grano_min: dia
+  dimensiones: [deposito, categoria, proveedor, tramo_dias_a_vencer (0, 1-7, 8-30, 31-60)]
+  filtros_base: [lotes con cantidad > 0]
+  parametros: {ventana_dias: 60}
+  requisitos:
+    obligatorias: [fct_pedido_linea.cantidad]
+    opcionales: [dim_producto.dias_retiro_antes_vencimiento]
+    alternativas:
+    - nombre: stock_por_lote
+      obligatorias: [fct_stock_lote.fecha_vencimiento, fct_stock_lote.cantidad, fct_stock_lote.costo_unitario]
+    - nombre: recepciones_con_vencimiento
+      obligatorias: [fct_recepcion.fecha_vencimiento, fct_recepcion.cantidad_recibida, fct_stock_diario.costo_unitario]
+  casos_borde:
+  - Con la variante recepciones_con_vencimiento los lotes son estimados (FEFO); el agente lo aclara.
+  alertas:
+  - {condicion: "valor_en_riesgo > 1% del valor del inventario", severidad: alta}
+  - {condicion: "valor_vencido > 0 (mercadería vencida sin retirar)", severidad: critica}
+  relacionados: [INV-14, INV-09]
+- id: INV-21
+  nombre: Quiebres ocultos (falta en góndola)
+  pregunta: ¿Cuántos productos dejamos de vender por no estar exhibidos aunque había stock?
+  definicion: Cantidad de casos de quiebre oculto detectados (ACT-01), tasa de confirmación y venta perdida estimada por esos casos.
+  formula: |
+    select count(*) casos, avg((resolucion = any(:confirmadas))::int) tasa_confirmacion, sum(impacto_estimado) venta_perdida
+    from ops.actividad where tipo = 'ACT-01' and detectada_at::date between :desde and :hasta;
+  cube: actividades.quiebres_ocultos
+  unidad: cantidad | porcentaje | moneda
+  direccion: menor_mejor
+  agregacion: aditivo / ratio
+  grano_min: dia
+  dimensiones: [sucursal, categoria, caso, resolucion]
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias: [fct_pedido.pedido_at, fct_pedido_linea.producto_id, fct_pedido_linea.cantidad, fct_stock_diario.stock_disponible]
+  casos_borde:
+  - "La venta perdida es una estimación (λ × días × precio); el agente la presenta como 'hasta'."
+  alertas:
+  - {condicion: "sucursal con > 10 quiebres ocultos confirmados en la semana", severidad: alta}
+  relacionados: [INV-06, INV-07, INV-13]

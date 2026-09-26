@@ -1,0 +1,54 @@
+id: INV-20
+nombre: Stock en riesgo de vencimiento
+pregunta: ¿Cuánta mercadería se nos puede vencer antes de venderla?
+definicion: Valor a costo de las unidades que, al ritmo de venta actual y consumiendo por FEFO, no se venderían antes de su fecha límite de venta;
+  más el valor ya vencido sin retirar.
+formula: "select sum(valor_en_riesgo) filter (where dias_a_vencer > 0) as valor_en_riesgo,\n       sum(cantidad * costo_unitario) filter (where\
+  \ dias_a_vencer <= 0) as valor_vencido\nfrom marts.act__vencimientos where fecha = :fecha;\n"
+cube: stock.valor_riesgo_vencimiento
+unidad: moneda
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- deposito
+- categoria
+- proveedor
+- tramo_dias_a_vencer (0
+- 1-7
+- 8-30
+- 31-60)
+filtros_base:
+- lotes con cantidad > 0
+parametros:
+  ventana_dias: 60
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.cantidad
+  opcionales:
+  - dim_producto.dias_retiro_antes_vencimiento
+  alternativas:
+  - nombre: stock_por_lote
+    obligatorias:
+    - fct_stock_lote.fecha_vencimiento
+    - fct_stock_lote.cantidad
+    - fct_stock_lote.costo_unitario
+  - nombre: recepciones_con_vencimiento
+    obligatorias:
+    - fct_recepcion.fecha_vencimiento
+    - fct_recepcion.cantidad_recibida
+    - fct_stock_diario.costo_unitario
+casos_borde:
+- Con la variante recepciones_con_vencimiento los lotes son estimados (FEFO); el agente lo aclara.
+alertas:
+- condicion: valor_en_riesgo > 1% del valor del inventario
+  severidad: alta
+- condicion: valor_vencido > 0 (mercadería vencida sin retirar)
+  severidad: critica
+relacionados:
+- INV-14
+- INV-09
+roles_minimos:
+- ventas
+- lotes_vencimientos o compras+inventario
+area: inventario

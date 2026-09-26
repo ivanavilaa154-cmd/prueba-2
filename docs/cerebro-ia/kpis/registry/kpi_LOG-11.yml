@@ -1,0 +1,37 @@
+id: LOG-11
+nombre: Costo de envío por pedido
+pregunta: ¿Cuánto nos cuesta en promedio enviar un pedido?
+definicion: Σ costo_envio / envíos despachados (también por kg).
+formula: select sum(costo_envio)/nullif(count(*),0), sum(costo_envio)/nullif(sum(coalesce(peso_volumetrico_kg, peso_kg)),0) from core.fct_envio
+  where not es_devolucion and local_date(despacho_at) between :desde and :hasta;
+cube: envios.costo_por_envio, envios.costo_por_kg
+unidad: moneda
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- transportista
+- zona_destino
+- modalidad
+- canal
+filtros_base:
+- no devolución
+parametros:
+  ajuste: real por defecto
+requisitos:
+  obligatorias:
+  - fct_envio.costo_envio
+  - fct_envio.despacho_at
+  opcionales:
+  - fct_envio.zona_destino
+roles_minimos:
+- logistica
+casos_borde:
+- Costos estimados por tarifa se marcan; al llegar la factura del transportista se reemplazan.
+alertas:
+- condicion: costo real por envío sube > 10% vs mes anterior
+  severidad: media
+relacionados:
+- LOG-12
+- LOG-13
+area: logistica

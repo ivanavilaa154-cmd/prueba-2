@@ -1,0 +1,41 @@
+id: LOG-06
+nombre: Entregas a tiempo (OTD)
+pregunta: ¿Qué porcentaje de pedidos llegó en la fecha prometida al cliente?
+definicion: Envíos entregados con local_date(entrega_at) ≤ fecha_promesa / envíos con fecha_promesa en el período (los no entregados con promesa
+  vencida cuentan como tarde).
+formula: 'select count(*) filter (where estado=''entregado'' and local_date(entrega_at) <= fecha_promesa)::numeric / nullif(count(*),0)
+
+  from core.fct_envio where not es_devolucion and estado <> ''cancelado'' and fecha_promesa between :desde and least(:hasta, current_date - 1);
+
+  '
+cube: envios.otd_pct
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- transportista
+- modalidad
+- zona_destino
+- canal
+- deposito_origen
+filtros_base:
+- con fecha_promesa
+- excluye cancelados
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.entrega_at
+  - fct_envio.fecha_promesa
+  - fct_envio.estado
+  opcionales: []
+roles_minimos:
+- logistica
+casos_borde:
+- Cuando la promesa es un rango se usa el límite superior.
+alertas:
+- condicion: otd < 90%
+  severidad: alta
+relacionados:
+- LOG-07
+area: logistica

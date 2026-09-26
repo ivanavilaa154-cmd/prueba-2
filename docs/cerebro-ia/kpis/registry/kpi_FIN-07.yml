@@ -1,0 +1,49 @@
+id: FIN-07
+nombre: Caja disponible
+pregunta: ¿Cuánta plata tenemos hoy disponible?
+definicion: Suma de saldos al cierre del día de cuentas de tesorería con es_disponible = true (bancos, cajas, billeteras, FCI de rescate inmediato).
+formula: 'select sum(s.saldo) from marts.fct_saldo_tesoreria_diario s
+
+  join core.dim_cuenta_tesoreria t using (cuenta_tesoreria_id)
+
+  where t.es_disponible and s.fecha = :fecha;
+
+  '
+cube: tesoreria.caja_disponible
+unidad: moneda
+direccion: mayor_mejor
+agregacion: snapshot (no sumar entre fechas; usar último valor del período)
+grano_min: dia
+dimensiones:
+- cuenta_tesoreria
+- tipo_cuenta
+- entidad
+- moneda
+filtros_base:
+- es_disponible
+parametros:
+  moneda: base|<ISO>|original
+  fecha: hoy por defecto
+requisitos:
+  obligatorias:
+  - dim_cuenta_tesoreria.es_disponible
+  - fct_movimiento_tesoreria.fecha
+  - fct_movimiento_tesoreria.importe
+  opcionales:
+  - fct_movimiento_tesoreria.saldo_informado
+roles_minimos:
+- tesoreria
+casos_borde:
+- Cuentas en moneda extranjera se valúan al TC del día (tipo default del tenant); mostrar también en moneda original.
+- Si un extracto está desactualizado (> 2 días hábiles) el saldo se marca "desactualizado" con la fecha real.
+- Dinero en MP pendiente de liberar no es disponible; se informa aparte (FIN-17 / fct_liquidacion_pasarela).
+alertas:
+- condicion: caja_disponible < caja_minima tenant
+  severidad: critica
+- condicion: caja_disponible < pagos comprometidos próximos 7 días
+  severidad: critica
+relacionados:
+- FIN-08
+- FIN-09
+- FIN-16
+area: finanzas

@@ -1,0 +1,41 @@
+id: FIN-12
+nombre: DSO (días de cobro)
+pregunta: ¿Cuántos días tardamos en promedio en cobrar?
+definicion: CxC promedio del período / ventas a crédito con impuesto indirecto del período × días del período.
+formula: 'dso = avg(cxc_total diario del período) / nullif(sum(importe_total*signo) ventas del período, 0) * dias_periodo
+
+  -- ventas = fct_comprobante venta emitido (con impuesto indirecto porque la CxC incluye impuesto indirecto)
+
+  '
+cube: cxc.dso
+unidad: dias
+direccion: menor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- cliente
+- vendedor
+- tipo_cliente
+filtros_base:
+- opcional excluir ventas contado (condicion_pago_dias = 0)
+parametros:
+  solo_credito: true
+requisitos:
+  obligatorias:
+  - fct_documento_cxc.saldo_pendiente
+  - fct_comprobante.fecha_emision
+  - fct_comprobante.importe_total
+  - fct_comprobante.estado
+  opcionales: []
+roles_minimos:
+- cuentas_corrientes
+- facturacion
+casos_borde:
+- En negocios mixtos (contado + cuenta corriente) calcular con `solo_credito=true` para no subestimar.
+alertas:
+- condicion: dso > condicion_pago promedio + 15 días
+  severidad: alta
+relacionados:
+- FIN-14
+- FIN-15
+area: finanzas

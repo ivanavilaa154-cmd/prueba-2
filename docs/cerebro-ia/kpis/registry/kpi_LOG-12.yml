@@ -1,0 +1,43 @@
+id: LOG-12
+nombre: Costo logístico sobre venta
+pregunta: ¿Qué porcentaje de lo que vendemos se va en logística?
+definicion: (Σ costo_envio − Σ importe_envio_cobrado + costo de preparación opcional) / venta neta de los pedidos despachados.
+formula: 'select (sum(e.costo_envio) - sum(coalesce(e.importe_envio_cobrado,0))) / nullif(sum(p.importe_neto),0)
+
+  from core.fct_envio e join core.fct_pedido p using (pedido_id)
+
+  where not e.es_devolucion and local_date(e.despacho_at) between :desde and :hasta;
+
+  '
+cube: envios.costo_logistico_pct
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal
+- transportista
+- zona_destino
+- categoria
+filtros_base: []
+parametros:
+  neto_de_cobrado: true
+  incluir_devoluciones: true
+requisitos:
+  obligatorias:
+  - fct_envio.costo_envio
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.importe_envio_cobrado
+roles_minimos:
+- logistica
+- ventas
+casos_borde:
+- incluir_devoluciones suma el costo de envíos es_devolucion (logística inversa).
+alertas:
+- condicion: costo_logistico_pct > umbral tenant (default 8%)
+  severidad: alta
+relacionados:
+- VEN-09
+- LOG-13
+area: logistica

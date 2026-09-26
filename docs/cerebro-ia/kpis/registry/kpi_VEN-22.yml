@@ -1,0 +1,36 @@
+id: VEN-22
+nombre: Velocidad de pipeline
+pregunta: ¿Cuánto dinero por día genera nuestro pipeline?
+definicion: (Oportunidades abiertas × win rate × ticket promedio ganado) / ciclo de venta en días.
+formula: velocidad = (count_abiertas * VEN-20.win_rate_cant * avg_importe_ganado) / nullif(VEN-21.ciclo_dias, 0)
+cube: crm.velocidad_pipeline
+unidad: moneda por día
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- vendedor
+- pipeline
+filtros_base: []
+parametros:
+  ventana_meses: 6
+requisitos:
+  obligatorias:
+  - fct_oportunidad.importe
+  - fct_oportunidad.esta_ganada
+  - fct_oportunidad.esta_cerrada
+  - fct_oportunidad.fecha_creacion
+  - fct_oportunidad.fecha_cierre
+  opcionales:
+  - fct_oportunidad.fecha_cierre_esperada
+roles_minimos:
+- crm
+historia_minima: ≥ 6 meses
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- VEN-19
+- VEN-20
+- VEN-21
+area: ventas

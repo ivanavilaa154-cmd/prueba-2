@@ -1,0 +1,42 @@
+id: MKT-08
+nombre: CAC (costo de adquisición de cliente)
+pregunta: ¿Cuánto nos cuesta conseguir un cliente nuevo?
+definicion: Inversión en marketing de adquisición / clientes nuevos (VEN-11) del período; CAC por canal usando atribución de primer pedido.
+formula: 'cac_blended = MKT-01.inversion / nullif(VEN-11.nuevos, 0)
+
+  cac_pago = gasto canales pagos / nuevos cuyo primer pedido se atribuye a canal pago
+
+  '
+cube: marketing.cac_blended, marketing.cac_pago
+unidad: moneda
+direccion: menor_mejor
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- canal_marketing
+- plataforma (cac_pago)
+filtros_base:
+- canales online por defecto
+parametros:
+  costo: plataforma|total
+  excluir_retargeting: true
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_pedido.cliente_id
+  - fct_pedido.fecha_pedido
+  opcionales:
+  - dim_campana.objetivo
+  - fct_atribucion_pedido.canal_marketing
+roles_minimos:
+- publicidad
+- ventas
+casos_borde:
+- Campañas objetivo 'retargeting' se excluyen del numerador si excluir_retargeting (no adquieren).
+alertas:
+- condicion: cac real sube > 25% vs trimestre anterior
+  severidad: alta
+relacionados:
+- MKT-09
+- VEN-11
+area: marketing

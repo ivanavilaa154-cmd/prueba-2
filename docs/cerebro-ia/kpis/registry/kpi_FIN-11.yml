@@ -1,0 +1,34 @@
+id: FIN-11
+nombre: Aging de cuentas por cobrar
+pregunta: ¿Cuánto de lo que nos deben tiene 0-30, 31-60, 61-90, >90 días de atraso?
+definicion: Distribución del saldo CxC por tramos de días vencidos.
+formula: "tramo_aging = case when dias_vencido <= 0 then 'a_vencer'\n                   when dias_vencido <= 30 then '1_30'\n                \
+  \   when dias_vencido <= 60 then '31_60'\n                   when dias_vencido <= 90 then '61_90'\n                   else 'mas_90' end\nselect\
+  \ tramo_aging, sum(saldo) from marts.fct_saldo_cxc_diario where fecha=:fecha group by 1;\n"
+cube: cxc.saldo_total (dimensión tramo_aging)
+unidad: moneda
+direccion: menor_mejor (tramos altos)
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- tramo_aging
+- cliente
+- vendedor
+filtros_base: []
+parametros:
+  tramos: configurables por tenant
+requisitos:
+  obligatorias:
+  - fct_documento_cxc.fecha_vencimiento
+  - fct_documento_cxc.saldo_pendiente
+  opcionales: []
+roles_minimos:
+- cuentas_corrientes
+casos_borde:
+- Si no hay fecha de vencimiento se usa fecha_emision + condicion_pago_dias del cliente (marcar "vencimiento estimado").
+alertas:
+- condicion: saldo mas_90 > 10% de la CxC
+  severidad: alta
+relacionados:
+- FIN-10
+area: finanzas

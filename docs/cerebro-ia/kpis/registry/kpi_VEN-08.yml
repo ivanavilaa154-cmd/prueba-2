@@ -1,0 +1,50 @@
+id: VEN-08
+nombre: Margen bruto comercial por producto/categoría
+pregunta: ¿Qué productos y categorías nos dejan más margen?
+definicion: Venta neta de líneas − costo de líneas; margen % = margen / venta.
+formula: "select pr.categoria_n1, sum(l.importe_neto) venta, sum(l.costo_total) costo,\n       sum(l.importe_neto - l.costo_total) margen, sum(l.importe_neto\
+  \ - l.costo_total)/nullif(sum(l.importe_neto),0) margen_pct\nfrom core.fct_pedido_linea l join core.fct_pedido p using (pedido_id) join core.dim_producto\
+  \ pr using (producto_id)\nwhere pedido_valido and p.fecha_pedido between :desde and :hasta group by 1;\n"
+cube: ventas.margen_bruto, ventas.margen_bruto_pct
+unidad: moneda | porcentaje
+direccion: mayor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- producto
+- categoria
+- marca
+- canal
+- sucursal
+- vendedor
+- cliente
+filtros_base:
+- pedido_valido
+- costo_total not null
+parametros:
+  costo: historico|reposicion
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.importe_neto
+  - fct_pedido_linea.costo_unitario
+  - fct_pedido_linea.costo_total
+  opcionales:
+  - dim_producto.categoria_n1
+  - dim_producto.categoria_n2
+  - dim_producto.categoria_n3
+roles_minimos:
+- ventas
+casos_borde:
+- Informa `pct_venta_sin_costo`; si > 5 % el agente lo aclara.
+- costo='reposicion' usa dim_producto.costo_estandar actual (mejor para decisiones de precio en inflación).
+alertas:
+- condicion: producto con margen_pct < 0 y ventas > 0
+  severidad: alta
+- condicion: categoría baja > 5 pp de margen vs mes anterior
+  severidad: media
+relacionados:
+- FIN-03
+- VEN-09
+- INV-11
+area: ventas

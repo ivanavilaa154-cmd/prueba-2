@@ -1,0 +1,46 @@
+id: LOG-02
+nombre: Tiempo de preparación
+pregunta: ¿Cuánto tardamos desde que se confirma el pedido hasta que está listo para despachar?
+definicion: Mediana y P90 de horas hábiles entre pedido_at (ajustado al corte) y listo_despacho_at.
+formula: "select percentile_cont(0.5) within group (order by horas_habiles(pedido_at_ajustado, listo_despacho_at)),\n       percentile_cont(0.9)\
+  \ within group (order by horas_habiles(pedido_at_ajustado, listo_despacho_at))\nfrom core.fct_envio where es_controlable and modalidad <> 'retiro_en_tienda'\n\
+  \  and listo_despacho_at is not null and local_date(listo_despacho_at) between :desde and :hasta;\n"
+cube: envios.horas_preparacion_p50, envios.horas_preparacion_p90
+unidad: horas
+direccion: menor_mejor
+agregacion: percentil
+grano_min: dia
+dimensiones:
+- deposito_origen
+- canal
+- dia_semana
+- franja_horaria_pedido
+filtros_base:
+- excluye envíos no controlables
+parametros:
+  corte_hora: '14:00'
+  unidad: horas_habiles|horas_corridas
+requisitos:
+  obligatorias:
+  - fct_envio.pedido_at
+  opcionales:
+  - fct_preparacion.inicio_at
+  - fct_preparacion.fin_at
+  alternativas:
+  - nombre: con_listo_despacho
+    obligatorias:
+    - fct_envio.listo_despacho_at
+  - nombre: solo_despacho
+    obligatorias:
+    - fct_envio.despacho_at
+roles_minimos:
+- logistica
+casos_borde:
+- Si no hay listo_despacho_at se usa despacho_at (se informa "preparación + espera de colecta").
+alertas:
+- condicion: p90 > 24 horas hábiles
+  severidad: media
+relacionados:
+- LOG-03
+- LOG-16
+area: logistica

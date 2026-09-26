@@ -1,0 +1,318 @@
+dominio,valor,descripcion,orden,atributos
+circuito,venta,,1,
+circuito,compra,,2,
+clase_comprobante,factura,,1,"{""signo"": 1, ""computa_venta"": true}"
+clase_comprobante,nota_debito,,2,"{""signo"": 1, ""computa_venta"": true}"
+clase_comprobante,nota_credito,,3,"{""signo"": -1, ""computa_venta"": true}"
+clase_comprobante,ticket,,4,"{""signo"": 1, ""computa_venta"": true}"
+clase_comprobante,recibo,,5,"{""signo"": 1, ""computa_venta"": false}"
+clase_comprobante,no_fiscal,,6,"{""signo"": 1, ""computa_venta"": false}"
+estado_comprobante,emitido,,1,
+estado_comprobante,anulado,,2,
+estado_pedido,borrador,,1,
+estado_pedido,pendiente_pago,,2,
+estado_pedido,confirmado,,3,
+estado_pedido,en_preparacion,,4,
+estado_pedido,despachado,,5,
+estado_pedido,entregado,,6,
+estado_pedido,cancelado,,7,
+estado_pedido,devuelto_total,,8,
+estado_pedido,otro,,9,
+estado_pago,pendiente,,1,
+estado_pago,aprobado,,2,
+estado_pago,parcial,,3,
+estado_pago,rechazado,,4,
+estado_pago,reembolsado,,5,
+estado_pago,contracargo,,6,
+estado_pago,otro,,7,
+canal_venta,tienda_fisica,,1,"{""es_online"": false}"
+canal_venta,ecommerce_propio,,2,"{""es_online"": true}"
+canal_venta,marketplace,,3,"{""es_online"": true, ""es_marketplace"": true}"
+canal_venta,mayorista_b2b,,4,"{""es_online"": false}"
+canal_venta,venta_directa,,5,"{""es_online"": false}"
+canal_venta,telefono_mensajeria,,6,"{""es_online"": false}"
+canal_venta,otro,,7,
+canal_venta,-1,Sin asignar,8,
+canal_marketing,busqueda_paga,,1,"{""es_pago"": true}"
+canal_marketing,social_pago,,2,"{""es_pago"": true}"
+canal_marketing,shopping_catalogo_pago,,3,"{""es_pago"": true}"
+canal_marketing,display,,4,"{""es_pago"": true}"
+canal_marketing,afiliados,,5,"{""es_pago"": true}"
+canal_marketing,marketplace_ads,,6,"{""es_pago"": true}"
+canal_marketing,busqueda_organica,,7,"{""es_pago"": false}"
+canal_marketing,social_organico,,8,"{""es_pago"": false}"
+canal_marketing,email,,9,"{""es_pago"": false}"
+canal_marketing,mensajeria,,10,"{""es_pago"": false}"
+canal_marketing,directo,,11,"{""es_pago"": false}"
+canal_marketing,referido,,12,"{""es_pago"": false}"
+canal_marketing,marketplace,,13,"{""es_pago"": false}"
+canal_marketing,offline,,14,"{""es_pago"": false}"
+canal_marketing,sin_asignar,,15,"{""es_pago"": false}"
+medio_pago,efectivo,,1,
+medio_pago,transferencia,,2,
+medio_pago,tarjeta_credito,,3,
+medio_pago,tarjeta_debito,,4,
+medio_pago,billetera_digital,,5,
+medio_pago,cheque,,6,
+medio_pago,cheque_electronico,,7,
+medio_pago,retencion,,8,
+medio_pago,compensacion,,9,
+medio_pago,credito_cliente,,10,
+medio_pago,otro,,11,
+tipo_persona,juridica,,1,
+tipo_persona,fisica,,2,
+tipo_persona,desconocida,,3,
+tipo_cliente,empresa,,1,
+tipo_cliente,consumidor,,2,
+condicion_fiscal,contribuyente_general,,1,
+condicion_fiscal,contribuyente_simplificado,,2,
+condicion_fiscal,exento,,3,
+condicion_fiscal,consumidor_final,,4,
+condicion_fiscal,exterior,,5,
+condicion_fiscal,desconocida,,6,
+unidad_medida,unidad,,1,
+unidad_medida,kg,,2,
+unidad_medida,g,,3,
+unidad_medida,lt,,4,
+unidad_medida,ml,,5,
+unidad_medida,m,,6,
+unidad_medida,m2,,7,
+unidad_medida,m3,,8,
+unidad_medida,caja,,9,
+unidad_medida,hora,,10,
+unidad_medida,otro,,11,
+tipo_deposito,propio,,1,
+tipo_deposito,sucursal,,2,
+tipo_deposito,fulfillment_tercero,,3,
+tipo_deposito,operador_logistico,,4,
+tipo_deposito,transito,,5,
+tipo_deposito,virtual,,6,
+tipo_deposito,consignacion,,7,
+tipo_sucursal,local,,1,
+tipo_sucursal,deposito,,2,
+tipo_sucursal,oficina,,3,
+tipo_sucursal,online,,4,
+categoria_gasto,mercaderia,,1,
+categoria_gasto,servicios,,2,
+categoria_gasto,logistica,,3,
+categoria_gasto,marketing,,4,
+categoria_gasto,alquiler,,5,
+categoria_gasto,servicios_publicos,,6,
+categoria_gasto,honorarios,,7,
+categoria_gasto,impuestos,,8,
+categoria_gasto,financiero,,9,
+categoria_gasto,tecnologia,,10,
+categoria_gasto,personal,,11,
+categoria_gasto,otros,,12,
+area_empresa,comercial,,1,
+area_empresa,administracion,,2,
+area_empresa,operaciones,,3,
+area_empresa,logistica,,4,
+area_empresa,marketing,,5,
+area_empresa,direccion,,6,
+area_empresa,tecnologia,,7,
+tipo_cuenta_tesoreria,banco_corriente,,1,
+tipo_cuenta_tesoreria,banco_ahorro,,2,
+tipo_cuenta_tesoreria,caja,,3,
+tipo_cuenta_tesoreria,billetera_digital,,4,
+tipo_cuenta_tesoreria,inversion_liquida,,5,
+tipo_cuenta_tesoreria,plazo_fijo,,6,
+tipo_cuenta_tesoreria,tarjeta_credito,,7,
+tipo_transportista,correo,,1,
+tipo_transportista,mensajeria,,2,
+tipo_transportista,flota_propia,,3,
+tipo_transportista,logistica_de_marketplace,,4,
+tipo_transportista,operador_logistico,,5,
+tipo_transportista,retiro,,6,
+servicio_envio,estandar,,1,
+servicio_envio,express,,2,
+servicio_envio,mismo_dia,,3,
+servicio_envio,a_sucursal,,4,
+servicio_envio,a_domicilio,,5,
+objetivo_campana,ventas,,1,
+objetivo_campana,leads,,2,
+objetivo_campana,trafico,,3,
+objetivo_campana,alcance,,4,
+objetivo_campana,interaccion,,5,
+objetivo_campana,app,,6,
+objetivo_campana,retargeting,,7,
+objetivo_campana,otro,,8,
+tipo_campana,busqueda,,1,
+tipo_campana,shopping_catalogo,,2,
+tipo_campana,display,,3,
+tipo_campana,video,,4,
+tipo_campana,social,,5,
+tipo_campana,marketplace,,6,
+tipo_campana,email,,7,
+tipo_campana,otro,,8,
+motivo_devolucion,defecto_calidad,,1,
+motivo_devolucion,no_coincide_descripcion,,2,
+motivo_devolucion,talle_modelo,,3,
+motivo_devolucion,arrepentimiento,,4,
+motivo_devolucion,error_preparacion,,5,
+motivo_devolucion,danado_transporte,,6,
+motivo_devolucion,no_entregado,,7,
+motivo_devolucion,otro,,8,
+estado_devolucion,solicitada,,1,
+estado_devolucion,en_transito,,2,
+estado_devolucion,recibida,,3,
+estado_devolucion,reintegrada,,4,
+estado_devolucion,rechazada,,5,
+etapa_oportunidad,prospecto,,1,"{""orden"": 1, ""probabilidad_default"": 10}"
+etapa_oportunidad,calificado,,2,"{""orden"": 2, ""probabilidad_default"": 30}"
+etapa_oportunidad,propuesta,,3,"{""orden"": 3, ""probabilidad_default"": 60}"
+etapa_oportunidad,negociacion,,4,"{""orden"": 4, ""probabilidad_default"": 80}"
+etapa_oportunidad,ganada,,5,"{""orden"": 5, ""probabilidad_default"": 100}"
+etapa_oportunidad,perdida,,6,"{""orden"": 5, ""probabilidad_default"": 0}"
+motivo_perdida,precio,,1,
+motivo_perdida,competencia,,2,
+motivo_perdida,sin_presupuesto,,3,
+motivo_perdida,sin_respuesta,,4,
+motivo_perdida,timing,,5,
+motivo_perdida,producto,,6,
+motivo_perdida,otro,,7,
+estado_lead,nuevo,,1,
+estado_lead,contactado,,2,
+estado_lead,calificado,,3,
+estado_lead,descalificado,,4,
+estado_lead,convertido,,5,
+concepto_presupuesto,venta_neta,,1,
+concepto_presupuesto,unidades,,2,
+concepto_presupuesto,margen_bruto,,3,
+concepto_presupuesto,eerr_linea,,4,
+concepto_presupuesto,gasto_marketing,,5,
+concepto_presupuesto,cuota_vendedor,,6,
+estado_asiento,publicado,,1,
+estado_asiento,borrador,,2,
+estado_asiento,anulado,,3,
+estado_documento,pendiente,,1,
+estado_documento,parcial,,2,
+estado_documento,cancelado,,3,
+estado_documento,anulado,,4,
+estado_movimiento,confirmado,,1,
+estado_movimiento,anulado,,2,
+estado_movimiento,rechazado,,3,
+tipo_mov_tesoreria,cobro_cliente,,1,"{""actividad"": ""operativa""}"
+tipo_mov_tesoreria,liquidacion_tarjeta,,2,"{""actividad"": ""operativa""}"
+tipo_mov_tesoreria,pago_proveedor,,3,"{""actividad"": ""operativa""}"
+tipo_mov_tesoreria,sueldos_cargas,,4,"{""actividad"": ""operativa""}"
+tipo_mov_tesoreria,impuestos,,5,"{""actividad"": ""operativa""}"
+tipo_mov_tesoreria,impuesto_movimientos_bancarios,,6,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,comisiones_bancarias,,7,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,intereses,,8,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,prestamo_ingreso,,9,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,prestamo_pago,,10,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,inversion_constitucion,,11,"{""actividad"": ""inversion""}"
+tipo_mov_tesoreria,inversion_rescate,,12,"{""actividad"": ""inversion""}"
+tipo_mov_tesoreria,compra_bien_uso,,13,"{""actividad"": ""inversion""}"
+tipo_mov_tesoreria,retiro_socios,,14,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,aporte_socios,,15,"{""actividad"": ""financiacion""}"
+tipo_mov_tesoreria,transferencia_interna,,16,"{""actividad"": ""interna""}"
+tipo_mov_tesoreria,otros,,17,"{""actividad"": ""operativa""}"
+estado_liquidacion,aprobado,,1,
+estado_liquidacion,pendiente,,2,
+estado_liquidacion,acreditado,,3,
+estado_liquidacion,rechazado,,4,
+estado_liquidacion,reembolsado,,5,
+estado_liquidacion,contracargo,,6,
+tipo_mov_stock,compra_recepcion,,1,"{""es_venta"": 0, ""es_compra"": 1, ""es_ajuste"": 0}"
+tipo_mov_stock,venta_despacho,,2,"{""es_venta"": 1, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,devolucion_cliente,,3,"{""es_venta"": -1, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,devolucion_proveedor,,4,"{""es_venta"": 0, ""es_compra"": -1, ""es_ajuste"": 0}"
+tipo_mov_stock,transferencia_salida,,5,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,transferencia_entrada,,6,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,ajuste_positivo,,7,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 1}"
+tipo_mov_stock,ajuste_negativo,,8,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 1}"
+tipo_mov_stock,merma,,9,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 1}"
+tipo_mov_stock,produccion_consumo,,10,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,produccion_alta,,11,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 0}"
+tipo_mov_stock,inventario_inicial,,12,"{""es_venta"": 0, ""es_compra"": 0, ""es_ajuste"": 0}"
+motivo_ajuste,rotura,,1,
+motivo_ajuste,vencimiento,,2,
+motivo_ajuste,faltante,,3,
+motivo_ajuste,error_carga,,4,
+motivo_ajuste,conteo,,5,
+motivo_ajuste,muestra,,6,
+motivo_ajuste,otro,,7,
+estado_oc,borrador,,1,
+estado_oc,enviada,,2,
+estado_oc,confirmada,,3,
+estado_oc,recibida_parcial,,4,
+estado_oc,recibida,,5,
+estado_oc,cancelada,,6,
+modalidad_envio,flota_propia,,1,"{""es_controlable"": true}"
+modalidad_envio,transportista_tercero,,2,"{""es_controlable"": true}"
+modalidad_envio,fulfillment_tercero,,3,"{""es_controlable"": false}"
+modalidad_envio,logistica_del_canal,,4,"{""es_controlable"": true}"
+modalidad_envio,operador_logistico,,5,"{""es_controlable"": false}"
+modalidad_envio,retiro_en_tienda,,6,"{""es_controlable"": true}"
+estado_envio,pendiente,,1,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,en_preparacion,,2,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,listo_para_despachar,,3,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,despachado,,4,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,en_transito,,5,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,en_distribucion,,6,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,no_entregado_reintento,,7,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,listo_para_retirar,,8,"{""es_final"": false, ""es_exitoso"": null}"
+estado_envio,entregado,,9,"{""es_final"": true, ""es_exitoso"": true}"
+estado_envio,devuelto_origen,,10,"{""es_final"": true, ""es_exitoso"": false}"
+estado_envio,cancelado,,11,"{""es_final"": true, ""es_exitoso"": false}"
+estado_envio,extraviado_danado,,12,"{""es_final"": true, ""es_exitoso"": false}"
+motivo_no_entrega,ausente,,1,
+motivo_no_entrega,direccion_incorrecta,,2,
+motivo_no_entrega,rechazado,,3,
+motivo_no_entrega,zona_inaccesible,,4,
+motivo_no_entrega,extraviado,,5,
+motivo_no_entrega,danado,,6,
+motivo_no_entrega,otro,,7,
+dispositivo,desktop,,1,
+dispositivo,mobile,,2,
+dispositivo,tablet,,3,
+dispositivo,otro,,4,
+estado_surtido,activo,,1,
+estado_surtido,a_discontinuar,,2,
+estado_surtido,discontinuado,,3,
+estado_surtido,estacional_fuera_temporada,,4,
+mecanica_promocion,descuento_pct,,1,
+mecanica_promocion,precio_especial,,2,
+mecanica_promocion,nxm,,3,
+mecanica_promocion,segunda_unidad,,4,
+mecanica_promocion,combo,,5,
+mecanica_promocion,cupon,,6,
+mecanica_promocion,envio_gratis,,7,
+mecanica_promocion,cuotas_sin_interes,,8,
+mecanica_promocion,regalo,,9,
+mecanica_promocion,otro,,10,
+objetivo_promocion,liquidar_stock,,1,
+objetivo_promocion,trafico,,2,
+objetivo_promocion,lanzamiento,,3,
+objetivo_promocion,rentabilidad,,4,
+objetivo_promocion,fidelizacion,,5,
+objetivo_promocion,otro,,6,
+estado_promocion,planificada,,1,
+estado_promocion,activa,,2,
+estado_promocion,finalizada,,3,
+estado_promocion,cancelada,,4,
+prioridad,critica,,1,
+prioridad,alta,,2,
+prioridad,media,,3,
+prioridad,baja,,4,
+estado_actividad,nueva,,1,
+estado_actividad,en_curso,,2,
+estado_actividad,resuelta,,3,
+estado_actividad,descartada,,4,
+estado_actividad,vencida,,5,
+estado_actividad,cerrada_automatica,,6,
+metodo_precio,margen_sobre_precio,,1,
+metodo_precio,markup_sobre_costo,,2,
+base_costo_precio,reposicion,,1,
+base_costo_precio,promedio,,2,
+rol_responsable,repositor,,1,
+rol_responsable,encargado_sucursal,,2,
+rol_responsable,comprador,,3,
+rol_responsable,comercial,,4,
+rol_responsable,gerente_operaciones,,5,
+rol_responsable,gerente_general,,6,
+rol_responsable,finanzas,,7,
+rol_responsable,marketing,,8,
+rol_responsable,logistica,,9,

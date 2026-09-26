@@ -1,0 +1,58 @@
+id: FIN-01
+nombre: Ventas netas contables
+pregunta: ¿Cuánto facturamos netos de descuentos y devoluciones en el período?
+definicion: Ventas brutas menos descuentos, bonificaciones y devoluciones reconocidas en el período (línea `ventas_netas` del EERR).
+formula: "-- modo contable\nselect -sum(a.saldo) as ventas_netas\nfrom core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)\n\
+  where c.eerr_linea in ('ventas_brutas','descuentos_devoluciones')\n  and a.estado = 'publicado' and not a.es_cierre\n  and a.fecha_contable\
+  \ between :desde and :hasta;\n-- modo gestion\nselect sum(importe_neto * signo) from core.fct_comprobante\nwhere circuito = 'venta' and estado\
+  \ = 'emitido'\n  and computa_venta\n  and fecha_emision between :desde and :hasta;\n"
+cube: eerr.ventas_netas
+unidad: moneda
+direccion: mayor_mejor
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- sucursal
+- centro_costo
+- canal (solo gestión)
+- cliente (solo gestión)
+filtros_base:
+- estado publicado
+- excluye asientos de cierre
+parametros:
+  modo: auto|contable|gestion
+  ajuste: nominal|real
+  moneda: base|<ISO>
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+roles_minimos:
+- contabilidad o facturacion
+casos_borde:
+- Diferencia con VEN-01 (comercial) es esperada: fecha de pedido vs factura, pedidos sin facturar, envío. El agente debe explicarla si se comparan.
+- Documentos en moneda extranjera se valúan con el tipo de cambio informado en el propio documento si la fuente lo trae (tc_aplicado); si no,
+  con ref.tipo_cambio.
+- Tickets con rango CbteDesde-CbteHasta cuentan una vez con el importe total.
+alertas:
+- condicion: variacion_real_vs_mismo_mes_anio_anterior < -10%
+  severidad: alta
+- condicion: desvio_vs_presupuesto < -10% al cierre de mes
+  severidad: alta
+relacionados:
+- VEN-01
+- FIN-19
+area: finanzas

@@ -1,0 +1,50 @@
+id: INV-05
+nombre: Cobertura de stock por SKU (días)
+pregunta: ¿Para cuántos días nos alcanza el stock de cada producto?
+definicion: Stock disponible (+ en tránsito opcional) / venta diaria promedio (VDP) del SKU.
+formula: 'select s.producto_id, s.stock_disponible / nullif(d.vdp, 0) cobertura_dias
+
+  from marts.fct_stock_diario_kpi s join marts.inv__demanda_sku d using (tenant_id, producto_id)
+
+  where s.fecha = :fecha;   -- agregado por producto sumando depósitos vendibles
+
+  '
+cube: stock.cobertura_dias
+unidad: dias
+direccion: neutral (rango objetivo por clasificación ABC)
+agregacion: calculado por SKU (no promediar; usar mediana ponderada por venta al agregar)
+grano_min: dia
+dimensiones:
+- producto
+- categoria
+- clasificacion_abc
+- deposito
+- proveedor
+filtros_base:
+- producto activo
+- vdp > 0
+parametros:
+  ventana_vdp_dias: 90
+  incluir_transito: false
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  opcionales:
+  - fct_stock_diario.stock_reservado
+  - fct_stock_diario.stock_en_transito
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- VDP = 0 → cobertura "infinita" → va a INV-09 (inmovilizado).
+- Productos estacionales: permitir `ventana_vdp='mismo_periodo_anio_anterior'`.
+alertas:
+- condicion: SKU clase A con cobertura < lead_time_dias del proveedor
+  severidad: alta
+relacionados:
+- INV-06
+- INV-10
+- INV-15
+area: inventario

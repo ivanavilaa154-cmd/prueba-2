@@ -1,0 +1,149 @@
+id: ACT-06
+nombre: Vencimientos
+caso_de_negocio: Evitar que la mercadería se venza en góndola o en depósito, retirar a tiempo lo que ya no se puede vender y recuperar valor antes
+  de perderlo.
+entidad: lote (producto × depósito × lote)
+frecuencia: diaria (06:00)
+responsable_principal: encargado_sucursal
+deteccion:
+  universo: lotes con cantidad > 0 y fecha de vencimiento conocida (foto por lote o estimación FEFO desde recepciones).
+  condiciones:
+  - Días a vencer = fecha_vencimiento − hoy; fecha límite de venta = fecha_vencimiento − dias_retiro_antes_vencimiento.
+  - 'Consumo FEFO: para cada lote, la venta esperada antes de su fecha límite = VDP del producto en ese depósito × días hasta la fecha límite,
+    restando lo que consumen antes los lotes que vencen primero.'
+  - Unidades en riesgo = max(0, cantidad del lote − venta esperada disponible para ese lote).
+  - Velocidad necesaria = cantidad / días hasta fecha límite; multiplicador = velocidad necesaria / VDP.
+parametros:
+  dias_retiro_default: 0
+  ventana_alerta_dias: 30
+  elasticidad_default: -2
+  descuento_maximo_pct: 0.5
+calculo: "-- marts.act__vencimientos\nselect l.producto_id, l.deposito_id, l.lote, l.fecha_vencimiento, l.cantidad, l.costo_unitario,\n      \
+  \ l.fecha_vencimiento - :hoy as dias_a_vencer,\n       greatest(0, l.cantidad - greatest(0, d.vdp * (fecha_limite - :hoy) - consumo_lotes_previos))\
+  \ as unidades_en_riesgo,\n       unidades_en_riesgo * l.costo_unitario as valor_en_riesgo,\n       (l.cantidad / nullif(fecha_limite - :hoy,0))\
+  \ / nullif(d.vdp,0) as multiplicador_necesario\nfrom core.fct_stock_lote l join marts.inv__demanda_sku d using (tenant_id, producto_id)\nwhere\
+  \ l.fecha = :hoy and l.cantidad > 0;\n"
+impacto: valor a costo en riesgo (y margen si se vende a tiempo); C1 = valor a registrar como merma.
+casos:
+- codigo: C1
+  nombre: Vencido o pasado de la fecha límite de venta
+  condicion: dias_a_vencer ≤ 0, o hoy > fecha límite de venta.
+  prioridad: critica
+  acciones:
+  - orden: 1
+    accion: Retirar HOY todas las unidades del lote de la exhibición y separarlas en depósito identificadas.
+    responsable: repositor
+    plazo: inmediato
+  - orden: 2
+    accion: 'Si el proveedor acepta devolución de vencidos y está dentro del plazo de aviso: gestionar la devolución o nota de crédito.'
+    responsable: comprador
+    plazo: según dias_aviso_devolucion del proveedor
+  - orden: 3
+    accion: 'Si no: registrar la merma con motivo ''vencimiento'' y disponer según la normativa aplicable.'
+    responsable: encargado_sucursal
+    plazo: 24 h
+  cierre: Movimiento de merma o devolución a proveedor registrado por la cantidad del lote.
+- codigo: C2
+  nombre: Vence pronto y no llega a venderse a precio normal
+  condicion: Unidades en riesgo > 0 y días hasta fecha límite ≤ 30 (o el umbral de su categoría); multiplicador necesario entre 1,2 y 4.
+  prioridad: alta (crítica si faltan ≤ 7 días)
+  acciones:
+  - orden: 1
+    accion: 'Aplicar el descuento sugerido para acelerar la venta (calculado con la elasticidad e del producto o la default: descuento = 1 − multiplicador^(1/e);
+      con e = −2 y multiplicador 2 → 29 %; acotado al descuento máximo y nunca por debajo del costo salvo en C3), con cartel de ''consumo preferente''.'
+    responsable: comercial
+    plazo: 24 h
+  - orden: 2
+    accion: Ubicar el lote al frente de la exhibición (FEFO) y verificar que no haya lotes más nuevos adelante.
+    responsable: repositor
+    plazo: mismo día
+  - orden: 3
+    accion: 'Re-evaluar en 3 días: si la velocidad no alcanza, profundizar descuento o pasar al caso C3.'
+    responsable: comercial
+    plazo: 3 días
+  cierre: Unidades en riesgo = 0 (vendidas) o pasa a C1/C3.
+- codigo: C3
+  nombre: Vence pronto y ni con descuento llega
+  condicion: Multiplicador necesario > 4, o C2 sin mejora al re-evaluar.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Transferir las unidades a la sucursal/canal donde el producto rota más rápido (la tarea indica destino y cantidad que sí llega a venderse).
+    responsable: gerente_operaciones
+    plazo: 48 h
+  - orden: 2
+    accion: 'Si el proveedor acepta cambio por vencimiento próximo: solicitarlo.'
+    responsable: comprador
+    plazo: 48 h
+  - orden: 3
+    accion: 'Si nada de lo anterior: donar antes del vencimiento o liquidar a costo en canal alternativo.'
+    responsable: gerente_general
+    plazo: antes de la fecha límite
+  cierre: Transferencia, cambio, donación o venta registrada.
+- codigo: C4
+  nombre: Sobrecompra de perecederos (causa raíz)
+  condicion: El mismo producto generó casos C1-C3 en 2 o más lotes en 90 días.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Reducir la cantidad por pedido y aumentar la frecuencia (el tope por vida útil del pedido sugerido pasa a ser obligatorio para este
+      producto).
+    responsable: comprador
+    plazo: próximo pedido
+  - orden: 2
+    accion: Revisar con el proveedor la vida útil con la que entrega (lotes que llegan con poca vida remanente).
+    responsable: comprador
+    plazo: 30 días
+  cierre: Parámetro de compra ajustado y registrado.
+- codigo: C5
+  nombre: Lote sin fecha de vencimiento cargada
+  condicion: Producto perecedero con recepción en los últimos 30 días sin fecha_vencimiento.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Cargar la fecha de vencimiento del lote recibido (sin ese dato no se puede alertar).
+    responsable: encargado_sucursal
+    plazo: 48 h
+  cierre: Fecha de vencimiento cargada.
+resoluciones:
+- retirado_y_mermado
+- devuelto_a_proveedor
+- descuento_aplicado_y_vendido
+- transferido
+- donado
+- cambio_por_proveedor
+- fecha_cargada
+- falso_positivo
+resolucion_confirmada:
+- retirado_y_mermado
+- devuelto_a_proveedor
+- descuento_aplicado_y_vendido
+- transferido
+- donado
+- cambio_por_proveedor
+- fecha_cargada
+ejemplo: 'Sucursal Sur — Lote L-2231 de Producto W: 64 unidades vencen en 9 días; al ritmo actual se venden 27. En riesgo: 37 u ($ 55.500 a costo).
+  Acción: 25 % de descuento hoy y ubicar al frente; revisar el viernes.'
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  opcionales:
+  - dim_producto.dias_retiro_antes_vencimiento
+  - dim_producto.es_perecedero
+  - dim_proveedor.acepta_devolucion_vencidos
+  - dim_proveedor.dias_aviso_devolucion
+  - fct_stock_lote.costo_unitario
+  alternativas:
+  - nombre: stock_por_lote
+    obligatorias:
+    - fct_stock_lote.fecha_vencimiento
+    - fct_stock_lote.cantidad
+  - nombre: recepciones_con_vencimiento
+    obligatorias:
+    - fct_recepcion.fecha_vencimiento
+    - fct_recepcion.cantidad_recibida
+    - fct_stock_diario.stock_fisico
+kpis_relacionados:
+- INV-14
+- INV-20

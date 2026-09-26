@@ -12,6 +12,7 @@ HERRAMIENTAS (implementación)
 - consultar_erp: ejecuta un SELECT de solo lectura sobre las tablas del diccionario.
 - ver_diccionario: devuelve el detalle de tablas, campos y definiciones.
 - simular_credito: simulador del Centro de Decisiones para financiar clientes a plazo.
+- ver_actividades: tareas pendientes de la persona ("¿qué tengo que hacer hoy?"), con caso, evidencia, acciones, plazo e impacto.
 Usalas en lugar de suponer. Si necesitás un número, consultalo.
 
 ==================================================

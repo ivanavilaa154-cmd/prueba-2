@@ -1,0 +1,37 @@
+id: FIN-06
+nombre: Resultado neto
+pregunta: ¿Ganamos o perdimos plata en el período (después de todo)?
+definicion: EBITDA − amortizaciones ± resultado financiero ± otros resultados − impuesto a las ganancias.
+formula: "select -sum(a.saldo) from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)\nwhere c.tipo in ('ingreso','costo','gasto')\
+  \ and a.estado='publicado' and not a.es_cierre\n  and a.fecha_contable between :desde and :hasta;\n"
+cube: eerr.resultado_neto
+unidad: moneda
+direccion: mayor_mejor
+agregacion: aditivo
+grano_min: mes
+dimensiones:
+- sucursal
+- centro_costo
+- eerr_linea
+filtros_base:
+- estado publicado
+- excluye cierre
+parametros:
+  ajuste: nominal|real
+requisitos:
+  obligatorias:
+  - fct_asiento_linea.fecha_contable
+  - fct_asiento_linea.saldo
+  - fct_asiento_linea.cuenta_id
+  - dim_cuenta_contable.codigo_estandar
+  opcionales: []
+roles_minimos:
+- contabilidad
+casos_borde:
+- Impuesto a las ganancias suele registrarse anual: mostrar resultado antes de impuestos por defecto en meses intermedios.
+alertas:
+- condicion: resultado_neto acumulado del ejercicio < 0
+  severidad: alta
+relacionados:
+- FIN-05
+area: finanzas

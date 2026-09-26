@@ -1,0 +1,31 @@
+id: MKT-13
+nombre: Abandono de carrito
+pregunta: ¿Cuántos carritos no terminan en compra?
+definicion: 1 − transacciones / carritos iniciados (la analítica web); alternativa e-commerce = checkouts abandonados de la plataforma de e-commerce
+  / checkouts creados.
+formula: abandono = 1 - sum(transacciones) / nullif(sum(agregados_carrito), 0)
+cube: web.abandono_carrito
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- dispositivo
+- canal_marketing
+filtros_base: []
+parametros:
+  base: analitica|plataforma
+requisitos:
+  obligatorias:
+  - fct_web_diario.agregados_carrito
+  - fct_web_diario.transacciones
+  opcionales: []
+roles_minimos:
+- analitica_web
+casos_borde:
+- La base 'plataforma' requiere que la fuente de e-commerce exponga checkouts/carritos abandonados (mapearlos a fct_web_diario.checkouts_iniciados
+  por día).
+alertas: []
+relacionados:
+- MKT-12
+area: marketing

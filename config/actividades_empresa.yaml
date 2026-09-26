@@ -1,0 +1,34 @@
+# Cómo aplica la empresa las actividades de config/actividades.yml (casos → acciones).
+# config/actividades.yml es el catálogo: qué se detecta, qué se hace, quién y en qué plazo.
+# Este archivo es lo propio de la empresa: a quién le llega cada tarea y las políticas.
+
+# Rol de la actividad → rol de la plataforma (config/roles.yaml) que recibe la tarea.
+# El dueño ve todas. Si un rol no está acá, la tarea le llega al dueño.
+responsables:
+  comprador: compras
+  comercial: gerente_comercial
+  encargado_sucursal: dueno
+  repositor: dueno
+  gerente_operaciones: dueno
+  gerente_general: dueno
+
+# Una tarea vencida sube a este rol.
+escala_a: dueno
+
+# Tareas notificadas por persona por día (el resto queda visible pero sin aviso).
+tope_diario_por_persona: 15
+
+# Parámetros que cambian lo que dice config/actividades.yml, por actividad.
+parametros: {}
+#   ACT-03: {dias_sin_movimiento: 90}
+
+# Política de precios (ACT-04). Alcance: todas, categoria, marca, proveedor o producto; gana el más específico.
+# metodo: margen_sobre_precio → precio = costo / (1 − margen) · markup → precio = costo × (1 + margen)
+# margen_objetivo_pct vacío = sostener el margen que el producto tenía con el costo anterior.
+politica_precio:
+  - {alcance_tipo: todas, metodo: margen_sobre_precio, margen_objetivo_pct: null, margen_minimo_pct: 18,
+     redondeo: 1, tolerancia_pct: 2, diferencia_listas_pct: 25}
+
+# Política de producto (ACT-02, ACT-03, ACT-06). Mismo criterio de alcance.
+politica_producto:
+  - {alcance_tipo: todas, dias_retiro_antes_vencimiento: 0, cobertura_objetivo_dias: 21}

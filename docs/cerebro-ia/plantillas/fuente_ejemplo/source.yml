@@ -1,0 +1,46 @@
+# PLANTILLA — source.yml (docs/02 §3). Reemplazar <...>. No incluir secretos: solo referencias.
+source_id: <nombre_libre_de_la_fuente>        # ej. gestion_principal, tienda_online, banco_1
+arquetipo: <http_api | sql_database | file_import | webhook | push_agent | conector_catalogo | plugin>
+roles: [<rol>, <rol>]                          # docs/01 §3
+zona_horaria_origen: <IANA, ej. UTC>
+moneda_default: <ISO 4217 o null>
+
+# --- http_api ---------------------------------------------------------------
+autenticacion:
+  tipo: <api_key_header | api_key_query | bearer | basic | oauth2_client_credentials | oauth2_authorization_code | custom_header | certificado_cliente>
+  secreto: vault://tenants/{tenant}/<source_id>
+  # token_url: <url>      # solo oauth2
+  # header: <nombre>      # solo api_key_header / custom_header
+base_url: <https://…>
+limites: {requests_por_minuto: <n>, concurrencia: <n>, reintentos: 5, backoff: exponencial}
+streams:
+  - nombre: <stream>
+    endpoint: </ruta>
+    metodo: GET
+    registros_en: <$.ruta.al.array>
+    primary_key: <$.id>                        # o lista de rutas
+    paginacion: {tipo: <pagina | offset | cursor_token | link_header | url_siguiente | ventana_fechas>, parametro: <...>, tamano: <n>}
+    incremental: {cursor: <$.campo_modificacion>, parametro: <parametro_desde>, formato: iso8601, lookback: 2h}
+    frecuencia: <15m | 1h | 1d>
+  # - nombre: <stream_hijo>
+  #   padre: <stream>
+  #   endpoint: </ruta/{padre.id}/detalle>
+
+# --- sql_database -----------------------------------------------------------
+# conexion: {driver: <driver>, secreto: vault://…, solo_lectura: true}
+# streams:
+#   - nombre: <stream>
+#     consulta: "select … from <tabla> where <col_modificacion> > :cursor"
+#     primary_key: [<col>]
+#     incremental: {cursor: <col_modificacion>, inicial: "<AAAA-MM-DD>"}
+
+# --- file_import ------------------------------------------------------------
+# origen: {tipo: <carga_manual | sftp | casilla_email | bucket>, ruta: <…>, patron: "<*.csv>"}
+# parser: {formato: <csv | xlsx | json | xml | ancho_fijo>, delimitador: "<;>", decimal: "<,>", encoding: <utf-8>, fila_encabezado: 1, formato_fecha: "<%d/%m/%Y>"}
+# streams: [{nombre: <stream>, primary_key: hash, columnas_hash: [<col>, <col>]}]
+
+# --- webhook (opcional, se suma a http_api) ---------------------------------
+# webhook:
+#   firma: {tipo: <hmac_sha256 | token_en_query | ninguna>, header: <X-…>, secreto: vault://…}
+#   evento_en: <$.tipo_evento>
+#   acciones: [{si_evento: "<patron>", refrescar_stream: <stream>, id_en: <$.id>}]

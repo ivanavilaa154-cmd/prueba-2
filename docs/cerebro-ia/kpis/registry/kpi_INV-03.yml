@@ -1,0 +1,48 @@
+id: INV-03
+nombre: Rotación de inventario
+pregunta: ¿Cuántas veces al año renovamos el stock?
+definicion: CMV del período / valor promedio de inventario a costo del período, anualizado.
+formula: 'rotacion = sum(cmv periodo) / nullif(avg(valor_stock diario periodo), 0) * (365 / dias_periodo)
+
+  -- cmv = Σ -costo_total de fct_movimiento_stock tipo venta_despacho/devolucion_cliente (o FIN-02 gestión)
+
+  '
+cube: stock.rotacion_anual
+unidad: veces
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- categoria
+- marca
+- proveedor
+- deposito
+- producto
+filtros_base:
+- depósitos incluidos
+parametros:
+  periodo_dias: 90
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  opcionales: []
+  alternativas:
+  - nombre: cmv_movimientos
+    obligatorias:
+    - fct_movimiento_stock.tipo_movimiento
+    - fct_movimiento_stock.costo_unitario
+  - nombre: cmv_lineas
+    obligatorias:
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- inventario
+casos_borde:
+- Productos nuevos (< periodo) distorsionan; excluirlos o marcar.
+alertas:
+- condicion: rotacion de una categoría cae > 25% vs trimestre anterior
+  severidad: media
+relacionados:
+- INV-04
+- INV-11
+area: inventario

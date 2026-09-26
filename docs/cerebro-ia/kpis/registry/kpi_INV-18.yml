@@ -1,0 +1,36 @@
+id: INV-18
+nombre: Sell-through
+pregunta: ¿Qué porcentaje de lo que recibimos ya vendimos?
+definicion: Unidades vendidas / (unidades vendidas + stock final) en el período, o por lote/temporada desde la recepción.
+formula: sell_through = unidades_vendidas / nullif(unidades_vendidas + stock_fisico_final, 0)
+cube: stock.sell_through
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: semana
+dimensiones:
+- categoria
+- marca
+- temporada (atributo producto)
+- proveedor
+filtros_base: []
+parametros:
+  desde_recepcion: false
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.cantidad
+  - fct_stock_diario.stock_fisico
+  opcionales:
+  - fct_recepcion.fecha_recepcion
+  - dim_producto.temporada
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- Clave en moda/temporada; el atributo temporada viene de categoría o campo custom ⚠.
+alertas:
+- condicion: temporada con sell_through < 50% a mitad de temporada
+  severidad: media
+relacionados:
+- INV-09
+area: inventario

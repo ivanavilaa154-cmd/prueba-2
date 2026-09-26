@@ -1,0 +1,44 @@
+id: FIN-08
+nombre: Flujo de caja (operativo, inversión, financiación)
+pregunta: ¿Cuánta plata entró y salió y por qué?
+definicion: Suma de movimientos de tesorería por actividad, excluyendo transferencias internas.
+formula: 'select actividad, tipo, sum(importe) as flujo
+
+  from core.fct_movimiento_tesoreria
+
+  where actividad <> ''interna'' and fecha between :desde and :hasta
+
+  group by rollup(actividad, tipo);
+
+  '
+cube: tesoreria.flujo_neto
+unidad: moneda
+direccion: mayor_mejor
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- actividad
+- tipo
+- cuenta_tesoreria
+- contraparte
+filtros_base:
+- excluye transferencias internas
+parametros:
+  ajuste: nominal|real
+requisitos:
+  obligatorias:
+  - fct_movimiento_tesoreria.fecha
+  - fct_movimiento_tesoreria.importe
+  - fct_movimiento_tesoreria.tipo
+  opcionales: []
+roles_minimos:
+- tesoreria
+casos_borde:
+- Movimientos tipo 'otros' > 15 % del volumen → el KPI advierte "clasificación incompleta" (DQ-10).
+alertas:
+- condicion: flujo operativo negativo 2 meses consecutivos
+  severidad: alta
+relacionados:
+- FIN-07
+- FIN-09
+area: finanzas

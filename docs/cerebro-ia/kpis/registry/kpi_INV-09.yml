@@ -1,0 +1,40 @@
+id: INV-09
+nombre: Stock inmovilizado (sin movimiento)
+pregunta: ¿Cuánta plata tenemos en productos que no se venden?
+definicion: Valor de stock de SKUs sin ventas en los últimos N días (default 90) y con stock > 0.
+formula: "select sum(valor_stock), count(distinct producto_id)\nfrom marts.fct_stock_diario_kpi where fecha = :fecha and stock_fisico > 0\n  and\
+  \ coalesce(dias_sin_venta, 9999) > :dias;\n"
+cube: stock.valor_inmovilizado
+unidad: moneda | cantidad
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- categoria
+- marca
+- proveedor
+- deposito
+- tramo_dias_sin_venta (90-180, 180-365, >365)
+filtros_base:
+- stock > 0
+parametros:
+  dias: 90
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  - fct_pedido_linea.producto_id
+  - fct_pedido.fecha_pedido
+  opcionales: []
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- Productos dados de alta hace < N días no cuentan como inmovilizados.
+alertas:
+- condicion: inmovilizado > 20% del valor de inventario
+  severidad: alta
+relacionados:
+- INV-10
+- INV-01
+area: inventario

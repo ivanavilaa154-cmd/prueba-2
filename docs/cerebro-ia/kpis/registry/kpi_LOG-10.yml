@@ -1,0 +1,38 @@
+id: LOG-10
+nombre: Envíos extraviados o siniestrados
+pregunta: ¿Cuántos envíos se pierden o llegan rotos?
+definicion: Envíos extraviado_danado + devoluciones por danado_transporte / envíos despachados; valor a costo de lo perdido.
+formula: 'tasa = (count(envios extraviado_danado) + count(devoluciones motivo danado_transporte)) / count(despachados)
+
+  valor = Σ costo_mercaderia de esos pedidos
+
+  '
+cube: envios.siniestros_pct, envios.valor_siniestros
+unidad: porcentaje | moneda
+direccion: menor_mejor
+agregacion: ratio / aditivo
+grano_min: mes
+dimensiones:
+- transportista
+- zona_destino
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.estado
+  - fct_envio.despacho_at
+  - fct_pedido_linea.costo_total
+  opcionales:
+  - fct_devolucion.motivo
+roles_minimos:
+- logistica
+- ventas
+casos_borde:
+- 'Siniestros reclamables al transportista: informar monto a reclamar si el tenant carga seguro/declarado.'
+alertas:
+- condicion: siniestros > 0.5%
+  severidad: alta
+relacionados:
+- LOG-09
+- LOG-17
+area: logistica

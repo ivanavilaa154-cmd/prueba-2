@@ -1,0 +1,45 @@
+id: LOG-07
+nombre: OTIF (a tiempo y completo)
+pregunta: ¿Qué porcentaje de pedidos llegó a tiempo, completo y sin error?
+definicion: Pedidos entregados a tiempo (LOG-06) con todas sus líneas completas (fill 100 %) y sin devolución por error_preparacion / danado_transporte
+  / pedidos con promesa en el período.
+formula: 'otif = count(pedidos where a_tiempo and completo and not reclamo_logistico) / count(pedidos con promesa en periodo)
+
+  completo = Σ cantidad_entregada >= Σ cantidad (fct_pedido_linea)
+
+  reclamo_logistico = exists fct_devolucion motivo in (''error_preparacion'',''danado_transporte'',''no_entregado'')
+
+  '
+cube: envios.otif_pct
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal
+- transportista
+- deposito_origen
+- cliente (B2B)
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.entrega_at
+  - fct_envio.fecha_promesa
+  - fct_envio.estado
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.cantidad_entregada
+  opcionales:
+  - fct_devolucion.motivo
+roles_minimos:
+- logistica
+- ventas
+casos_borde:
+- ''
+alertas:
+- condicion: otif < 90%
+  severidad: alta
+relacionados:
+- LOG-06
+- INV-08
+area: logistica

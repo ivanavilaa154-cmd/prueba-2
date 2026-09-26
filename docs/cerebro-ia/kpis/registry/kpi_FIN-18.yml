@@ -1,0 +1,49 @@
+id: FIN-18
+nombre: Conciliación con registro fiscal oficial
+pregunta: ¿Todo lo registrado ante la autoridad fiscal está en el sistema de gestión y viceversa?
+definicion: Cantidad e importe de documentos presentes en la fuente con rol registro_fiscal_oficial sin match en fct_comprobante (y al revés),
+  comparando (clase, punto_emision, numero) o codigo_autorizacion_fiscal.
+formula: "select count(*) filter (where e.comprobante_id is null) solo_registro_oficial,\n       count(*) filter (where o.source_key is null)\
+  \ solo_gestion,\n       sum(coalesce(o.importe_total,0) - coalesce(e.importe_total,0)) diferencia\nfrom intermediate.int_comprobante_registro_oficial\
+  \ o\nfull join core.fct_comprobante e\n  on o.tenant_id = e.tenant_id\n and coalesce(o.codigo_autorizacion_fiscal, o.clase||o.punto_emision||o.numero)\
+  \ = coalesce(e.codigo_autorizacion_fiscal, e.clase||e.punto_emision||e.numero)\nwhere coalesce(o.fecha_emision, e.fecha_emision) between :desde\
+  \ and :hasta;\n"
+cube: control.conciliacion_fiscal
+unidad: cantidad | moneda
+direccion: menor_mejor (debe ser 0)
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- circuito
+- punto_emision
+- tipo_comprobante
+filtros_base: []
+parametros:
+  tolerancia_importe: 1
+roles_extra:
+- registro_fiscal_oficial
+requisitos:
+  obligatorias:
+  - fct_comprobante.circuito
+  - fct_comprobante.clase
+  - fct_comprobante.punto_emision
+  - fct_comprobante.numero
+  - fct_comprobante.fecha_emision
+  - fct_comprobante.importe_total
+  opcionales:
+  - fct_comprobante.codigo_autorizacion_fiscal
+roles_minimos:
+- facturacion
+- registro_fiscal_oficial
+casos_borde:
+- Solo aplica si el país tiene registro oficial de documentos electrónicos y el tenant conectó esa fuente; si no, el KPI queda no_disponible.
+- Documentos de compra que el sistema de gestión no registra (gastos menores) son esperables; permitir lista de identificadores fiscales excluidos.
+alertas:
+- condicion: solo_registro_oficial > 0 en ventas
+  severidad: alta
+- condicion: compras en registro oficial no cargadas > 5% del importe
+  severidad: media
+relacionados:
+- FIN-01
+- FIN-21
+area: finanzas

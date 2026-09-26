@@ -1,0 +1,39 @@
+id: MKT-20
+nombre: Frecuencia y fatiga creativa
+pregunta: ¿Estamos saturando a la audiencia con los mismos anuncios?
+definicion: Frecuencia (impresiones / alcance) por anuncio en 7 días y tendencia de CTR/CPA del anuncio vs su primera semana.
+formula: 'frecuencia_7d = impresiones_7d / alcance_7d (dato de la API a nivel anuncio)
+
+  fatiga = frecuencia_7d > 3 and ctr_7d < 0.7 × ctr_primera_semana
+
+  '
+cube: ads.frecuencia, ads.anuncios_fatigados
+unidad: ratio | cantidad
+direccion: menor_mejor
+agregacion: calculado
+grano_min: semana
+dimensiones:
+- plataforma
+- campana
+- anuncio
+filtros_base:
+- plataformas sociales
+parametros:
+  umbral_frecuencia: 3
+requisitos:
+  obligatorias:
+  - fct_ads_diario.impresiones
+  - fct_ads_diario.alcance
+  - fct_ads_diario.frecuencia
+  - fct_ads_diario.clics_enlace
+  opcionales: []
+roles_minimos:
+- publicidad
+casos_borde:
+- ''
+alertas:
+- condicion: anuncio fatigado con gasto > 10% de su campaña
+  severidad: media
+relacionados:
+- MKT-03
+area: marketing

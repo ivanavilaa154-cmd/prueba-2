@@ -1,0 +1,42 @@
+id: INV-04
+nombre: Días de inventario (DIO)
+pregunta: ¿Para cuántos días de venta nos alcanza el stock (en valor)?
+definicion: Valor de inventario promedio / CMV diario promedio del período.
+formula: dio = avg(valor_stock) / nullif(sum(cmv) / dias_periodo, 0)
+cube: stock.dio
+unidad: dias
+direccion: menor_mejor (dentro de un rango sano)
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- categoria
+- deposito
+- proveedor
+filtros_base:
+- depósitos incluidos
+parametros:
+  periodo_dias: 90
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  opcionales: []
+  alternativas:
+  - nombre: cmv_movimientos
+    obligatorias:
+    - fct_movimiento_stock.tipo_movimiento
+    - fct_movimiento_stock.costo_unitario
+  - nombre: cmv_lineas
+    obligatorias:
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- inventario
+casos_borde:
+- ''
+alertas:
+- condicion: dio > objetivo tenant (default 90)
+  severidad: media
+relacionados:
+- INV-03
+- FIN-14
+area: inventario

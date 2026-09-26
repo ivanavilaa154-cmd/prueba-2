@@ -1,0 +1,36 @@
+# PLANTILLA — mapping.yml (docs/05). Una sección por entidad canónica que esta fuente alimenta.
+# Solo se mapean las columnas que la fuente tiene; el resto queda null y la matriz de capacidades (docs/05 §10) lo informa.
+source_id: <source_id>
+version: 1
+extiende: null                                  # o perfiles/<nombre>
+defaults:
+  zona_horaria_origen: <IANA>
+  moneda: "<ISO fijo | expresión, ej. campo('$.moneda')>"
+  precios_incluyen_impuesto: <true | false>
+  tasa_impuesto: tenant_default                 # o número o expresión
+
+entidades:
+  <entidad_canonica>:                           # ej. fct_pedido, dim_producto, fct_movimiento_tesoreria
+    desde: <stream>
+    filtro: null                                # expresión booleana opcional
+    grano: registro                             # registro | explotar('$.array') | agrupar_por(expr)
+    clave: "<expresión → source_key>"
+    campos:
+      <columna_canonica>: "<expresión>"
+      <columna_categorica>: {valor: "<expresión>", traducir: <value_map>}
+      <columna_monetaria>: {valor: "<expresión>", con_impuesto: <true|false>, moneda: defecto}
+      <columna_fk>: {referencia: <dim_o_fct>, clave: "<expresión>"}
+      <columna_fija>: {literal: <valor_canonico>}
+    claves_identidad: {}                        # ej. dim_cliente: {email_hash: "hash_pii(campo('$.email'))"}
+    replica_de: null                            # docs/05 §6, si esta fuente replica registros de otra
+    prorrateos: []
+
+value_maps:
+  <nombre_value_map>:
+    dominio: <dominio de ref.valores_canonicos>
+    reglas:
+      - {origen: "<valor>", canonico: <valor_canonico>}
+      - {origen_regex: "<regex>", canonico: <valor_canonico>}
+    default: otro
+
+reglas_clasificacion: []

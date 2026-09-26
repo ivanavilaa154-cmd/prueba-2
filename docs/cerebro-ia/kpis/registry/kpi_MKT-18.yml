@@ -1,0 +1,32 @@
+id: MKT-18
+nombre: Crecimiento de la base de suscriptores
+pregunta: ¿Crece nuestra base de contactos?
+definicion: Suscriptores activos al cierre; altas netas = altas − bajas del período; tasa de crecimiento neta.
+formula: select (array_agg(suscriptores_activos order by fecha desc))[1] activos_cierre, sum(altas) - sum(bajas) altas_netas from core.fct_suscriptores_diario
+  where fecha between :desde and :hasta;
+cube: email.suscriptores, email.altas_netas
+unidad: cantidad | porcentaje
+direccion: mayor_mejor
+agregacion: snapshot / aditivo
+grano_min: dia
+dimensiones:
+- plataforma
+- lista
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_suscriptores_diario.suscriptores_activos
+  - fct_suscriptores_diario.altas
+  - fct_suscriptores_diario.bajas
+  opcionales: []
+roles_minimos:
+- email_marketing
+casos_borde:
+- ''
+alertas:
+- condicion: altas_netas < 0 en el mes
+  severidad: media
+relacionados:
+- MKT-17
+area: marketing

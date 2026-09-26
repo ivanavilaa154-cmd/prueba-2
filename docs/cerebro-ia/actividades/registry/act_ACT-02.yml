@@ -1,0 +1,160 @@
+id: ACT-02
+nombre: Pedido sugerido
+caso_de_negocio: Saber qué comprarle a cada proveedor, cuánto y cuándo, para no quedarse sin stock ni sobrestockearse, respetando mínimos, bultos
+  y vencimientos.
+entidad: proveedor (con líneas producto × depósito)
+frecuencia: según los días de pedido de cada proveedor (`dim_proveedor.dias_pedido`); si no hay, diaria. Urgencias (caso C1) se evalúan todos
+  los días.
+responsable_principal: comprador
+deteccion:
+  universo: productos activos (`estado_surtido = 'activo'`) con `gestiona_stock` y proveedor principal asignado.
+  condiciones:
+  - Demanda diaria d = VDP corregida por quiebres (marts.inv__demanda_sku); σ = desvío de la demanda diaria (28-90 días).
+  - Período a cubrir T = lead time + días hasta el próximo día de pedido del proveedor (revisión).
+  - 'Stock de seguridad SS = z(nivel de servicio) × σ × √(lead time); z por clase ABC: A 1,65 (95 %), B 1,28 (90 %), C 0,84 (80 %).'
+  - Necesidad = d × T + SS − (stock disponible + en tránsito).
+  - Cantidad sugerida = redondeo hacia arriba a múltiplo de unidades_por_bulto de max(0, Necesidad).
+  - 'Tope por vencimiento (perecederos): cantidad ≤ d × (vida_util_dias − dias_retiro_antes_vencimiento) × 0,9 − stock disponible.'
+  - 'Tope por sobrestock: la cobertura resultante no puede superar la cobertura objetivo × 1,5 (salvo compra de oportunidad aprobada).'
+  exclusiones:
+  - Productos `a_discontinuar` / `discontinuado` → cantidad 0 y se listan aparte para confirmar que no se repongan.
+  - Productos clase C con cobertura actual > 60 días.
+parametros:
+  nivel_servicio_por_abc:
+    A: 0.95
+    B: 0.9
+    C: 0.8
+  dias_revision_default: 7
+  tope_cobertura_factor: 1.5
+  factor_vida_util: 0.9
+calculo: "-- marts.act__pedido_sugerido\nselect p.proveedor_id, pr.producto_id, pr.deposito_id, d.vdp, d.sigma, lt.lead_time, rv.dias_revision,\n\
+  \       z(pr.clase_abc) * d.sigma * sqrt(lt.lead_time)                                         as ss,\n       d.vdp * (lt.lead_time + rv.dias_revision)\
+  \ + ss - (s.stock_disponible + s.stock_en_transito) as necesidad,\n       ceil(greatest(necesidad,0) / coalesce(pr.unidades_por_bulto,1)) *\
+  \ coalesce(pr.unidades_por_bulto,1) as cantidad,\n       least(cantidad, tope_vencimiento, tope_cobertura)                                 \
+  \       as cantidad_final,\n       cantidad_final * lpp.costo_neto                                                         as importe\nfrom\
+  \ … ;  -- lead_time: parametro_reposicion → dim_proveedor.lead_time_dias_estandar → mediana real (INV-17)\n"
+impacto: importe del pedido; para C1 = venta perdida evitada (d × días hasta quiebre sin pedir × precio).
+casos:
+- codigo: C1
+  nombre: Quiebre inminente (urgente)
+  condicion: Cobertura actual (disponible + tránsito) / d < lead time del proveedor y el producto es clase A o B.
+  prioridad: critica
+  acciones:
+  - orden: 1
+    accion: Emitir hoy el pedido del producto aunque no sea día de pedido del proveedor (pedido urgente con las cantidades sugeridas).
+    responsable: comprador
+    plazo: mismo día
+  - orden: 2
+    accion: 'Si el proveedor no puede entregar a tiempo: transferir stock desde otra sucursal con cobertura > 2× objetivo (la tarea lista cuáles).'
+    responsable: gerente_operaciones
+    plazo: 24 h
+  - orden: 3
+    accion: 'Si no hay alternativa: activar sustituto (producto de la misma categoría con stock) y avisar a ventas/sucursales.'
+    responsable: comercial
+    plazo: 24 h
+  cierre: Existe orden de compra o transferencia creada para el producto con fecha ≥ detección.
+- codigo: C2
+  nombre: Pedido regular del proveedor
+  condicion: Es día de pedido del proveedor y hay ≥ 1 línea con cantidad_final > 0.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Revisar el borrador de pedido (archivo adjunto con producto, stock, venta diaria, cobertura, cantidad sugerida, costo e importe).
+    responsable: comprador
+    plazo: mismo día
+  - orden: 2
+    accion: 'Aprobar o corregir cantidades (cada corrección pide motivo: ''promoción planificada'', ''cambio de proveedor'', ''otro'').'
+    responsable: comprador
+    plazo: mismo día
+  - orden: 3
+    accion: Enviar el pedido al proveedor y cargar la orden de compra en el sistema de gestión.
+    responsable: comprador
+    plazo: mismo día
+  cierre: Orden de compra al proveedor creada en los 2 días siguientes; se compara lo pedido vs lo sugerido para aprendizaje.
+- codigo: C3
+  nombre: Pedido por debajo del mínimo del proveedor
+  condicion: Importe total sugerido < `monto_minimo_pedido` del proveedor.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Completar el mínimo adelantando productos del mismo proveedor con menor cobertura (la tarea propone cuáles, sin superar tope de cobertura).
+    responsable: comprador
+    plazo: mismo día
+  - orden: 2
+    accion: 'Si no conviene completar: posponer al próximo día de pedido, salvo que haya líneas del caso C1.'
+    responsable: comprador
+    plazo: mismo día
+  cierre: Pedido emitido con el mínimo o pospuesto con motivo.
+- codigo: C4
+  nombre: Compra limitada por vencimiento
+  condicion: Producto perecedero donde el tope por vida útil recortó la cantidad sugerida.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Pedir solo la cantidad tope indicada y aumentar la frecuencia de pedido de este producto (la tarea sugiere cada cuántos días).
+    responsable: comprador
+    plazo: mismo día
+  - orden: 2
+    accion: Negociar con el proveedor entregas más chicas o más frecuentes si el bulto obliga a comprar de más.
+    responsable: comprador
+    plazo: 30 días
+  cierre: Pedido emitido con cantidad ≤ tope.
+- codigo: C5
+  nombre: Productos a discontinuar con reposición pendiente
+  condicion: Producto `a_discontinuar` con órdenes abiertas o incluido por error en la última compra.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Cancelar o reducir la orden de compra abierta del producto.
+    responsable: comprador
+    plazo: 48 h
+  - orden: 2
+    accion: Derivar el stock remanente a liquidación (ACT-03 C1).
+    responsable: comercial
+    plazo: 7 días
+  cierre: Orden cancelada/ajustada o confirmación de que se mantiene.
+resoluciones:
+- pedido_emitido_como_sugerido
+- pedido_emitido_corregido
+- transferencia_realizada
+- sustituto_activado
+- pospuesto
+- descartado
+resolucion_confirmada:
+- pedido_emitido_como_sugerido
+- pedido_emitido_corregido
+- transferencia_realizada
+- sustituto_activado
+ejemplo: 'Proveedor Y — pedido del martes: 34 productos, $ 1.240.000. 3 productos en quiebre inminente (cobertura 2 días, entrega en 4). Adjunto:
+  pedido_sugerido_Y.csv.'
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_disponible
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - dim_producto.proveedor_principal_id
+  opcionales:
+  - fct_stock_diario.stock_en_transito
+  - dim_producto.unidades_por_bulto
+  - dim_producto.vida_util_dias
+  - dim_producto.estado_surtido
+  - dim_proveedor.dias_pedido
+  - dim_proveedor.monto_minimo_pedido
+  - fct_lista_precio_proveedor.costo_neto
+  alternativas:
+  - nombre: lead_time_parametro
+    obligatorias:
+    - parametro_reposicion.lead_time_dias
+  - nombre: lead_time_proveedor
+    obligatorias:
+    - dim_proveedor.lead_time_dias_estandar
+  - nombre: lead_time_historico
+    obligatorias:
+    - fct_orden_compra.fecha_emision
+    - fct_recepcion.fecha_recepcion
+kpis_relacionados:
+- INV-05
+- INV-06
+- INV-10
+- INV-15
+- INV-17

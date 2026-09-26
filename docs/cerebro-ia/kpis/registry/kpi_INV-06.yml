@@ -1,0 +1,45 @@
+id: INV-06
+nombre: Tasa de quiebre de stock
+pregunta: ¿Qué porcentaje de nuestros productos está sin stock?
+definicion: SKUs activos con demanda (VDP > 0) y stock disponible = 0 / SKUs activos con demanda; versión ponderada por venta.
+formula: "select count(*) filter (where s.stock_disponible <= 0)::numeric / nullif(count(*),0) quiebre_skus,\n       sum(d.vdp * d.precio_neto_prom)\
+  \ filter (where s.stock_disponible <= 0) / nullif(sum(d.vdp * d.precio_neto_prom),0) quiebre_ponderado\nfrom marts.inv__demanda_sku d left join\
+  \ marts.fct_stock_sku_dia s using (tenant_id, producto_id)\nwhere s.fecha = :fecha and d.vdp > 0;\n"
+cube: stock.tasa_quiebre, stock.tasa_quiebre_ponderada
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio (snapshot) / promedio diario en períodos
+grano_min: dia
+dimensiones:
+- categoria
+- clasificacion_abc
+- deposito
+- canal (stock asignado)
+- proveedor
+filtros_base:
+- producto activo
+- vdp > 0
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - dim_producto.activo
+  opcionales:
+  - fct_stock_diario.stock_reservado
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- Si hay depósitos de fulfillment de terceros y propios, reportar quiebre por depósito (sin stock en el de terceros pero con stock propio = oportunidad
+  de reposición).
+alertas:
+- condicion: quiebre_ponderado > 5%
+  severidad: alta
+- condicion: SKU clase A sin stock
+  severidad: critica
+relacionados:
+- INV-07
+- VEN-17
+area: inventario

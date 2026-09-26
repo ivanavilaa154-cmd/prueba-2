@@ -1,0 +1,42 @@
+id: MKT-09
+nombre: LTV/CAC y payback
+pregunta: ¿Recuperamos lo que invertimos para conseguir clientes? ¿En cuánto tiempo?
+definicion: LTV 12m (VEN-14, en margen) / CAC; payback = meses hasta que el margen acumulado de la cohorte iguala su CAC.
+formula: 'ltv_cac = VEN-14.ltv_12m / nullif(MKT-08.cac_blended, 0)   -- misma cohorte/período de adquisición
+
+  payback_meses = min(m) tal que margen_acumulado_cohorte(m)/clientes >= cac_cohorte
+
+  '
+cube: marketing.ltv_cac, marketing.payback_meses
+unidad: ratio | meses
+direccion: mayor_mejor (ltv_cac) / menor_mejor (payback)
+agregacion: calculado por cohorte
+grano_min: mes
+dimensiones:
+- cohorte
+- canal_marketing adquisición
+filtros_base: []
+parametros:
+  ajuste: real
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_pedido.cliente_id
+  - fct_pedido.fecha_pedido
+  - fct_pedido_linea.costo_total
+  opcionales: []
+roles_minimos:
+- publicidad
+- ventas
+historia_minima: ≥ 12 meses de ventas + ads
+casos_borde:
+- ''
+alertas:
+- condicion: ltv_cac < 3
+  severidad: media
+- condicion: ltv_cac < 1
+  severidad: alta
+relacionados:
+- VEN-14
+- MKT-08
+area: marketing

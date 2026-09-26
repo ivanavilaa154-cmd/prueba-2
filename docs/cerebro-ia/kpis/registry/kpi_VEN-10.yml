@@ -1,0 +1,40 @@
+id: VEN-10
+nombre: Clientes activos
+pregunta: ¿Cuántos clientes distintos nos compraron?
+definicion: Clientes distintos con ≥1 pedido válido en el período (o en ventana móvil de 12 meses para "base activa").
+formula: select count(distinct cliente_id) from core.fct_pedido where pedido_valido and cliente_id <> '-1' and fecha_pedido between :desde and
+  :hasta;
+cube: clientes.activos
+unidad: cantidad
+direccion: mayor_mejor
+agregacion: no_aditivo (distinct)
+grano_min: dia
+dimensiones:
+- canal
+- tipo_cliente
+- region
+- vendedor
+filtros_base:
+- pedido_valido
+- cliente identificado
+parametros:
+  ventana: periodo|12m_movil
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  opcionales:
+  - dim_cliente.tipo_cliente
+  - dim_cliente.region
+roles_minimos:
+- ventas
+casos_borde:
+- Consumidores finales sin identificación (mostrador) no cuentan; se informa % de venta anónima.
+- Un mismo comprador en dos canales se unifica solo si coincide documento, email o teléfono (docs/04 §6).
+alertas:
+- condicion: base activa 12m cae > 5% vs trimestre anterior
+  severidad: media
+relacionados:
+- VEN-11
+- VEN-12
+area: ventas

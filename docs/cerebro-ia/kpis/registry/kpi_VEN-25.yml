@@ -1,0 +1,36 @@
+id: VEN-25
+nombre: Productividad por vendedor
+pregunta: ¿Cómo rinde cada vendedor?
+definicion: Venta neta, pedidos, ticket, margen %, descuento %, clientes activos y cumplimiento de cuota por vendedor.
+formula: vista compuesta de VEN-01, VEN-02, VEN-03, VEN-08, VEN-18, VEN-10, VEN-07 con dimensión vendedor
+cube: view vendedores_scorecard
+unidad: varias
+direccion: mayor_mejor
+agregacion: vista
+grano_min: mes
+dimensiones:
+- vendedor
+- equipo
+- sucursal
+filtros_base:
+- pedido_valido
+- vendedor_id <> '-1'
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.vendedor_id
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.importe_descuento
+  - fct_presupuesto.importe
+  - fct_pedido_linea.costo_total
+roles_minimos:
+- ventas
+casos_borde:
+- Ventas online sin vendedor quedan en "Sin asignar" y se excluyen del ranking.
+alertas:
+- condicion: vendedor con ritmo de cuota < 0.7 al día hábil 15
+  severidad: media
+relacionados:
+- VEN-07
+area: ventas

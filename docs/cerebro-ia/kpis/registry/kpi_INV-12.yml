@@ -1,0 +1,39 @@
+id: INV-12
+nombre: Clasificación ABC (y XYZ)
+pregunta: ¿Cuáles son los productos que más importan?
+definicion: ABC por venta neta (o margen) de 12 meses — A = 80 % acumulado, B = siguiente 15 %, C = último 5 %; XYZ por coeficiente de variación
+  de la demanda semanal (X < 0.5, Y < 1, Z ≥ 1).
+formula: "-- marts.inv__abc (mensual, escribe dim_producto.clasificacion_abc)\nwith v as (select producto_id, sum(importe_neto) venta from core.fct_pedido_linea\
+  \ l join core.fct_pedido p using(pedido_id)\n           where pedido_valido and p.fecha_pedido > current_date - 365 group by 1)\nselect producto_id,\
+  \ case when acum <= 0.8 then 'A' when acum <= 0.95 then 'B' else 'C' end\nfrom (select *, sum(venta) over (order by venta desc) / sum(venta)\
+  \ over () acum from v) x;\n"
+cube: productos.clasificacion_abc (dimensión) + conteos
+unidad: categoría
+direccion: neutral
+agregacion: dimensión
+grano_min: mes
+dimensiones:
+- categoria
+- deposito
+filtros_base:
+- pedido_valido
+parametros:
+  base: venta|margen|unidades
+  ventana_meses: 12
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.importe_neto
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.costo_total
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- Productos sin ventas en 12 meses → clase 'D' (candidatos a discontinuar).
+alertas: []
+relacionados:
+- INV-05
+- INV-06
+- VEN-23
+area: inventario

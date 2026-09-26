@@ -1,0 +1,40 @@
+id: VEN-14
+nombre: LTV (valor de vida del cliente)
+pregunta: ¿Cuánto margen nos deja un cliente a lo largo del tiempo?
+definicion: Margen bruto acumulado promedio por cliente de una cohorte a 12 meses de su primera compra (LTV histórico); opcional LTV predictivo
+  = ticket × frecuencia × margen% × vida esperada.
+formula: "-- histórico por cohorte (marts.ven__ltv_cohorte)\nselect date_trunc('month', c.fecha_primera_compra) cohorte,\n       sum(l.importe_neto\
+  \ - l.costo_total) / count(distinct c.cliente_id) ltv_12m\nfrom core.dim_cliente c join core.fct_pedido p using (cliente_id) join core.fct_pedido_linea\
+  \ l using (pedido_id)\nwhere pedido_valido and p.fecha_pedido < c.fecha_primera_compra + interval '12 months' group by 1;\n"
+cube: clientes.ltv_12m
+unidad: moneda
+direccion: mayor_mejor
+agregacion: calculado por cohorte
+grano_min: mes
+dimensiones:
+- cohorte
+- canal_adquisicion
+- canal_marketing
+- tipo_cliente
+filtros_base:
+- cohortes con ≥ 12 meses de antigüedad
+parametros:
+  horizonte_meses: 6|12|24
+  ajuste: real por defecto
+  base: margen|venta
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  - fct_pedido_linea.importe_neto
+  - fct_pedido_linea.costo_total
+  opcionales: []
+roles_minimos:
+- ventas
+historia_minima: ≥ 12 meses de historia con clientes identificados
+casos_borde:
+- 'Siempre en términos reales: sumar importes de distintos meses sin ajustar distorsiona.'
+alertas: []
+relacionados:
+- MKT-09
+area: ventas

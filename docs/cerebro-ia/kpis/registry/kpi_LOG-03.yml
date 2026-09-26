@@ -1,0 +1,41 @@
+id: LOG-03
+nombre: Despacho a tiempo
+pregunta: ¿Qué porcentaje de pedidos despachamos dentro del plazo comprometido?
+definicion: Envíos con despacho_at ≤ fecha_limite_despacho / envíos cuyo límite cayó en el período (incluye los aún no despachados con límite
+  vencido como fuera de término).
+formula: "select count(*) filter (where despacho_at <= fecha_limite_despacho)::numeric / nullif(count(*),0)\nfrom core.fct_envio where es_controlable\
+  \ and modalidad <> 'retiro_en_tienda' and not es_devolucion\n  and local_date(fecha_limite_despacho) between :desde and :hasta and estado <>\
+  \ 'cancelado';\n"
+cube: envios.despacho_a_tiempo_pct
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- deposito_origen
+- canal
+- modalidad
+filtros_base:
+- excluye envíos no controlables
+- excluye cancelados
+parametros:
+  sla_horas: tenant (default 24 hábiles)
+requisitos:
+  obligatorias:
+  - fct_envio.despacho_at
+  - fct_envio.fecha_limite_despacho
+  - fct_envio.estado
+  opcionales: []
+roles_minimos:
+- logistica
+casos_borde:
+- 'marketplace mide "despachos demorados" para reputación con su propio límite: usar estimated_handling_limit.'
+alertas:
+- condicion: despacho_a_tiempo < 95%
+  severidad: alta
+- condicion: canal marketplace < 97% (riesgo reputación)
+  severidad: alta
+relacionados:
+- LOG-02
+- LOG-14
+area: logistica

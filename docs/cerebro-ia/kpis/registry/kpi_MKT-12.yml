@@ -1,0 +1,36 @@
+id: MKT-12
+nombre: Funnel e-commerce
+pregunta: ¿En qué paso del recorrido perdemos compradores?
+definicion: Tasas de paso sesiones → vista de producto → carrito → checkout → compra.
+formula: "select sum(vistas_producto)/nullif(sum(sesiones),0) s_a_producto,\n       sum(agregados_carrito)/nullif(sum(vistas_producto),0) producto_a_carrito,\n\
+  \       sum(checkouts_iniciados)/nullif(sum(agregados_carrito),0) carrito_a_checkout,\n       sum(transacciones)/nullif(sum(checkouts_iniciados),0)\
+  \ checkout_a_compra\nfrom core.fct_web_diario where fecha between :desde and :hasta;\n"
+cube: web.funnel_*
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- dispositivo
+- canal_marketing
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_web_diario.sesiones
+  - fct_web_diario.vistas_producto
+  - fct_web_diario.agregados_carrito
+  - fct_web_diario.checkouts_iniciados
+  - fct_web_diario.transacciones
+  opcionales: []
+roles_minimos:
+- analitica_web
+casos_borde:
+- Eventos de e-commerce mal implementados (vistas_producto = 0) → KPI no disponible.
+alertas:
+- condicion: checkout_a_compra cae > 15% vs 4 semanas (posible problema de pago)
+  severidad: critica
+relacionados:
+- MKT-11
+- MKT-13
+area: marketing

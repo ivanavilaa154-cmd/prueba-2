@@ -1,0 +1,37 @@
+id: LOG-05
+nombre: Tiempo de tránsito
+pregunta: ¿Cuánto tarda el transportista desde que retira hasta que entrega?
+definicion: Mediana y P90 de días hábiles entre despacho_at y entrega_at.
+formula: select percentile_cont(0.5) within group (order by dias_habiles(despacho_at, entrega_at)) from core.fct_envio where estado='entregado'
+  and local_date(entrega_at) between :desde and :hasta;
+cube: envios.transito_p50, envios.transito_p90
+unidad: dias
+direccion: menor_mejor
+agregacion: percentil
+grano_min: dia
+dimensiones:
+- transportista
+- servicio
+- zona_destino
+- region_destino
+filtros_base:
+- entregados
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.despacho_at
+  - fct_envio.entrega_at
+  - fct_envio.estado
+  opcionales:
+  - fct_envio.zona_destino
+  - fct_evento_envio.evento_at
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas:
+- condicion: transportista con p90 > SLA contratado por zona
+  severidad: media
+relacionados:
+- LOG-17
+area: logistica

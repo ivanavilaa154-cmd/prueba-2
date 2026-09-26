@@ -1,0 +1,31 @@
+id: LOG-16
+nombre: Productividad de preparación
+pregunta: ¿Cuántas unidades/pedidos preparamos por hora de trabajo?
+definicion: Unidades (o líneas o pedidos) preparadas / horas de preparación registradas.
+formula: select sum(unidades) / nullif(sum(extract(epoch from fin_at - inicio_at))/3600,0) from core.fct_preparacion where local_date(fin_at)
+  between :desde and :hasta;
+cube: preparacion.unidades_por_hora
+unidad: unidades/hora
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- deposito
+- operario
+- franja_horaria
+filtros_base: []
+parametros:
+  medida: unidades|lineas|pedidos
+requisitos:
+  obligatorias:
+  - fct_preparacion.inicio_at
+  - fct_preparacion.fin_at
+  opcionales: []
+roles_minimos:
+- logistica
+casos_borde:
+- Sin inicio_at el KPI no está disponible.
+alertas: []
+relacionados:
+- LOG-02
+area: logistica

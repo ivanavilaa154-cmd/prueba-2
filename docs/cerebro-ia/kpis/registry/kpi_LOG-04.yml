@@ -1,0 +1,39 @@
+id: LOG-04
+nombre: Lead time total de entrega
+pregunta: ¿Cuántos días tarda el cliente en recibir su pedido desde que compra?
+definicion: Mediana y P90 de días hábiles entre pedido_at y entrega_at, envíos entregados en el período.
+formula: select percentile_cont(0.5) within group (order by dias_habiles(pedido_at, entrega_at)) from core.fct_envio where estado='entregado'
+  and local_date(entrega_at) between :desde and :hasta;
+cube: envios.lead_time_p50, envios.lead_time_p90
+unidad: dias
+direccion: menor_mejor
+agregacion: percentil
+grano_min: dia
+dimensiones:
+- transportista
+- modalidad
+- zona_destino
+- region_destino
+- canal
+filtros_base:
+- entregados
+parametros:
+  unidad: dias_habiles|dias_corridos
+requisitos:
+  obligatorias:
+  - fct_envio.pedido_at
+  - fct_envio.entrega_at
+  - fct_envio.estado
+  opcionales:
+  - fct_envio.zona_destino
+roles_minimos:
+- logistica
+casos_borde:
+- Sin entrega_at (flota propia sin registro) → KPI no disponible para ese transportista.
+alertas:
+- condicion: p50 de una zona sube > 1 día vs mes anterior
+  severidad: media
+relacionados:
+- LOG-05
+- LOG-06
+area: logistica

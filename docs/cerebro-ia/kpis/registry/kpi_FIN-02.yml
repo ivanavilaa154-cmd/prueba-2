@@ -1,0 +1,64 @@
+id: FIN-02
+nombre: Costo de mercadería vendida (CMV)
+pregunta: ¿Cuánto nos costó lo que vendimos?
+definicion: Costo de los bienes/servicios vendidos en el período.
+formula: '-- contable
+
+  select sum(a.saldo) from core.fct_asiento_linea a join core.dim_cuenta_contable c using (cuenta_id)
+
+  where c.eerr_linea = ''cmv'' and a.estado=''publicado'' and not a.es_cierre and a.fecha_contable between :desde and :hasta;
+
+  -- gestion: costo de líneas facturadas (o despachadas si no hay factura por línea)
+
+  select sum(-m.costo_total) from core.fct_movimiento_stock m
+
+  where m.tipo_movimiento in (''venta_despacho'',''devolucion_cliente'') and m.fecha between :desde and :hasta;
+
+  -- fallback gestión sin movimientos: sum(pl.costo_total) de pedidos válidos
+
+  '
+cube: eerr.cmv
+unidad: moneda
+direccion: menor_mejor
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- sucursal
+- categoria (gestión)
+- producto (gestión)
+- canal (gestión)
+filtros_base:
+- estado publicado
+parametros:
+  modo: auto|contable|gestion
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion_movimientos
+    obligatorias:
+    - fct_movimiento_stock.tipo_movimiento
+    - fct_movimiento_stock.cantidad
+    - fct_movimiento_stock.costo_unitario
+  - nombre: gestion_lineas
+    obligatorias:
+    - fct_pedido.fecha_pedido
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- contabilidad o inventario o ventas
+casos_borde:
+- Empresas que registran CMV solo al cierre mensual (inventario periódico) → CMV contable = 0 en meses intermedios; usar modo gestión y avisar.
+- Si % de ventas sin costo > 5 % (DQ-07) el KPI se marca "incompleto".
+alertas:
+- condicion: cmv_sobre_ventas sube > 3 pp vs promedio 3 meses
+  severidad: media
+relacionados:
+- FIN-03
+- VEN-08
+area: finanzas

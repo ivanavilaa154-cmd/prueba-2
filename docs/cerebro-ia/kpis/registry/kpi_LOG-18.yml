@@ -1,0 +1,39 @@
+id: LOG-18
+nombre: Logística inversa
+pregunta: ¿Cuántas devoluciones físicas gestionamos y cuánto cuestan?
+definicion: Envíos es_devolucion / envíos despachados; costo de envíos de devolución; tiempo desde solicitud hasta recepción en depósito.
+formula: 'tasa = count(envios es_devolucion) / count(envios despachados)
+
+  costo = Σ costo_envio where es_devolucion
+
+  tiempo = median(fct_devolucion.fecha_recepcion - fecha_solicitud)
+
+  '
+cube: envios.logistica_inversa_pct, envios.costo_inversa, devoluciones.dias_recepcion
+unidad: porcentaje | moneda | dias
+direccion: menor_mejor
+agregacion: ratio / aditivo / mediana
+grano_min: mes
+dimensiones:
+- canal
+- transportista
+- motivo
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.es_devolucion
+  - fct_envio.costo_envio
+  - fct_envio.estado
+  opcionales:
+  - fct_devolucion.fecha_solicitud
+  - fct_devolucion.fecha_recepcion
+  - fct_devolucion.motivo
+roles_minimos:
+- logistica
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- VEN-16
+area: logistica

@@ -1,0 +1,51 @@
+id: INV-01
+nombre: Valor del inventario
+pregunta: ¿Cuánta plata tenemos en stock?
+definicion: Σ stock físico × costo unitario a la fecha (costo); opcional a precio de venta.
+formula: 'select sum(valor_stock) valor_costo, sum(valor_stock_precio_venta) valor_venta
+
+  from marts.fct_stock_diario_kpi where fecha = :fecha;   -- vista con filtros base aplicados
+
+  '
+cube: stock.valor
+unidad: moneda
+direccion: neutral
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- deposito
+- tipo_deposito
+- categoria
+- marca
+- proveedor
+- clasificacion_abc
+filtros_base:
+- depósitos incluidos
+- gestiona_stock
+parametros:
+  valuacion: costo|reposicion|precio_venta
+  moneda: base|<ISO>
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  opcionales:
+  - dim_producto.categoria_n1
+  alternativas:
+  - nombre: costo_foto
+    obligatorias:
+    - fct_stock_diario.costo_unitario
+  - nombre: costo_estandar
+    obligatorias:
+    - dim_producto.costo_estandar
+roles_minimos:
+- inventario
+casos_borde:
+- Stock negativo (errores de carga) se trata como 0 en valor y se informa en DQ-12.
+- En inflación, valuación `reposicion` (costo_estandar vigente) refleja mejor el capital inmovilizado.
+alertas:
+- condicion: valor real del stock crece > 15% mientras ventas reales caen
+  severidad: alta
+relacionados:
+- INV-03
+- INV-09
+area: inventario

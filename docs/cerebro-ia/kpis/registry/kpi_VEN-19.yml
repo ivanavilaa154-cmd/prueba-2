@@ -1,0 +1,47 @@
+id: VEN-19
+nombre: Pipeline abierto y ponderado
+pregunta: ¿Cuánto negocio tenemos en juego en el CRM?
+definicion: Suma de importe de oportunidades abiertas; ponderado = Σ importe × probabilidad.
+formula: 'select sum(importe) pipeline, sum(importe*probabilidad/100) ponderado, count(*) oportunidades
+
+  from core.fct_oportunidad where not esta_cerrada;
+
+  '
+cube: crm.pipeline_abierto, crm.pipeline_ponderado
+unidad: moneda
+direccion: mayor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- etapa
+- vendedor
+- pipeline
+- mes de cierre esperado
+- origen
+filtros_base:
+- no cerrada
+parametros:
+  cierre_esperado_hasta: null
+requisitos:
+  obligatorias:
+  - fct_oportunidad.etapa
+  - fct_oportunidad.importe
+  - fct_oportunidad.esta_cerrada
+  - fct_oportunidad.fecha_cierre_esperada
+  opcionales:
+  - fct_oportunidad.probabilidad
+  - fct_oportunidad.vendedor_id
+roles_minimos:
+- crm
+casos_borde:
+- Oportunidades con cierre esperado vencido > 30 días se marcan "estancadas" y se muestran aparte.
+alertas:
+- condicion: pipeline ponderado del mes siguiente < 1.0× cuota
+  severidad: alta
+- condicion: oportunidades estancadas > 20% del pipeline
+  severidad: media
+relacionados:
+- VEN-20
+- VEN-21
+- VEN-22
+area: ventas

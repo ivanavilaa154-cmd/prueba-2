@@ -1,0 +1,36 @@
+id: MKT-10
+nombre: Sesiones web y mix de tráfico
+pregunta: ¿Cuántas visitas tuvo el sitio y de dónde vienen?
+definicion: Σ sesiones de la analítica web; participación por canal de marketing.
+formula: select canal_marketing, sum(sesiones) from core.fct_web_diario where fecha between :desde and :hasta group by 1;
+cube: web.sesiones
+unidad: cantidad
+direccion: mayor_mejor
+agregacion: aditivo (sesiones) — usuarios NO aditivo
+grano_min: dia
+dimensiones:
+- canal_marketing
+- fuente
+- medio
+- campana
+- dispositivo
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_web_diario.sesiones
+  opcionales:
+  - fct_web_diario.canal_marketing
+  - fct_web_diario.usuarios
+  - fct_web_diario.dispositivo
+roles_minimos:
+- analitica_web
+casos_borde:
+- Usuarios de un período = consulta directa a la analítica web del rango (no suma de días); se guarda solo por día.
+alertas:
+- condicion: sesiones diarias < 50% del promedio del mismo día de semana (posible caída de tracking o sitio)
+  severidad: critica
+relacionados:
+- MKT-11
+- MKT-21
+area: marketing

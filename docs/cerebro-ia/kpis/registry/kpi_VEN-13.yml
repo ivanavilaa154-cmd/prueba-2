@@ -1,0 +1,36 @@
+id: VEN-13
+nombre: Frecuencia de compra
+pregunta: ¿Cada cuántos días nos compra un cliente?
+definicion: Pedidos / clientes activos en ventana; y mediana de días entre pedidos consecutivos del mismo cliente.
+formula: 'frecuencia = count(distinct pedido_id) / count(distinct cliente_id)   -- ventana 12m
+
+  dias_entre_compras = percentile_cont(0.5) within group (order by fecha_pedido - lag(fecha_pedido) over (partition by cliente_id order by fecha_pedido))
+
+  '
+cube: clientes.frecuencia, clientes.dias_entre_compras
+unidad: ratio | dias
+direccion: mayor_mejor (frecuencia)
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- tipo_cliente
+- canal
+- vendedor
+filtros_base:
+- pedido_valido
+parametros:
+  ventana_meses: 12
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.cliente_id
+  opcionales: []
+roles_minimos:
+- ventas
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- VEN-12
+- VEN-15
+area: ventas

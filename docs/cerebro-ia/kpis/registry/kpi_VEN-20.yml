@@ -1,0 +1,40 @@
+id: VEN-20
+nombre: Tasa de cierre (win rate)
+pregunta: ¿Qué porcentaje de oportunidades ganamos?
+definicion: Ganadas / (ganadas + perdidas) cerradas en el período (por cantidad e importe).
+formula: "select count(*) filter (where esta_ganada)::numeric / nullif(count(*),0) win_rate_cant,\n       sum(importe) filter (where esta_ganada)\
+  \ / nullif(sum(importe),0) win_rate_importe\nfrom core.fct_oportunidad where esta_cerrada and fecha_cierre between :desde and :hasta;\n"
+cube: crm.win_rate
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: mes
+dimensiones:
+- vendedor
+- origen
+- pipeline
+- motivo_perdida
+- rango_importe
+filtros_base:
+- cerrada en período
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_oportunidad.esta_ganada
+  - fct_oportunidad.esta_cerrada
+  - fct_oportunidad.fecha_cierre
+  - fct_oportunidad.importe
+  opcionales:
+  - fct_oportunidad.fecha_cierre_esperada
+  - fct_oportunidad.vendedor_id
+roles_minimos:
+- crm
+casos_borde:
+- ''
+alertas:
+- condicion: win_rate cae > 10 pp vs trimestre anterior
+  severidad: media
+relacionados:
+- VEN-19
+- MKT-16
+area: ventas

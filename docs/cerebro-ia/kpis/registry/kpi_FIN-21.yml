@@ -1,0 +1,38 @@
+id: FIN-21
+nombre: Posición estimada de impuesto indirecto
+pregunta: ¿Cuánto impuesto indirecto (valor agregado / ventas) vamos a tener que pagar este período?
+definicion: Impuesto indirecto de ventas (débito) − impuesto indirecto de compras (crédito) − retenciones/percepciones sufridas del período.
+formula: "select sum(importe_impuesto*signo) filter (where circuito='venta')\n     - sum(importe_impuesto*signo) filter (where circuito='compra')\n\
+  from core.fct_comprobante where estado='emitido' and fecha_emision between :desde and :hasta;\n-- menos retenciones/percepciones de impuesto\
+  \ indirecto sufridas (fct_cobro.importe_retenciones tipo impuesto indirecto ⚠, fct_liquidacion_pasarela.retenciones)\n"
+cube: impuestos.posicion_iva
+unidad: moneda
+direccion: neutral
+agregacion: aditivo
+grano_min: mes
+dimensiones:
+- circuito
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_comprobante.circuito
+  - fct_comprobante.fecha_emision
+  - fct_comprobante.estado
+  - fct_comprobante.signo
+  - fct_comprobante.importe_impuesto
+  opcionales:
+  - fct_liquidacion_pasarela.retenciones
+  - fct_cobro.importe_retenciones
+roles_minimos:
+- facturacion
+casos_borde:
+- Es estimación de gestión, no reemplaza la declaración jurada; el agente lo aclara.
+- Si el tenant está en un régimen simplificado sin impuesto indirecto discriminado, el KPI no aplica.
+alertas:
+- condicion: posicion_iva > caja proyectada a fecha de vencimiento
+  severidad: alta
+relacionados:
+- FIN-16
+- FIN-18
+area: finanzas

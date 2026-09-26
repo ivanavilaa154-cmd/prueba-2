@@ -1,0 +1,38 @@
+id: INV-11
+nombre: GMROI
+pregunta: ¿Cuánto margen bruto nos devuelve cada unidad de moneda invertida en stock?
+definicion: Margen bruto del período (anualizado) / valor promedio de inventario a costo.
+formula: gmroi = (Σ (importe_neto - costo_total) líneas del periodo * 365/dias) / nullif(avg(valor_stock), 0)
+cube: stock.gmroi
+unidad: ratio
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- categoria
+- marca
+- proveedor
+- producto
+filtros_base:
+- pedido_valido
+parametros:
+  periodo_dias: 90
+requisitos:
+  obligatorias:
+  - fct_pedido_linea.importe_neto
+  - fct_pedido_linea.costo_total
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  opcionales: []
+roles_minimos:
+- inventario
+- ventas
+casos_borde:
+- ''
+alertas:
+- condicion: categoría con gmroi < 1
+  severidad: media
+relacionados:
+- INV-03
+- VEN-08
+area: inventario

@@ -1,0 +1,41 @@
+id: FIN-10
+nombre: Cuentas por cobrar (total, vencida y % vencida)
+pregunta: ¿Cuánto nos deben y cuánto está vencido?
+definicion: Saldo pendiente de documentos CxC a la fecha; vencido = saldo con fecha_vencimiento < fecha de corte.
+formula: "select sum(saldo) as cxc_total,\n       sum(saldo) filter (where dias_vencido > 0) as cxc_vencida,\n       sum(saldo) filter (where\
+  \ dias_vencido > 0) / nullif(sum(saldo),0) as pct_vencida\nfrom marts.fct_saldo_cxc_diario where fecha = :fecha;\n"
+cube: cxc.saldo_total, cxc.saldo_vencido, cxc.pct_vencido
+unidad: moneda | porcentaje
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- cliente
+- vendedor
+- sucursal
+- tramo_aging
+- tipo_cliente
+filtros_base:
+- estado in (pendiente, parcial)
+parametros:
+  fecha: hoy
+requisitos:
+  obligatorias:
+  - fct_documento_cxc.fecha_vencimiento
+  - fct_documento_cxc.saldo_pendiente
+  opcionales: []
+roles_minimos:
+- cuentas_corrientes
+casos_borde:
+- Saldos a favor (NC sin aplicar, anticipos) restan; mostrar aparte "créditos a favor de clientes".
+- Cheques/echeqs recibidos no depositados cuentan como cobrados (el riesgo va a FIN-16).
+alertas:
+- condicion: pct_vencida > 20%
+  severidad: alta
+- condicion: un cliente concentra > 25% de la CxC vencida
+  severidad: media
+relacionados:
+- FIN-11
+- FIN-12
+- FIN-15
+area: finanzas

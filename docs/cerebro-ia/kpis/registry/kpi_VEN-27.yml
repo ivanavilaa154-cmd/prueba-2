@@ -1,0 +1,48 @@
+id: VEN-27
+nombre: Productos con margen bajo el mínimo
+pregunta: ¿Cuántos productos estamos vendiendo por debajo del margen que definimos (o del costo)?
+definicion: Productos activos cuyo margen con costo de reposición vigente está por debajo del margen mínimo de su política de precio; ponderado
+  por venta.
+formula: "select count(*) filter (where margen_actual < margen_minimo) productos_bajo_minimo,\n       count(*) filter (where precio_actual < costo_nuevo)\
+  \ productos_bajo_costo,\n       sum(venta_30d) filter (where margen_actual < margen_minimo) / nullif(sum(venta_30d),0) pct_venta_bajo_minimo\n\
+  from marts.act__remarcacion where fecha = :fecha;\n"
+cube: precios.productos_bajo_margen
+unidad: cantidad | porcentaje
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: dia
+dimensiones:
+- categoria
+- proveedor
+- marca
+- lista_precios
+- sucursal
+filtros_base:
+- sin precio promocional vigente
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_precio_venta.precio
+  - fct_precio_venta.vigente_desde
+  alternativas:
+  - nombre: costo_lista_proveedor
+    obligatorias:
+    - fct_lista_precio_proveedor.costo_neto
+  - nombre: costo_estandar
+    obligatorias:
+    - dim_producto.costo_estandar
+casos_borde:
+- Requiere política de precio cargada (ops.politica_precio); sin política se usa el margen promedio de la categoría de los últimos 90 días como
+  referencia.
+alertas:
+- condicion: productos_bajo_costo > 0
+  severidad: critica
+- condicion: pct_venta_bajo_minimo > 10%
+  severidad: alta
+relacionados:
+- FIN-03
+- VEN-08
+roles_minimos:
+- precios_venta
+- precios_compra o ventas
+area: ventas

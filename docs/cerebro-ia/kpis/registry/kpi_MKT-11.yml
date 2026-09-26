@@ -1,0 +1,46 @@
+id: MKT-11
+nombre: Tasa de conversión web
+pregunta: ¿Qué porcentaje de visitas termina en compra?
+definicion: Pedidos e-commerce válidos (fuente de verdad, canal ecommerce_propio) / sesiones la analítica web. Alternativa la analítica web pura
+  = transacciones / sesiones.
+formula: 'cr = count(pedidos validos canal=''ecommerce_propio'') / nullif(sum(fct_web_diario.sesiones), 0)
+
+  cr_analitica = sum(transacciones) / nullif(sum(sesiones), 0)
+
+  '
+cube: web.tasa_conversion
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- canal_marketing
+- dispositivo
+- campana (solo cr_analitica)
+filtros_base: []
+parametros:
+  base: negocio|analitica
+requisitos:
+  obligatorias:
+  - fct_web_diario.sesiones
+  opcionales:
+  - fct_web_diario.transacciones
+  - fct_web_diario.canal_marketing
+  alternativas:
+  - nombre: base_negocio
+    obligatorias:
+    - fct_pedido.canal_id
+    - fct_pedido.fecha_pedido
+  - nombre: base_analitica
+    obligatorias:
+    - fct_web_diario.transacciones
+roles_minimos:
+- analitica_web
+casos_borde:
+- Diferencia grande entre cr y cr_analitica (> 20%) indica tracking roto o bloqueo de cookies → DQ-16.
+alertas:
+- condicion: cr cae > 20% vs promedio 4 semanas con sesiones estables
+  severidad: alta
+relacionados:
+- MKT-12
+area: marketing

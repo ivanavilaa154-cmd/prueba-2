@@ -1,0 +1,40 @@
+id: VEN-24
+nombre: Proyección de cierre de mes
+pregunta: ¿Cuánto vamos a vender a fin de mes al ritmo actual?
+definicion: Venta MTD + venta diaria esperada × días hábiles restantes, con estacionalidad por día de semana de las últimas 8 semanas y ajuste
+  por pipeline/pedidos pendientes en B2B.
+formula: 'proyeccion = venta_mtd + Σ_{d en dias restantes} promedio_venta(dia_semana(d), ultimas 8 semanas, excluyendo feriados) × factor_tendencia
+
+  factor_tendencia = venta_mtd / venta_esperada_mtd_segun_mismo_modelo (acotado 0.7–1.3)
+
+  '
+cube: ventas.proyeccion_mes (mart marts.ven__proyeccion_mes, recalculado diario)
+unidad: moneda
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+filtros_base:
+- pedido_valido
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.canal_id
+  - ref.feriado.fecha
+roles_minimos:
+- ventas
+historia_minima: ≥ 8 semanas de historia
+casos_borde:
+- Eventos especiales (eventos promocionales masivos) se marcan en ref.fecha como evento para no contaminar la base.
+alertas:
+- condicion: proyeccion < 90% presupuesto
+  severidad: alta
+relacionados:
+- VEN-07
+- FIN-20
+area: ventas

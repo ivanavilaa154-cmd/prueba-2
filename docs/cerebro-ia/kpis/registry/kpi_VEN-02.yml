@@ -1,0 +1,38 @@
+id: VEN-02
+nombre: Cantidad de pedidos
+pregunta: ¿Cuántas ventas/pedidos hicimos?
+definicion: Conteo de pedidos válidos distintos.
+formula: select count(distinct pedido_id) from core.fct_pedido where pedido_valido and fecha_pedido between :desde and :hasta;
+cube: ventas.pedidos
+unidad: cantidad
+direccion: mayor_mejor
+agregacion: aditivo (distinct por grano)
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+- vendedor
+- region
+- canal_marketing
+- medio_pago
+filtros_base:
+- pedido_valido
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.estado
+  - fct_pedido.es_fuente_verdad
+  opcionales:
+  - fct_pedido.estado_pago
+  - fct_pedido.canal_id
+roles_minimos:
+- ventas
+casos_borde:
+- Con dimensión producto se cuentan pedidos que contienen el producto (no aditivo entre productos).
+alertas:
+- condicion: pedidos del día = 0 en canal con histórico > 5/día
+  severidad: critica
+relacionados:
+- VEN-03
+area: ventas

@@ -1,0 +1,51 @@
+id: VEN-09
+nombre: Margen de contribución por canal
+pregunta: ¿Qué canal es realmente rentable después de comisiones, envío y financiación?
+definicion: Venta neta − CMV − comisión del canal − costo de financiación − costo de envío a cargo del vendedor (+ envío cobrado) − comisión de
+  pasarela − inversión publicitaria asignada al canal (opcional).
+formula: "select p.canal_id,\n  sum(p.importe_neto) venta,\n  sum(p.importe_neto - p.costo_mercaderia - coalesce(p.comision_canal,0) - coalesce(p.costo_financiacion,0)\n\
+  \      - coalesce(p.costo_envio_vendedor,0) + coalesce(p.importe_envio_cobrado,0) - coalesce(lp.comision,0)) contribucion\nfrom core.fct_pedido\
+  \ p left join (select pedido_id, sum(comision) comision from core.fct_liquidacion_pasarela group by 1) lp using (pedido_id)\nwhere pedido_valido\
+  \ and p.fecha_pedido between :desde and :hasta group by 1;\n-- opcional incluir_ads: restar Σ fct_ads_diario.gasto asignado (asignación plataforma\
+  \ → canal de venta configurada por el tenant)\n"
+cube: ventas.contribucion, ventas.contribucion_pct
+unidad: moneda | porcentaje
+direccion: mayor_mejor
+agregacion: aditivo / ratio
+grano_min: dia
+dimensiones:
+- canal
+- categoria
+- producto
+- modalidad
+filtros_base:
+- pedido_valido
+parametros:
+  incluir_ads: false
+requisitos:
+  obligatorias:
+  - fct_pedido.importe_neto
+  - fct_pedido.canal_id
+  - fct_pedido_linea.costo_total
+  opcionales:
+  - fct_pedido.comision_canal
+  - fct_pedido.costo_financiacion
+  - fct_pedido.costo_envio_vendedor
+  - fct_pedido.importe_envio_cobrado
+  - fct_liquidacion_pasarela.comision
+  - fct_ads_diario.gasto
+roles_minimos:
+- ventas
+casos_borde:
+- Si el canal informa comisiones con impuesto incluido, el mapping las guarda netas con sin_impuesto().
+- Envíos bonificados por el canal → costo_envio_vendedor puede ser 0 o negativo.
+alertas:
+- condicion: contribucion_pct de un canal < 10%
+  severidad: alta
+- condicion: producto con contribución negativa en marketplace
+  severidad: alta
+relacionados:
+- VEN-05
+- FIN-17
+- LOG-12
+area: ventas

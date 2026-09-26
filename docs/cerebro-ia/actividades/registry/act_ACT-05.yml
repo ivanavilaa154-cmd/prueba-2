@@ -1,0 +1,153 @@
+id: ACT-05
+nombre: Promociones que no rindieron
+caso_de_negocio: Saber si cada promoción generó venta y margen adicionales o si solo regaló margen, y cortarla o corregirla a tiempo.
+entidad: promoción (con detalle por producto y sucursal)
+frecuencia: día 3 de cada promoción activa (control temprano) + al finalizar + 14 días después (efecto posterior)
+responsable_principal: comercial
+deteccion:
+  universo: promociones con fecha de inicio ≤ hoy y al menos un producto vinculado.
+  condiciones:
+  - 'Línea base (sin promo) por producto × sucursal = venta diaria media del mismo día de semana en las 6 semanas previas, ajustada por la tendencia
+    de la sucursal (grupo de control: productos de la misma categoría no promocionados).'
+  - Incremento de unidades = unidades en promo − línea base; lift = unidades promo / línea base − 1.
+  - Margen incremental = margen bruto en promo − margen bruto de la línea base − costo de comunicación + aporte del proveedor.
+  - Canibalización = caída de venta de productos de la misma categoría no promocionados vs su línea base.
+  - Efecto posterior = caída de venta del producto en las 2 semanas siguientes vs línea base (compra adelantada).
+  - ROI = margen incremental neto (con canibalización y efecto posterior) / costo de la promoción (descuento otorgado + comunicación − aporte
+    proveedor).
+  - 'Tráfico: variación de tickets de la sucursal y del ticket medio en los tickets que incluyeron el producto promocionado.'
+parametros:
+  semanas_base: 6
+  roi_minimo: 0
+  lift_minimo_esperado_por_mecanica:
+    descuento_pct: 0.3
+    precio_especial: 0.3
+    nxm: 0.5
+    segunda_unidad: 0.4
+    combo: 0.2
+    cupon: 0.1
+  dia_control_temprano: 3
+calculo: "-- marts.act__promociones: una fila por promoción (y detalle producto × sucursal)\nselect pr.promocion_id, pr.mecanica, pr.objetivo,\
+  \ unidades_promo, unidades_base, lift, venta_incremental,\n       margen_promo, margen_base, margen_incremental, canibalizacion, efecto_posterior,\
+  \ costo_promocion, roi,\n       quiebre_durante_promo_pct, var_tickets, var_ticket_medio, caso\nfrom core.dim_promocion pr join … ;\n"
+impacto: margen incremental neto (negativo = plata perdida); en control temprano, pérdida proyectada al fin de la promoción.
+casos:
+- codigo: C1
+  nombre: Promoción en curso que no despega (control temprano)
+  condicion: En el día 3, lift < 50 % del lift mínimo esperado para su mecánica y no hubo quiebre de stock del producto.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: 'Verificar ejecución en el punto de venta: cartel de promoción visible, precio promocional cargado en caja, producto exhibido (checklist
+      por sucursal).'
+    responsable: encargado_sucursal
+    plazo: 24 h
+  - orden: 2
+    accion: 'Si la ejecución está bien: reforzar comunicación o cambiar mecánica; si no hay margen para eso, cortar la promoción antes de su fin.'
+    responsable: comercial
+    plazo: 48 h
+  cierre: Checklist completo + decisión (seguir, reforzar, cortar).
+- codigo: C2
+  nombre: Quiebre durante la promoción
+  condicion: Stock disponible = 0 en ≥ 20 % de los días × sucursales de la promoción.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Reponer de inmediato (pedido urgente o transferencia) o suspender la comunicación en las sucursales sin stock.
+    responsable: comprador
+    plazo: mismo día
+  - orden: 2
+    accion: 'Para próximas promociones: calcular el stock previo con el lift esperado (se agrega automáticamente al pedido sugerido cuando la
+      promoción está ''planificada'').'
+    responsable: comprador
+    plazo: próxima promoción
+  cierre: Stock repuesto o comunicación suspendida.
+- codigo: C3
+  nombre: Vendió más pero perdió margen
+  condicion: Al finalizar, venta incremental > 0 pero margen incremental neto < 0.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: 'No repetir con el mismo descuento: la ficha sugiere el descuento máximo que deja margen incremental ≥ 0 con el lift observado.'
+    responsable: comercial
+    plazo: antes de la próxima planificación
+  - orden: 2
+    accion: Negociar aporte del proveedor para repetirla (el monto necesario para que el ROI sea ≥ 0 está en la ficha).
+    responsable: comprador
+    plazo: 30 días
+  cierre: Ficha revisada y decisión registrada (no repetir / repetir con cambios / repetir con aporte).
+- codigo: C4
+  nombre: No movió la venta
+  condicion: Al finalizar, lift < 10 %.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Descartar esta mecánica para este producto/categoría; la ficha propone la mecánica con mejor resultado histórico en la categoría.
+    responsable: comercial
+    plazo: antes de la próxima planificación
+  cierre: Decisión registrada.
+- codigo: C5
+  nombre: Solo canibalizó o adelantó compras
+  condicion: Lift > 0 pero la venta incremental neta (con canibalización y efecto posterior) ≤ 0.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Evitar promocionar productos con sustitutos directos del mismo margen; preferir promociones cruzadas o de categoría.
+    responsable: comercial
+    plazo: próxima planificación
+  - orden: 2
+    accion: 'Si el objetivo era tráfico: validar con la variación de tickets; si no subió, no repetir.'
+    responsable: comercial
+    plazo: próxima planificación
+  cierre: Decisión registrada.
+- codigo: C6
+  nombre: Promoción que rindió (para replicar)
+  condicion: ROI ≥ umbral y margen incremental neto > 0.
+  prioridad: baja
+  acciones:
+  - orden: 1
+    accion: Agregar a la biblioteca de promociones exitosas y evaluar replicarla en otras sucursales/canales o en productos similares.
+    responsable: comercial
+    plazo: 30 días
+  cierre: Registrada en la biblioteca.
+resoluciones:
+- ejecucion_corregida
+- reforzada
+- cortada_anticipadamente
+- no_repetir
+- repetir_con_cambios
+- repetir_con_aporte_proveedor
+- replicar
+- falso_positivo
+resolucion_confirmada:
+- ejecucion_corregida
+- reforzada
+- cortada_anticipadamente
+- no_repetir
+- repetir_con_cambios
+- repetir_con_aporte_proveedor
+- replicar
+ejemplo: 'Promo ''2x1 Categoría Q'' (terminó ayer): +38 % unidades, pero margen incremental −$ 186.000 y 40 % de la suba canibalizó a productos
+  de la misma categoría. No repetir con 2x1; con 3x2 el margen incremental estimado sería +$ 22.000.'
+requisitos:
+  obligatorias:
+  - dim_promocion.fecha_inicio
+  - dim_promocion.fecha_fin
+  - fct_promocion_producto.producto_id
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.importe_neto
+  - fct_pedido.fecha_pedido
+  opcionales:
+  - fct_pedido_linea.promocion_id
+  - fct_pedido_linea.costo_total
+  - dim_promocion.aporte_proveedor_monto
+  - dim_promocion.costo_comunicacion
+  - dim_promocion.campana_id
+  - fct_stock_diario.stock_disponible
+  - fct_pedido.sucursal_id
+kpis_relacionados:
+- VEN-08
+- VEN-18
+- VEN-26
+- MKT-07

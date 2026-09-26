@@ -1,0 +1,43 @@
+id: FIN-09
+nombre: Burn rate y runway
+pregunta: ¿Cuántos meses de caja nos quedan al ritmo actual?
+definicion: Burn = promedio mensual de flujo neto negativo (operativo + financiación de deuda) de los últimos 3 meses; runway = caja disponible
+  / burn.
+formula: 'burn = -avg(flujo_neto_mensual) over últimos 3 meses cerrados (solo si < 0)
+
+  runway_meses = FIN-07 / nullif(burn, 0)   -- null si flujo positivo ("no aplica: el negocio genera caja")
+
+  '
+cube: tesoreria.burn_rate, tesoreria.runway_meses
+unidad: moneda | meses
+direccion: mayor_mejor (runway)
+agregacion: calculado
+grano_min: mes
+dimensiones: []
+filtros_base:
+- excluye transferencias internas
+- excluye aportes de socios
+parametros:
+  ventana_meses: 3
+requisitos:
+  obligatorias:
+  - dim_cuenta_tesoreria.es_disponible
+  - fct_movimiento_tesoreria.fecha
+  - fct_movimiento_tesoreria.importe
+  - fct_movimiento_tesoreria.tipo
+  opcionales:
+  - fct_movimiento_tesoreria.saldo_informado
+roles_minimos:
+- tesoreria
+historia_minima: ≥ 3 meses de historia
+casos_borde:
+- Estacionalidad fuerte (ej. aguinaldo en jun/dic) → usar ventana 6 meses si el tenant lo configura.
+alertas:
+- condicion: runway_meses < 3
+  severidad: critica
+- condicion: runway_meses < 6
+  severidad: alta
+relacionados:
+- FIN-07
+- FIN-08
+area: finanzas

@@ -1,0 +1,37 @@
+id: VEN-18
+nombre: Descuento promedio
+pregunta: ¿Cuánto estamos descontando sobre precio de lista?
+definicion: Importe de descuentos / importe bruto (precio lista).
+formula: select sum(importe_descuento)/nullif(sum(importe_bruto),0) from core.fct_pedido where pedido_valido and fecha_pedido between :desde and
+  :hasta;
+cube: ventas.descuento_pct
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- vendedor
+- canal
+- cupon
+- categoria
+- cliente
+filtros_base:
+- pedido_valido
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_pedido.importe_bruto
+  - fct_pedido.importe_descuento
+  opcionales:
+  - fct_pedido.vendedor_id
+  - fct_pedido.canal_id
+roles_minimos:
+- ventas
+casos_borde:
+- Precio promocional publicado (tachado) en e-commerce no siempre queda como descuento; depende de la fuente.
+alertas:
+- condicion: vendedor con descuento_pct > 1.5× promedio del equipo
+  severidad: media
+relacionados:
+- VEN-08
+area: ventas

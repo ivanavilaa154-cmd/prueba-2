@@ -1,0 +1,62 @@
+id: FIN-04
+nombre: Gastos operativos por línea
+pregunta: ¿Cuánto gastamos en comercialización, administración y personal?
+definicion: Suma de gastos de las líneas gastos_comercializacion, gastos_administracion y gastos_personal; desglose por cuenta estándar y centro
+  de costo.
+formula: "-- contable\nselect c.eerr_linea, c.codigo_estandar, sum(a.saldo) as gasto\nfrom core.fct_asiento_linea a join core.dim_cuenta_contable\
+  \ c using (cuenta_id)\nwhere c.eerr_linea in ('gastos_comercializacion','gastos_administracion','gastos_personal')\n  and a.estado='publicado'\
+  \ and not a.es_cierre and a.fecha_contable between :desde and :hasta\ngroup by 1,2;\n-- gestion\nselect categoria_gasto, sum(importe_neto*signo)\
+  \ from core.fct_comprobante\nwhere circuito='compra' and categoria_gasto <> 'mercaderia' and fecha_emision between :desde and :hasta group by\
+  \ 1\nunion all\nselect tipo, -sum(importe) from core.fct_movimiento_tesoreria\nwhere tipo in ('sueldos_cargas','comisiones_bancarias') and fecha\
+  \ between :desde and :hasta group by 1;\n"
+cube: eerr.gastos_operativos
+unidad: moneda
+direccion: menor_mejor
+agregacion: aditivo
+grano_min: mes
+dimensiones:
+- eerr_linea
+- codigo_estandar
+- centro_costo
+- sucursal
+- proveedor (gestión)
+- categoria_gasto (gestión)
+filtros_base:
+- estado publicado
+parametros:
+  modo: auto|contable|gestion
+  ajuste: nominal|real
+requisitos:
+  obligatorias: []
+  opcionales:
+  - fct_asiento_linea.centro_costo_id
+  - fct_movimiento_tesoreria.tipo
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_comprobante.categoria_gasto
+roles_minimos:
+- contabilidad o facturacion
+casos_borde:
+- Sueldos no pasan por comprobantes: en modo gestión se toman de tesorería (neto pagado, no costo laboral total) → avisar subestimación.
+- Gastos anuales (seguros, patentes) generan picos; ofrecer vista `devengado_prorrateado` si el tenant carga prorrateos.
+alertas:
+- condicion: gasto real (ajustado índice de precios) de una cuenta estándar sube > 20% vs promedio 3 meses
+  severidad: media
+- condicion: gastos_operativos / ventas_netas > umbral tenant
+  severidad: alta
+relacionados:
+- FIN-05
+- FIN-22
+area: finanzas

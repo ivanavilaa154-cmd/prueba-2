@@ -160,6 +160,36 @@ ul { margin: 6px 0; padding-left: 20px; }
 .pasos div { display: grid; grid-template-columns: 22px 110px 1fr; gap: 6px; font-size: 14px; align-items: baseline; }
 .pasos .marca { font-weight: 700; }
 @media (max-width: 520px) { .pasos div { grid-template-columns: 22px 1fr; } .pasos div span:last-child { grid-column: 2; } }
+.act-cab { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: end; margin-bottom: 14px; }
+.act-filtros { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 14px 0 10px; }
+.act-lista { display: grid; gap: 12px; }
+.tarea { background: var(--panel); border: 1px solid var(--borde); border-left: 4px solid var(--borde); border-radius: 10px; padding: 14px 16px;
+  display: grid; gap: 10px; min-width: 0; }
+.tarea.critica { border-left-color: var(--error); } .tarea.alta { border-left-color: var(--alerta); } .tarea.media { border-left-color: var(--acento); }
+.tarea-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--suave); }
+.tarea h3 { margin: 0; font-size: 16px; line-height: 1.35; }
+.tarea-impacto { font-size: 14px; font-variant-numeric: tabular-nums; }
+.tarea-impacto b { font-size: 16px; }
+.prio { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 1px 9px; background: var(--codigo); color: var(--texto); }
+.prio.critica { background: var(--error-fondo); color: var(--error); } .prio.alta { background: var(--alerta-fondo); color: var(--alerta); }
+.evidencia { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 6px 14px; margin: 0; }
+.evidencia div { display: grid; gap: 0; }
+.evidencia dt { font-size: 12px; color: var(--suave); }
+.evidencia dd { margin: 0; font-size: 14.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.acciones-t { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+.acciones-t li { font-size: 14px; }
+.acciones-t .quien { display: block; font-size: 12.5px; color: var(--suave); }
+.notas-t { margin: 0; padding: 8px 12px; background: var(--codigo); border-radius: 8px; font-size: 13.5px; }
+.notas-t p { margin: 0; color: var(--texto); }
+.resolver { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--borde); padding-top: 10px; }
+.resolver select { max-width: 100%; }
+.resolver input { flex: 1 1 200px; min-width: 0; }
+.tarea details summary { cursor: pointer; font-size: 13.5px; color: var(--acento); }
+.tarea .tabla-scroll { margin-top: 8px; max-height: 320px; }
+#act-totales .kpis { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.cerrada-linea { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--borde); font-size: 13.5px; }
+.cerrada-linea .nota { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 520px) { .tarea { padding: 12px; } .resolver button { flex: 1 1 auto; } }
 </style>
 </head>
 <body>
@@ -174,6 +204,7 @@ ul { margin: 6px 0; padding-left: 20px; }
 </header>
 <nav>
   <button data-pestana="tablero" class="activa">Tablero</button>
+  <button data-pestana="actividades">Actividades <span id="act-badge" class="cuenta" hidden></span></button>
   <button data-pestana="datos">Integraciones</button>
   <button data-pestana="consultas">Consultas y permisos</button>
   <button data-pestana="chat">Chat</button>
@@ -198,6 +229,30 @@ ul { margin: 6px 0; padding-left: 20px; }
   </div>
   <div id="tablero-cuerpo"></div>
   <div id="grafico-tip" class="grafico-tip" role="tooltip" hidden></div>
+</section>
+
+<section id="actividades">
+  <div class="act-cab">
+    <div>
+      <h2 class="tablero-titulo">Actividades</h2>
+      <p class="nota" id="act-sub" style="margin:2px 0 0">Qué hacer hoy, con qué producto y en qué lugar.</p>
+    </div>
+    <button class="sec" id="act-revisar">Revisar ahora</button>
+  </div>
+  <div id="act-totales"></div>
+  <div class="act-filtros">
+    <div class="ver" role="group" aria-label="Actividad" id="act-chips"></div>
+    <label class="periodo">Estado
+      <select id="act-estado"><option value="abiertas">Abiertas</option><option value="cerradas">Cerradas</option></select>
+    </label>
+  </div>
+  <div id="act-avisos"></div>
+  <div id="act-lista" class="act-lista"></div>
+  <div class="tarjeta" style="margin-top:18px">
+    <h2>Cómo aprende cada actividad</h2>
+    <p>Precisión = tareas cerradas con una resolución que confirma la detección, sobre el total cerrado a mano (últimas 4 semanas). Si baja de 60 % conviene endurecer los parámetros; si pasa de 90 % con pocas detecciones, se pueden relajar (config/actividades_empresa.yaml).</p>
+    <div id="act-precision"></div>
+  </div>
 </section>
 
 <section id="datos">
@@ -234,6 +289,9 @@ ul { margin: 6px 0; padding-left: 20px; }
     <p>Qué trajo la fuente en uso, pilar por pilar. Si un sistema no tiene un dato, queda vacío y el indicador que lo
        necesita avisa que falta: nunca se completa con supuestos.</p>
     <div id="cobertura"></div>
+    <h3 style="font-size:15px;margin:18px 0 4px">Catálogo de KPIs estándar</h3>
+    <p class="nota" style="margin:0 0 8px">Qué indicadores del catálogo (Finanzas, Ventas, Inventario, Logística, Marketing) tienen sus datos base con esta integración, y qué dato falta para el resto.</p>
+    <div id="kpis-catalogo"></div>
   </div>
 
   <div class="tarjeta">
@@ -389,6 +447,7 @@ async function cargarUsuarios() {
   $("#usuario").innerHTML = lista.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(roles[u.rol] || u.rol)}${u.id.startsWith("vendedor:") ? " (" + esc(u.id.split(":")[1]) + ")" : ""}</option>`).join("");
   if (lista.some(u => u.id === previo)) $("#usuario").value = previo;
   cargarTablero();
+  cargarActividades();
 }
 $("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; };
 
@@ -605,6 +664,14 @@ async function cargarCobertura() {
       : aviso("ok", "Los controles de calidad no encontraron problemas.");
     $("#cobertura").innerHTML = `<div class="cobertura">${pilares}</div><h3 style="font-size:15px;margin:16px 0 6px">Controles de calidad</h3>${controles}`;
   } catch (e) { $("#cobertura").innerHTML = aviso("error", "No se pudo calcular la cobertura: " + e.message); }
+  try {
+    const k = await api("/kpis/catalogo");
+    $("#kpis-catalogo").innerHTML = `<div class="cobertura">${k.areas.map(a => `<details class="cob-pilar"><summary><b>${esc(a.area)}</b> <span class="cuenta ${a.disponibles < a.total ? "activa" : ""}">${a.disponibles} de ${a.total}</span></summary>
+      ${k.kpis.filter(x => x.area === a.area).map(x => `<div class="cob-fila"><span title="${esc(x.pregunta)}">${esc(x.id)} · ${esc(x.nombre)}</span><span></span>
+        <span class="estado-chip ${x.disponible ? "ok" : "alerta"}">${x.disponible ? "✓ datos" : "falta"}</span>
+        ${x.disponible ? "" : `<details><summary>Qué falta</summary>${esc(x.faltan.join(", "))}</details>`}</div>`).join("")}</details>`).join("")}</div>
+      <p class="nota">${k.disponibles} de ${k.total} KPIs tienen sus datos base (control por tabla).</p>`;
+  } catch (e) { $("#kpis-catalogo").innerHTML = aviso("error", "No se pudo revisar el catálogo de KPIs: " + e.message); }
 }
 
 // Integraciones
@@ -855,6 +922,116 @@ async function simular() {
   } catch (e) { $("#resultado-credito").innerHTML = aviso("error", e.message); }
 }
 $("#simular").onclick = (e) => { e.preventDefault(); simular(); };
+
+// Actividades
+const ACT_RES = {
+  repuesto_desde_deposito: "Repuesto desde el depósito", estaba_exhibido: "Estaba exhibido", no_hay_stock_fisico_ajustado: "No había stock físico (ajustado)",
+  danado_o_vencido_retirado: "Dañado o vencido, retirado", precio_o_etiqueta_corregidos: "Precio o etiqueta corregidos", falso_positivo: "Falso positivo (no había problema)",
+  pedido_emitido_como_sugerido: "Pedido emitido como se sugirió", pedido_emitido_corregido: "Pedido emitido con cambios", transferencia_realizada: "Transferencia realizada",
+  sustituto_activado: "Sustituto activado", pospuesto: "Pospuesto", descartado: "Descartado", reposicion_bloqueada: "Reposición bloqueada",
+  devuelto_a_proveedor: "Devuelto al proveedor", liquidacion_lanzada: "Liquidación lanzada", transferido: "Transferido", baja_registrada: "Baja registrada",
+  se_mantiene_justificado: "Se mantiene (justificado)", remarcado_como_sugerido: "Remarcado como se sugirió", remarcado_ajustado: "Remarcado con ajuste",
+  se_mantiene_precio_justificado: "Se mantiene el precio (justificado)", error_de_carga_corregido: "Error de carga corregido", lista_solicitada: "Lista solicitada",
+  etiquetas_cambiadas: "Etiquetas cambiadas", ejecucion_corregida: "Ejecución corregida", reforzada: "Reforzada", cortada_anticipadamente: "Cortada antes de tiempo",
+  no_repetir: "No repetir", repetir_con_cambios: "Repetir con cambios", repetir_con_aporte_proveedor: "Repetir con aporte del proveedor", replicar: "Replicar",
+  retirado_y_mermado: "Retirado y registrado como merma", descuento_aplicado_y_vendido: "Descuento aplicado y vendido", donado: "Donado",
+  cambio_por_proveedor: "Cambio por el proveedor", fecha_cargada: "Fecha cargada"};
+const ACT_ROL = {repositor: "Repositor", encargado_sucursal: "Encargado de sucursal", comprador: "Comprador", comercial: "Comercial",
+  gerente_operaciones: "Gerente de operaciones", gerente_general: "Gerente general"};
+const ACT_ESTADO = {nueva: "Nueva", en_curso: "En curso", vencida: "Vencida", resuelta: "Resuelta", descartada: "Descartada", cerrada_automatica: "Se cerró sola"};
+const PRIO = {critica: "Crítica", alta: "Alta", media: "Media", baja: "Baja"};
+let actDatos = null, actFiltro = "todas";
+const diaMes = f => f ? f.slice(8, 10) + "/" + f.slice(5, 7) : "";
+function valorEv([_, v, f]) {
+  if (v === null || v === undefined) return "—";
+  if (f === "moneda") return plata(v);
+  if (f === "pct") return pct(v);
+  if (f === "texto") return String(v);
+  const n = typeof v === "number" ? fmt.format(v) : v;
+  return f === "u" ? n + " u" : f === "u/día" ? n + " u/día" : f === "días" ? n + " días" : f === "x" ? n + " ×" : n;
+}
+function tareaHTML(t, cat) {
+  const act = cat[t.tipo] || {casos: {}}, caso = act.casos[t.caso] || {};
+  const abierta = ["nueva", "en_curso", "vencida"].includes(t.estado);
+  const tipos = (t.detalle?.tipos || []).map(x => x === "texto" ? "t" : x === "moneda" ? "$" : x === "pct" ? "%" : "n");
+  return `<article class="tarea ${t.prioridad}" data-id="${t.id}">
+    <div class="tarea-meta"><span class="prio ${t.prioridad}">${PRIO[t.prioridad] || t.prioridad}</span>
+      <span>${esc(act.nombre || t.tipo)} · ${esc(t.caso)} ${esc(caso.nombre || "")}</span>
+      <span class="estado-chip ${t.estado === "vencida" ? "error" : t.estado === "en_curso" ? "alerta" : ""}">${ACT_ESTADO[t.estado] || t.estado}</span>
+      ${t.fecha_limite ? `<span>Plazo: ${diaMes(t.fecha_limite)}</span>` : ""}
+      ${abierta && !t.notificar ? `<span title="Fuera del tope diario de avisos">sin aviso hoy</span>` : ""}</div>
+    <h3>${esc(t.titulo)}</h3>
+    ${t.impacto_estimado ? `<div class="tarea-impacto"><b>${plata(t.impacto_estimado)}</b> <span class="nota">${esc(t.tipo === "ACT-05" && t.caso === "C6" ? "margen ganado" : "en juego")}</span></div>` : ""}
+    <dl class="evidencia">${t.evidencia.map(e => `<div><dt>${esc(e[0])}</dt><dd>${esc(valorEv(e))}</dd></div>`).join("")}</dl>
+    ${t.notas.length ? `<div class="notas-t">${t.notas.map(n => `<p>${esc(n)}</p>`).join("")}</div>` : ""}
+    <ol class="acciones-t">${t.acciones.map(a => `<li>${esc(a.accion)}<span class="quien">${esc(ACT_ROL[a.responsable] || a.responsable)} · ${esc(a.plazo)}${a.vence ? " (" + diaMes(a.vence) + ")" : ""}</span></li>`).join("")}</ol>
+    ${t.detalle ? `<details><summary>Ver detalle (${t.detalle.filas.length} filas)</summary>${tablaT(t.detalle.columnas, tipos, t.detalle.filas)}
+      <p style="margin:8px 0 0"><a href="/actividades/${t.id}/archivo.csv?usuario_id=${encodeURIComponent($("#usuario").value)}">Descargar CSV</a> <span class="nota">· es un borrador: se revisa y se carga a mano en el sistema.</span></p></details>` : ""}
+    ${caso.cierre ? `<p class="nota" style="margin:0">Se cierra: ${esc(caso.cierre)}</p>` : ""}
+    ${abierta ? `<div class="resolver">
+      ${t.estado === "nueva" ? `<button class="sec" data-accion="en_curso">Empezar</button>` : ""}
+      <select aria-label="Resolución"><option value="">Resolución…</option>${act.resoluciones.map(r => `<option value="${r}">${esc(ACT_RES[r] || r)}</option>`).join("")}</select>
+      <input type="text" placeholder="Comentario (opcional)" aria-label="Comentario">
+      <button class="primario" data-accion="resolver">Cerrar tarea</button></div>` : ""}
+  </article>`;
+}
+function cerradaHTML(t, cat) {
+  return `<div class="cerrada-linea"><span><b>${esc(t.titulo)}</b></span><span class="estado-chip ${t.estado === "resuelta" ? "ok" : ""}">${ACT_ESTADO[t.estado]}</span>
+    <p class="nota">${esc((cat[t.tipo] || {}).nombre || t.tipo)} · ${esc(t.caso)}${t.resolucion ? " · " + esc(ACT_RES[t.resolucion] || t.resolucion) : ""}${t.resuelta_por ? " · " + esc(t.resuelta_por) : ""}${t.resuelta_at ? " · " + diaMes(t.resuelta_at) : ""}${t.comentario ? " — " + esc(t.comentario) : ""}</p></div>`;
+}
+function pintarActividades() {
+  const d = actDatos; if (!d) return;
+  const cat = Object.fromEntries(d.catalogo.map(a => [a.id, a]));
+  const ej = d.ejecucion || {};
+  const hora = ej.at ? ej.at.slice(11, 16) : "";
+  $("#act-sub").textContent = `Las detecta el sistema con reglas fijas y cada una trae acciones, responsable y plazo. Revisado ${ej.at ? diaMes(ej.at) + " " + hora : "—"}` +
+    (ej.datos_hasta ? ` · datos hasta el ${diaMes(ej.datos_hasta)}` : "") + ".";
+  const tt = d.totales;
+  $("#act-totales").innerHTML = tarjetas([
+    {nombre: "Tareas abiertas", valor: tt.abiertas, formato: "numero"},
+    {nombre: "Vencidas", valor: tt.vencidas, formato: "numero", estado: tt.vencidas ? "critico" : null},
+    {nombre: "Críticas", valor: tt.criticas, formato: "numero", estado: tt.criticas ? "alerta" : null},
+    {nombre: "Plata en juego", valor: tt.impacto, formato: "moneda", nota: "venta, margen o capital estimado"}]);
+  const estado = $("#act-estado").value, lista = estado === "abiertas" ? d.abiertas : d.cerradas;
+  const cuenta = id => lista.filter(t => id === "todas" || t.tipo === id).length;
+  $("#act-chips").innerHTML = [["todas", "Todas"], ...d.catalogo.map(a => [a.id, a.nombre.split(" (")[0]])]
+    .map(([id, n]) => `<button class="chip-ver${actFiltro === id ? " activa" : ""}" data-act="${id}">${esc(n)} <span class="nota">${cuenta(id)}</span></button>`).join("");
+  const faltan = Object.entries(ej.actividades || {}).filter(([_, r]) => r.faltan && r.faltan.length);
+  $("#act-avisos").innerHTML = faltan.map(([id, r]) => aviso("alerta", `${(cat[id] || {}).nombre || id}: no se puede revisar porque faltan datos de ${r.faltan.join(", ")}.`)).join("");
+  const visibles = lista.filter(t => actFiltro === "todas" || t.tipo === actFiltro);
+  $("#act-lista").innerHTML = visibles.length ? (estado === "abiertas" ? visibles.map(t => tareaHTML(t, cat)).join("")
+    : `<div class="tarjeta">${visibles.map(t => cerradaHTML(t, cat)).join("")}</div>`)
+    : aviso("ok", estado === "abiertas" ? "No tenés tareas abiertas de esta actividad." : "Todavía no hay tareas cerradas.");
+  const pr = d.precision;
+  $("#act-precision").innerHTML = tablaT(["Actividad", "Detectadas", "Cerradas a mano", "Confirmadas", "Precisión", "Propuesta"], ["t", "n", "n", "n", "%", "t"],
+    d.catalogo.map(a => [a.nombre, pr[a.id].detectadas_4_semanas, pr[a.id].cerradas, pr[a.id].confirmadas, pr[a.id].precision, pr[a.id].propuesta || "—"]));
+  const badge = $("#act-badge"); badge.hidden = !tt.abiertas; badge.textContent = tt.abiertas; badge.classList.toggle("activa", tt.vencidas + tt.criticas > 0);
+}
+async function cargarActividades(revisar = false) {
+  const u = $("#usuario").value; if (!u) return;
+  try {
+    if (revisar) { $("#act-revisar").disabled = true; $("#act-revisar").textContent = "Revisando…"; }
+    actDatos = await api((revisar ? "/actividades/revisar" : "/actividades") + "?usuario_id=" + encodeURIComponent(u), revisar ? {method: "POST"} : {});
+    pintarActividades();
+  } catch (e) { $("#act-lista").innerHTML = aviso("error", "No se pudieron cargar las actividades: " + e.message); }
+  finally { $("#act-revisar").disabled = false; $("#act-revisar").textContent = "Revisar ahora"; }
+}
+$("#act-revisar").onclick = () => cargarActividades(true);
+$("#act-estado").onchange = pintarActividades;
+$("#act-chips").onclick = e => { const b = e.target.closest("[data-act]"); if (b) { actFiltro = b.dataset.act; pintarActividades(); } };
+$("#act-lista").onclick = async e => {
+  const b = e.target.closest("[data-accion]"); if (!b) return;
+  const tarea = b.closest(".tarea"), id = tarea.dataset.id, sel = tarea.querySelector("select"), com = tarea.querySelector("input");
+  let cuerpo = {usuario_id: $("#usuario").value, estado: "en_curso"};
+  if (b.dataset.accion === "resolver") {
+    if (!sel.value) { sel.focus(); tarea.querySelector(".resolver").insertAdjacentHTML("beforeend", aviso("alerta", "Elegí una resolución.")); return; }
+    cuerpo = {...cuerpo, estado: sel.value === "falso_positivo" || sel.value === "descartado" ? "descartada" : "resuelta", resolucion: sel.value, comentario: com.value};
+  }
+  b.disabled = true;
+  try { await postJSON(`/actividades/${id}`, cuerpo); await cargarActividades(); }
+  catch (err) { b.disabled = false; tarea.querySelector(".resolver").insertAdjacentHTML("beforeend", aviso("error", err.message)); }
+};
+$("#usuario").addEventListener("change", () => cargarActividades());
 
 // Inicio
 (async () => {

@@ -1,0 +1,36 @@
+id: INV-07
+nombre: Venta perdida estimada por quiebre
+pregunta: ¿Cuánta venta perdimos por no tener stock?
+definicion: Σ por SKU de (días sin stock en el período × VDP × precio neto promedio).
+formula: "select sum(d.dias_sin_stock * v.vdp * v.precio_neto_prom)\nfrom (select producto_id, count(*) dias_sin_stock from marts.fct_stock_sku_dia\n\
+  \      where stock_disponible <= 0 and fecha between :desde and :hasta group by 1) d\njoin marts.inv__demanda_sku v using (producto_id);\n"
+cube: stock.venta_perdida
+unidad: moneda
+direccion: menor_mejor
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- producto
+- categoria
+- proveedor
+filtros_base:
+- producto activo con vdp > 0
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_stock_diario.stock_fisico
+  - fct_pedido_linea.cantidad
+  - fct_pedido_linea.importe_neto
+  opcionales: []
+roles_minimos:
+- inventario
+- ventas
+historia_minima: ≥ 30 días de fotos
+casos_borde:
+- Es estimación; el agente la presenta como "hasta" y no la suma a ventas.
+alertas:
+- condicion: venta_perdida del mes > 5% de la venta neta
+  severidad: alta
+relacionados:
+- INV-06
+area: inventario

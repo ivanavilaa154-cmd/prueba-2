@@ -1,0 +1,45 @@
+id: FIN-17
+nombre: Costo de cobro (comisiones de pasarelas, marketplaces y financiación)
+pregunta: ¿Cuánto nos cuesta cobrar lo que vendemos?
+definicion: (Comisiones de pasarelas + comisiones de canal + costo de cuotas sin interés + impuesto débitos/créditos) / venta bruta cobrada.
+formula: 'select (sum(comision) + sum(costo_financiacion)) / nullif(sum(importe_bruto),0)
+
+  from core.fct_liquidacion_pasarela where fecha_operacion between :desde and :hasta and estado not in (''rechazado'');
+
+  -- + comision_canal de fct_pedido (marketplace) + impuesto_debcred de tesorería (opcional)
+
+  '
+cube: cobros.costo_cobro_pct
+unidad: porcentaje
+direccion: menor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- pasarela
+- medio_pago
+- cuotas
+- canal
+filtros_base: []
+parametros:
+  incluir_debcred: false
+requisitos:
+  obligatorias:
+  - fct_liquidacion_pasarela.importe_bruto
+  - fct_liquidacion_pasarela.comision
+  opcionales:
+  - fct_liquidacion_pasarela.costo_financiacion
+  - fct_liquidacion_pasarela.retenciones
+  - fct_pedido.comision_canal
+  - fct_pedido.costo_financiacion
+  - fct_pedido.medio_pago
+  - fct_movimiento_tesoreria.tipo
+roles_minimos:
+- pasarela_pagos
+casos_borde:
+- Retenciones de impuestos NO son costo (son pagos a cuenta); se informan aparte.
+alertas:
+- condicion: costo_cobro_pct sube > 1 pp vs mes anterior
+  severidad: media
+relacionados:
+- VEN-09
+area: finanzas

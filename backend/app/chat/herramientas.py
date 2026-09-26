@@ -5,6 +5,7 @@ import json
 from dataclasses import fields
 
 from .. import config
+from ..actividades import motor as actividades
 from ..decisiones import credito
 from ..erp import conector
 from ..permisos import AccesoDenegado, Usuario
@@ -37,6 +38,18 @@ DEFINICIONES = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "ver_actividades",
+        "description": (
+            "Tareas pendientes de la persona (actividades según el caso: quiebre oculto, pedido sugerido, productos sin "
+            "movimiento, remarcación, promociones, vencimientos). Cada una trae caso, evidencia en números, acciones con "
+            "responsable y plazo, e impacto estimado. Las detecta el sistema con reglas fijas: explicalas, no las recalcules."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"estado": {"type": "string", "enum": ["abiertas", "cerradas"], "description": "Por defecto abiertas."}},
+        },
+    },
+    {
         "name": "simular_credito",
         "description": (
             "Centro de Decisiones: simula financiar clientes nuevos a plazo con las tres pruebas "
@@ -64,6 +77,11 @@ def ejecutar(nombre: str, argumentos: dict, usuario: Usuario) -> str:
             resultado = conector.consultar(argumentos["sql"], usuario=usuario)
         elif nombre == "ver_diccionario":
             resultado = config.diccionario()
+        elif nombre == "ver_actividades":
+            actividades.al_dia()
+            campos = ("id", "tipo", "caso", "titulo", "prioridad", "estado", "impacto_estimado", "fecha_limite", "evidencia",
+                      "notas", "acciones", "resolucion", "comentario")
+            resultado = [{k: t[k] for k in campos} for t in actividades.listar(usuario, argumentos.get("estado") or "abiertas")[:30]]
         elif nombre == "simular_credito":
             fin = config.empresa().get("finanzas", {})
             argumentos = {

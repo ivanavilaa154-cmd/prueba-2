@@ -1,0 +1,35 @@
+id: FIN-14
+nombre: Ciclo de conversión de caja
+pregunta: ¿Cuántos días pasa la plata atrapada en el negocio?
+definicion: DSO + DIO − DPO.
+formula: 'ccc = FIN-12.dso + INV-04.dio - FIN-13.dpo
+
+  '
+cube: capital_trabajo.ciclo_caja
+unidad: dias
+direccion: menor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones: []
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_documento_cxc.saldo_pendiente
+  - fct_documento_cxp.saldo_pendiente
+  - fct_stock_diario.stock_fisico
+  - fct_stock_diario.costo_unitario
+  opcionales: []
+roles_minimos:
+- cuentas_corrientes
+- inventario
+casos_borde:
+- Si falta un componente se informa cuál y no se calcula.
+alertas:
+- condicion: ccc aumenta > 15 días vs trimestre anterior
+  severidad: media
+relacionados:
+- FIN-12
+- FIN-13
+- INV-04
+area: finanzas

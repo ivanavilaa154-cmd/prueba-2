@@ -1,0 +1,40 @@
+id: VEN-21
+nombre: Ciclo de venta
+pregunta: ¿Cuántos días tarda en cerrarse una venta?
+definicion: Mediana de (fecha_cierre − fecha_creacion) de oportunidades ganadas; tiempo en cada etapa desde el historial.
+formula: 'select percentile_cont(0.5) within group (order by fecha_cierre - fecha_creacion)
+
+  from core.fct_oportunidad where esta_ganada and fecha_cierre between :desde and :hasta;
+
+  '
+cube: crm.ciclo_venta_dias
+unidad: dias
+direccion: menor_mejor
+agregacion: mediana
+grano_min: mes
+dimensiones:
+- vendedor
+- origen
+- rango_importe
+- etapa (tiempo por etapa)
+filtros_base:
+- ganadas
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_oportunidad.fecha_creacion
+  - fct_oportunidad.fecha_cierre
+  - fct_oportunidad.esta_ganada
+  - fct_oportunidad.esta_cerrada
+  - fct_oportunidad_historial_etapa.etapa
+  - fct_oportunidad_historial_etapa.entrada_at
+  opcionales:
+  - fct_oportunidad.fecha_cierre_esperada
+roles_minimos:
+- crm
+casos_borde:
+- ''
+alertas: []
+relacionados:
+- VEN-22
+area: ventas

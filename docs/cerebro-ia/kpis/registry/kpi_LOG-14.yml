@@ -1,0 +1,42 @@
+id: LOG-14
+nombre: Backlog de despacho
+pregunta: ¿Cuántos pedidos están pendientes de despachar y cuántos están atrasados?
+definicion: Pedidos válidos confirmados sin despacho_at (estado pendiente/en_preparacion/listo_para_despachar) a la fecha; atrasados = fecha_limite_despacho
+  < ahora; antigüedad en horas hábiles.
+formula: "select count(*) backlog, count(*) filter (where fecha_limite_despacho < now()) atrasados,\n       max(horas_habiles(pedido_at, now()))\
+  \ antiguedad_max\nfrom core.fct_envio where despacho_at is null and estado in ('pendiente','en_preparacion','listo_para_despachar');\n"
+cube: envios.backlog, envios.backlog_atrasado
+unidad: cantidad
+direccion: menor_mejor
+agregacion: snapshot
+grano_min: hora
+dimensiones:
+- deposito_origen
+- canal
+- modalidad
+filtros_base:
+- excluye envíos no controlables
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_envio.pedido_at
+  - fct_envio.despacho_at
+  - fct_envio.fecha_limite_despacho
+  - fct_envio.estado
+  - fct_pedido.estado
+  - fct_pedido.fecha_confirmacion
+  opcionales: []
+roles_minimos:
+- logistica
+- ventas
+casos_borde:
+- Pedidos confirmados sin envío creado se agregan desde fct_pedido (estado confirmado, sin envío) como backlog "sin preparar".
+alertas:
+- condicion: atrasados > 0 en marketplace
+  severidad: critica
+- condicion: backlog > 1.5× promedio de despachos diarios
+  severidad: alta
+relacionados:
+- LOG-03
+- VEN-17
+area: logistica

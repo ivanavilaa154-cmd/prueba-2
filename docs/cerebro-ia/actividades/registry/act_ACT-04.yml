@@ -1,0 +1,168 @@
+id: ACT-04
+nombre: Remarcación y margen según listas de proveedores
+caso_de_negocio: Cuando un proveedor cambia su lista de precios hay que actualizar los precios de venta para sostener el margen; también detectar
+  productos que ya venden por debajo del margen mínimo o del costo.
+entidad: producto (y lista de precios / sucursal / canal)
+frecuencia: al recibir una lista nueva de proveedor (evento) + diaria para erosión de margen + semanal para listas desactualizadas
+responsable_principal: comercial
+deteccion:
+  universo: productos activos con precio de venta vigente.
+  condiciones:
+  - Costo de reposición vigente = costo_neto de la lista vigente del proveedor principal (o último costo de compra si no hay lista).
+  - Margen actual = (precio − costo_reposicion) / precio (método margen_sobre_precio) o markup = (precio − costo) / costo, según ops.politica_precio.
+  - Precio sugerido = costo_reposicion / (1 − margen_objetivo) (o costo × (1 + markup_objetivo)), redondeado con la regla de redondeo del tenant
+    (terminaciones y múltiplos).
+  - Se sugiere remarcar solo si |precio sugerido − precio actual| / precio actual > tolerancia (default 2 %).
+  exclusiones:
+  - Precio promocional vigente (se evalúa al terminar la promoción).
+  - Productos con precio fijado por contrato o precio sugerido de fabricante bloqueado (marca en ops.politica_precio).
+parametros:
+  tolerancia_pct: 0.02
+  dias_lista_desactualizada: 45
+  variacion_costo_alerta_pct: 0.03
+  politica_stock_existente: reposicion (remarcar todo el stock) | promedio (remarcar al ingresar la nueva mercadería)
+calculo: "-- marts.act__remarcacion\nselect pv.producto_id, pv.lista_precios, pv.sucursal_id, pv.precio as precio_actual,\n       lpp.costo_neto\
+  \ as costo_nuevo, lpp_ant.costo_neto as costo_anterior,\n       (lpp.costo_neto / nullif(lpp_ant.costo_neto,0) - 1) as var_costo,\n       (pv.precio\
+  \ - lpp.costo_neto) / nullif(pv.precio,0) as margen_actual,\n       redondear(lpp.costo_neto / (1 - pol.margen_objetivo_pct/100), pol.redondeo)\
+  \ as precio_sugerido,\n       vdp * 30 * (precio_sugerido - pv.precio) as impacto_mensual_venta\nfrom core.fct_precio_venta pv\njoin core.fct_lista_precio_proveedor\
+  \ lpp on lpp.es_vigente and …\nleft join lateral (anterior vigencia) lpp_ant on true\njoin ops.politica_precio pol on (alcance más específico)\n\
+  where pv.vigente_hasta is null and not pv.es_promocional;\n"
+impacto: margen mensual recuperado = VDP × 30 × (margen unitario objetivo − margen unitario actual); C3 = pérdida mensual evitada.
+casos:
+- codigo: C1
+  nombre: Aumento de lista del proveedor
+  condicion: Llegó una lista con costo_neto mayor al anterior en > 3 % para uno o más productos.
+  prioridad: alta (crítica si el aumento promedio de la lista > 10 %)
+  acciones:
+  - orden: 1
+    accion: 'Revisar el archivo de remarcación: precio actual, costo nuevo, margen actual, precio sugerido, margen resultante e impacto (ordenado
+      por impacto).'
+    responsable: comercial
+    plazo: 24 h
+  - orden: 2
+    accion: Aprobar o ajustar los precios sugeridos (ajuste manual pide motivo) y cargarlos en el sistema de gestión con la fecha de vigencia.
+    responsable: comercial
+    plazo: 48 h
+  - orden: 3
+    accion: Imprimir y cambiar las etiquetas de góndola de los productos remarcados (listado por sucursal y pasillo/categoría).
+    responsable: encargado_sucursal
+    plazo: 24 h desde la carga
+  - orden: 4
+    accion: 'Si la política es ''promedio'': programar la remarcación para el día de ingreso de la mercadería al nuevo costo (la tarea queda en
+      espera de esa recepción).'
+    responsable: comercial
+    plazo: al recibir
+  cierre: Existe un nuevo precio vigente ≥ precio sugerido × (1 − tolerancia) para los productos aprobados; las etiquetas se confirman con la
+    resolución.
+- codigo: C2
+  nombre: Erosión de margen (sin lista nueva)
+  condicion: Margen actual con costo de reposición < margen mínimo de la política, aunque no haya llegado una lista (ej. subió el costo por compra
+    reciente).
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Remarcar al precio sugerido o documentar por qué se sostiene el precio (competencia, producto gancho).
+    responsable: comercial
+    plazo: 48 h
+  - orden: 2
+    accion: 'Si se sostiene el precio: marcar el producto como ''margen bajo aceptado'' con fecha de revisión (se re-evalúa en 30 días).'
+    responsable: comercial
+    plazo: 48 h
+  cierre: Nuevo precio cargado o excepción registrada con fecha de revisión.
+- codigo: C3
+  nombre: Venta por debajo del costo
+  condicion: Precio de venta vigente (sin promoción) < costo de reposición.
+  prioridad: critica
+  acciones:
+  - orden: 1
+    accion: Corregir el precio hoy (puede ser error de carga) o confirmar que es una decisión comercial.
+    responsable: comercial
+    plazo: mismo día
+  - orden: 2
+    accion: 'Si fue error de carga: revisar otros productos cargados en la misma actualización (la tarea los lista).'
+    responsable: comercial
+    plazo: 24 h
+  cierre: Precio ≥ costo o excepción aprobada por gerente_general.
+- codigo: C4
+  nombre: Baja de costo del proveedor
+  condicion: Lista con costo_neto menor al anterior en > 3 %.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: 'Decidir: trasladar la baja al precio (más competitivo) o sostener el precio y ganar margen. La tarea muestra ambos escenarios con
+      su impacto.'
+    responsable: comercial
+    plazo: 7 días
+  - orden: 2
+    accion: Aprovechar la baja para aumentar la compra si el producto es clase A con buena rotación (ajuste del pedido sugerido).
+    responsable: comprador
+    plazo: próximo pedido
+  cierre: Decisión registrada.
+- codigo: C5
+  nombre: Aumento de precio que frenó la venta
+  condicion: Tras una remarcación > 15 %, la VDP de las 2 semanas siguientes cayó > 40 % vs las 4 previas (sin quiebre).
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Revisar el precio contra la competencia y el precio de productos sustitutos; ajustar si quedó fuera de mercado.
+    responsable: comercial
+    plazo: 7 días
+  - orden: 2
+    accion: Si el margen lo permite, bajar al margen objetivo mínimo; si no, evaluar reemplazar el producto (ACT-03 C3).
+    responsable: comercial
+    plazo: 14 días
+  cierre: Nuevo precio o decisión documentada.
+- codigo: C6
+  nombre: Lista de proveedor desactualizada
+  condicion: El proveedor no envía lista hace más de 45 días y su última compra fue a un costo > 3 % del costo de lista (o el índice de precios
+    subió > 5 % desde la última lista).
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Pedir al proveedor la lista de precios vigente y cargarla (o subir el archivo para que se procese automáticamente).
+    responsable: comprador
+    plazo: 7 días
+  cierre: Nueva lista cargada para ese proveedor.
+- codigo: C7
+  nombre: Precios inconsistentes entre sucursales o canales
+  condicion: El mismo producto tiene precios distintos entre sucursales/canales por encima de la diferencia permitida por la política.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Unificar los precios según la política (o documentar la diferencia intencional por canal).
+    responsable: comercial
+    plazo: 7 días
+  cierre: Diferencia dentro de la política o excepción registrada.
+resoluciones:
+- remarcado_como_sugerido
+- remarcado_ajustado
+- se_mantiene_precio_justificado
+- error_de_carga_corregido
+- lista_solicitada
+- etiquetas_cambiadas
+- falso_positivo
+resolucion_confirmada:
+- remarcado_como_sugerido
+- remarcado_ajustado
+- error_de_carga_corregido
+- lista_solicitada
+- etiquetas_cambiadas
+ejemplo: Llegó la lista del Proveedor Z con +8,4 % promedio en 212 productos. Si no se remarca, el margen de la categoría cae de 32 % a 26 % (−$
+  410.000/mes). Archivo de remarcación y etiquetas por sucursal adjuntos.
+requisitos:
+  obligatorias:
+  - fct_lista_precio_proveedor.costo_neto
+  - fct_lista_precio_proveedor.fecha_vigencia_desde
+  - fct_precio_venta.precio
+  - fct_precio_venta.vigente_desde
+  opcionales:
+  - fct_precio_venta.precio_final
+  - fct_precio_venta.sucursal_id
+  - fct_precio_venta.canal_id
+  - fct_pedido_linea.cantidad
+  - fct_orden_compra_linea.precio_unitario
+  - ref.indice_precios.indice
+kpis_relacionados:
+- FIN-03
+- VEN-08
+- VEN-27

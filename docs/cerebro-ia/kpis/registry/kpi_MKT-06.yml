@@ -1,0 +1,36 @@
+id: MKT-06
+nombre: ROAS de plataforma
+pregunta: ¿Cuánto dice cada plataforma que vendió por cada unidad de moneda invertida?
+definicion: Valor de conversiones de plataforma / gasto, por plataforma.
+formula: select plataforma, sum(valor_conversiones_plataforma)/nullif(sum(gasto),0) from core.fct_ads_diario where fecha between :desde and :hasta
+  group by 1;
+cube: ads.roas_plataforma
+unidad: ratio
+direccion: mayor_mejor
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- plataforma (obligatoria)
+- campana
+- conjunto
+- anuncio
+filtros_base:
+- objetivo = ventas
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_ads_diario.gasto
+  - fct_ads_diario.valor_conversiones_plataforma
+  opcionales: []
+roles_minimos:
+- publicidad
+casos_borde:
+- valor_conversiones incluye impuesto indirecto y a veces envío (lo que envía la etiqueta de conversión); para comparar con venta neta dividir
+  por (1+impuesto indirecto) si el tenant lo configura.
+- Útil para optimizar DENTRO de una plataforma; para decidir presupuesto total usar MKT-07.
+alertas:
+- condicion: roas_plataforma < roas_minimo tenant (default 3) en campaña con gasto > 10% del total
+  severidad: media
+relacionados:
+- MKT-07
+area: marketing

@@ -1,0 +1,43 @@
+id: FIN-13
+nombre: Cuentas por pagar y DPO
+pregunta: ¿Cuánto debemos a proveedores, cuánto vence pronto y en cuántos días pagamos?
+definicion: Saldo CxP a la fecha, vencido, a vencer en 7/30 días; DPO = CxP promedio / compras con impuesto indirecto × días.
+formula: "select sum(saldo) cxp_total,\n       sum(saldo) filter (where dias_vencido > 0) cxp_vencida,\n       sum(saldo) filter (where fecha_vencimiento\
+  \ between :fecha and :fecha + 7) vence_7d\nfrom marts.fct_saldo_cxp_diario where fecha=:fecha;\ndpo = avg(cxp_total diario) / nullif(sum(compras\
+  \ importe_total*signo), 0) * dias_periodo\n"
+cube: cxp.saldo_total, cxp.saldo_vencido, cxp.vence_7d, cxp.dpo
+unidad: moneda | dias
+direccion: neutral
+agregacion: snapshot / calculado
+grano_min: dia
+dimensiones:
+- proveedor
+- categoria_proveedor
+- tramo_aging
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_documento_cxp.fecha_vencimiento
+  - fct_documento_cxp.saldo_pendiente
+  - fct_comprobante.circuito
+  - fct_comprobante.fecha_emision
+  - fct_comprobante.importe_total
+  opcionales:
+  - fct_pago.fecha_pago
+  - fct_pago.importe
+  - dim_proveedor.categoria_proveedor
+roles_minimos:
+- cuentas_corrientes
+- facturacion
+casos_borde:
+- Si solo hay documentos de compra sin pagos ni saldos (sin rol cuentas_corrientes) no se puede saber qué está pago → KPI no disponible.
+alertas:
+- condicion: vence_7d > caja_disponible
+  severidad: critica
+- condicion: cxp_vencida > 15% del total
+  severidad: media
+relacionados:
+- FIN-14
+- FIN-16
+area: finanzas

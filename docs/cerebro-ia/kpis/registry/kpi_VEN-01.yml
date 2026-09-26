@@ -1,0 +1,60 @@
+id: VEN-01
+nombre: Venta neta
+pregunta: ¿Cuánto vendimos?
+definicion: Suma de importe neto (sin impuesto indirecto, sin envío, después de descuentos) de pedidos válidos, menos devoluciones del período.
+formula: "select sum(p.importe_neto) - coalesce((select sum(d.importe_neto) from core.fct_devolucion d\n        where d.estado in ('recibida','reintegrada')\
+  \ and d.fecha_recepcion between :desde and :hasta),0) as venta_neta\nfrom core.fct_pedido p where pedido_valido and p.fecha_pedido between :desde\
+  \ and :hasta;\n"
+cube: ventas.venta_neta
+unidad: moneda
+direccion: mayor_mejor
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+- vendedor
+- cliente
+- tipo_cliente
+- region
+- producto
+- categoria
+- marca
+- canal_marketing
+- medio_pago
+filtros_base:
+- pedido_valido
+parametros:
+  base: comercial|facturada
+  neto_devoluciones: true
+  ajuste: nominal|real
+  moneda: base|<ISO>
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.estado
+  - fct_pedido.es_fuente_verdad
+  - fct_pedido.importe_neto
+  opcionales:
+  - fct_pedido.estado_pago
+  - fct_pedido.canal_id
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.importe_neto
+  - fct_devolucion.fecha_recepcion
+  - fct_devolucion.importe_neto
+roles_minimos:
+- ventas
+casos_borde:
+- Con dimensión producto/categoría se suma fct_pedido_linea.importe_neto (el descuento de cabecera ya viene prorrateado en líneas).
+- Pedidos de marketplace en pack cuentan como un pedido.
+- Pedidos en moneda extranjera → TC del día del pedido.
+alertas:
+- condicion: venta diaria < 60% del promedio del mismo día de semana de las últimas 4 semanas
+  severidad: alta
+- condicion: venta del mes proyectada (VEN-24) < 90% presupuesto
+  severidad: alta
+relacionados:
+- FIN-01
+- VEN-06
+- VEN-24
+area: ventas

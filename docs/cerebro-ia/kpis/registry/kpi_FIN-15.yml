@@ -1,0 +1,38 @@
+id: FIN-15
+nombre: Efectividad de cobranza (CEI)
+pregunta: ¿Qué porcentaje de lo cobrable efectivamente cobramos en el período?
+definicion: (CxC inicial + ventas a crédito − CxC final) / (CxC inicial + ventas a crédito − CxC final corriente) × 100.
+formula: 'cei = (cxc_ini + ventas_credito - cxc_fin) / nullif(cxc_ini + ventas_credito - cxc_fin_no_vencida, 0)
+
+  '
+cube: cxc.cei
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones:
+- vendedor
+- tipo_cliente
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_documento_cxc.fecha_vencimiento
+  - fct_documento_cxc.saldo_pendiente
+  - fct_cobro.fecha_cobro
+  - fct_cobro.importe
+  - fct_comprobante.fecha_emision
+  - fct_comprobante.importe_total
+  opcionales: []
+roles_minimos:
+- cuentas_corrientes
+- facturacion
+casos_borde:
+- Meses con pocas facturas a crédito generan ruido; mostrar con volumen.
+alertas:
+- condicion: cei < 80%
+  severidad: media
+relacionados:
+- FIN-10
+- FIN-12
+area: finanzas

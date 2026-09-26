@@ -1,0 +1,156 @@
+id: ACT-01
+nombre: Quiebre oculto (falta en góndola con stock en sistema)
+caso_de_negocio: Un producto que se vende todos los días deja de venderse aunque el sistema dice que hay stock. Probablemente no está exhibido
+  (quedó en depósito, está mal ubicado, se dañó, se lo robaron o el stock del sistema está mal).
+entidad: producto × punto de venta (sucursal o depósito vendible)
+frecuencia: diaria (06:00 hora local, sobre el día anterior) + opcional cada 2 h en horario operativo (versión intradía)
+responsable_principal: encargado_sucursal
+deteccion:
+  universo: productos activos con venta regular en el punto de venta — vendió en ≥ 80 % de los días abiertos de las últimas 4 semanas (sin contar
+    los días evaluados) y su venta media λ ≥ 1 unidad/día.
+  condiciones:
+  - 'Días consecutivos sin venta k tal que la probabilidad de no vender por azar sea < 1 %: P = e^(−λ·k) < 0,01 (ej. λ = 2/día → k ≥ 3; λ = 5/día
+    → k ≥ 1).'
+  - El punto de venta estuvo abierto y con actividad normal esos días (tickets totales ≥ 70 % de su promedio del mismo día de semana).
+  - Stock disponible en sistema > 0 durante esos días en ese punto de venta.
+  exclusiones:
+  - Stock en sistema = 0 → no es oculto; lo trata INV-06 / ACT-02.
+  - Terminó una promoción del producto en los 3 días previos (caída natural).
+  - Subió el precio de venta > 15 % en los últimos 7 días (se evalúa en ACT-04, caso C5).
+  - Producto `estacional_fuera_temporada`, `discontinuado` o con CV de demanda semanal > 1 (irregular).
+  intradia: 'Con curva horaria del producto (share de venta por hora, 8 semanas): si a la hora h la venta acumulada del día = 0 y la esperada
+    ≥ 4 unidades, se adelanta la detección.'
+parametros:
+  ventana_base_dias: 28
+  pct_dias_con_venta_min: 0.8
+  lambda_min: 1
+  prob_umbral: 0.01
+  actividad_local_min: 0.7
+  variacion_precio_excluir: 0.15
+calculo: "-- marts.act__quiebre_oculto (sobre marts.ven__venta_diaria_sku_punto y marts.fct_stock_diario_kpi)\nwith base as (\n  select tenant_id,\
+  \ producto_id, punto_id,\n         avg(unidades) filter (where dia_abierto)                           as lambda,\n         avg((unidades > 0)::int)\
+  \ filter (where dia_abierto)                as pct_dias_con_venta,\n         stddev(unidades) filter (where dia_abierto)                   \
+  \     as sigma\n  from marts.ven__venta_diaria_sku_punto\n  where fecha between :hoy - 35 and :hoy - 8\n  group by 1,2,3),\nracha as (   --\
+  \ días consecutivos recientes sin venta, con local abierto y stock > 0\n  select v.tenant_id, v.producto_id, v.punto_id, count(*) as k, min(s.stock_disponible)\
+  \ as stock_min\n  from marts.ven__venta_diaria_sku_punto v\n  join marts.fct_stock_diario_kpi s using (tenant_id, producto_id, fecha)   -- s.deposito\
+  \ del punto\n  where v.fecha > coalesce((select max(fecha) from marts.ven__venta_diaria_sku_punto x\n                            where x.producto_id\
+  \ = v.producto_id and x.punto_id = v.punto_id and x.unidades > 0), '1900-01-01')\n    and v.dia_abierto and v.actividad_relativa >= :actividad_local_min\
+  \ and s.stock_disponible > 0\n  group by 1,2,3)\nselect b.*, r.k, r.stock_min, exp(-b.lambda * r.k) as p_azar,\n       b.lambda * r.k * precio_neto_prom\
+  \ as venta_perdida_estimada\nfrom base b join racha r using (tenant_id, producto_id, punto_id)\nwhere b.pct_dias_con_venta >= :pct_dias_con_venta_min\
+  \ and b.lambda >= :lambda_min\n  and exp(-b.lambda * r.k) < :prob_umbral;\n"
+impacto: venta_perdida_estimada = λ × k × precio neto medio (y margen perdido = × margen %); se proyecta λ × precio por cada día adicional sin
+  resolver.
+casos:
+- codigo: C1
+  nombre: Stock en depósito, no en exhibición
+  condicion: Se detecta el patrón y el punto de venta tiene depósito trasero o stock en otra ubicación del mismo punto (o no se puede distinguir
+    la ubicación).
+  prioridad: alta (crítica si el producto es clase A)
+  acciones:
+  - orden: 1
+    accion: Ir a la góndola/exhibición y verificar si el producto está visible, con precio y en su lugar.
+    responsable: repositor
+    plazo: 2 h hábiles
+  - orden: 2
+    accion: 'Si no está: buscarlo en depósito y reponer la exhibición completa.'
+    responsable: repositor
+    plazo: mismo día
+  - orden: 3
+    accion: 'Si no aparece en ningún lado: hacer conteo físico y registrar el ajuste de inventario con motivo ''faltante'' (pasa al caso C3).'
+    responsable: encargado_sucursal
+    plazo: mismo día
+  cierre: Se resuelve con la resolución elegida; se cierra automáticamente si el producto vuelve a venderse ≥ 50 % de λ en las 24 h siguientes.
+- codigo: C2
+  nombre: Producto exhibido pero sin venta (problema de exhibición o precio)
+  condicion: La tarea C1 se resolvió como "estaba exhibido" y la venta no se recupera en 48 h.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Verificar que el precio de góndola coincida con el precio del sistema y que la etiqueta sea legible.
+    responsable: repositor
+    plazo: mismo día
+  - orden: 2
+    accion: Verificar ubicación (altura, frente, cantidad de frentes) contra el planograma o la ubicación anterior; restituirla.
+    responsable: encargado_sucursal
+    plazo: 24 h
+  - orden: 3
+    accion: Si hay un cambio de precio reciente, derivar a comercial para revisar (ACT-04 C5).
+    responsable: comercial
+    plazo: 48 h
+  cierre: Venta vuelve a ≥ 50 % de λ durante 2 días, o resolución manual.
+- codigo: C3
+  nombre: Stock fantasma confirmado (el sistema dice que hay y no hay)
+  condicion: Resolución de C1 = "no hay stock físico", o conteo físico < 50 % del stock de sistema.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Registrar el ajuste de inventario por la diferencia contada (motivo 'faltante' o 'error_carga').
+    responsable: encargado_sucursal
+    plazo: mismo día
+  - orden: 2
+    accion: 'Generar reposición urgente: incluir el producto en el próximo pedido sugerido del proveedor (ACT-02) o transferir desde otra sucursal
+      con stock.'
+    responsable: comprador
+    plazo: 24 h
+  - orden: 3
+    accion: 'Si el mismo producto/sucursal tiene 2 o más stock fantasma en 60 días: programar conteo cíclico de la categoría y revisar posible
+      robo.'
+    responsable: gerente_operaciones
+    plazo: 7 días
+  cierre: Ajuste registrado (se verifica por movimiento de stock tipo ajuste en la fecha) + pedido/transferencia creada.
+- codigo: C4
+  nombre: Producto dañado o vencido en exhibición
+  condicion: Resolución de C1 = "estaba dañado/vencido".
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Retirar las unidades de la exhibición y registrar merma con motivo 'rotura' o 'vencimiento'.
+    responsable: repositor
+    plazo: inmediato
+  - orden: 2
+    accion: Reponer con unidades en buen estado; si no hay, pedir reposición urgente.
+    responsable: encargado_sucursal
+    plazo: mismo día
+  - orden: 3
+    accion: 'Si es vencimiento: revisar el resto de los lotes del producto (dispara ACT-06).'
+    responsable: encargado_sucursal
+    plazo: 24 h
+  cierre: Merma registrada.
+resoluciones:
+- repuesto_desde_deposito
+- estaba_exhibido
+- no_hay_stock_fisico_ajustado
+- danado_o_vencido_retirado
+- precio_o_etiqueta_corregidos
+- falso_positivo
+resolucion_confirmada:
+- repuesto_desde_deposito
+- no_hay_stock_fisico_ajustado
+- danado_o_vencido_retirado
+- precio_o_etiqueta_corregidos
+ejemplo: 'Sucursal Centro — Producto X (clase A) vende 6 u/día y lleva 2 días sin ventas; el sistema indica 48 u. Venta perdida estimada: $ 23.400.
+  Acción 1: verificar góndola antes de las 11:00.'
+requisitos:
+  obligatorias:
+  - fct_pedido.pedido_at
+  - fct_pedido_linea.producto_id
+  - fct_pedido_linea.cantidad
+  - fct_stock_diario.stock_disponible
+  opcionales:
+  - fct_precio_venta.precio
+  - dim_promocion.fecha_fin
+  - dim_producto.estado_surtido
+  - dim_producto.clasificacion_abc
+  alternativas:
+  - nombre: punto_por_deposito
+    obligatorias:
+    - fct_pedido.deposito_id
+  - nombre: punto_por_sucursal
+    obligatorias:
+    - fct_pedido.sucursal_id
+    - dim_deposito.sucursal_id
+kpis_relacionados:
+- INV-06
+- INV-07
+- INV-13
+- INV-21

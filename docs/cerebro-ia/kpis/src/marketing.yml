@@ -1,0 +1,836 @@
+area: marketing
+prefijo: MKT
+titulo: KPIs de Marketing
+intro: |
+  Cubre inversión y eficiencia de medios pagos, tráfico y conversión web, adquisición de clientes, leads y email.
+
+  **§0.1 Dos verdades distintas (el agente SIEMPRE aclara cuál usa):**
+  - **Métricas de plataforma** (`*_plataforma` de `fct_ads_diario`): lo que cada plataforma publicitaria se auto-atribuye. Se solapan entre plataformas → **nunca se suman entre plataformas** para "ventas por publicidad".
+  - **Métricas de negocio** (`fct_pedido` + `fct_atribucion_pedido`): venta real, sin duplicar. MER, CAC y ROAS real se calculan con estas.
+
+  **§0.2 Gasto publicitario:** `gasto` sin impuesto indirecto, en moneda base. Si en el país del tenant la publicidad contratada en el exterior tiene impuestos o recargos no recuperables, el tenant configura `ops.tenant_config_kpi(MKT, factor_costo_ads)` y los KPIs de costo ofrecen `costo='plataforma|total'`.
+
+  **§0.3 Atribución de pedidos (`fct_atribucion_pedido`):**
+  1. `ultimo_clic_utm` (default): UTMs del pedido → reglas UTM del tenant (`ops.tenant_config_kpi(MKT, reglas_utm)`, con un set por defecto de la plataforma) → `canal_marketing`; `campana_id` por `utm_campaign` normalizado. Pedidos de canal `marketplace` → `marketplace`. Sin UTM y sin referrer → `directo`. Canal `tienda_fisica` → `offline`.
+  2. `primer_contacto`: canal del primer pedido/lead del cliente (para CAC por canal de adquisición).
+  3. `plataforma_declarada`: solo para comparar con métricas de plataforma.
+
+  **§0.4 Las plataformas recalculan hacia atrás** (ventana de atribución): los últimos días de conversiones de plataforma son provisorios (ventana configurable por fuente, `relectura_dias` del source.yml); el agente lo advierte.
+kpis:
+- id: MKT-01
+  nombre: Inversión publicitaria
+  pregunta: ¿Cuánto invertimos en publicidad?
+  definicion: Σ gasto de fct_ads_diario en el período.
+  formula: select sum(gasto) from core.fct_ads_diario where fecha between :desde and :hasta;
+  cube: ads.inversion
+  unidad: moneda
+  direccion: neutral
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - cuenta_ads
+  - campana
+  - objetivo
+  - tipo_campana
+  - canal_marketing
+  filtros_base: []
+  parametros:
+    costo: plataforma|total
+    moneda: base|<ISO>|original
+    ajuste: nominal|real
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.fecha
+    - fct_ads_diario.gasto
+    opcionales:
+    - dim_campana.objetivo
+    - dim_campana.canal_marketing
+    - ref.tipo_cambio.valor
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - Cuentas facturadas en moneda extranjera → TC del día del gasto; mostrar también en una moneda de referencia para comparar sin efecto de devaluación.
+  alertas:
+  - condicion: gasto diario > 1.5× presupuesto diario configurado
+    severidad: alta
+  - condicion: gasto del mes proyectado > presupuesto de marketing
+    severidad: alta
+  relacionados:
+  - MKT-07
+  - MKT-22
+- id: MKT-02
+  nombre: Impresiones y CPM
+  pregunta: ¿Cuánta gente vio nuestros anuncios y a qué costo?
+  definicion: Σ impresiones; CPM = gasto / impresiones × 1000.
+  formula: select sum(impresiones), sum(gasto)/nullif(sum(impresiones),0)*1000 from core.fct_ads_diario where fecha between :desde and :hasta;
+  cube: ads.impresiones, ads.cpm
+  unidad: cantidad | moneda
+  direccion: menor_mejor (CPM)
+  agregacion: aditivo / ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - campana
+  - conjunto
+  - anuncio
+  - objetivo
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_ads_diario.impresiones
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - 'Alcance no es aditivo entre días/campañas: solo se informa a nivel plataforma y período tal como lo devuelve la API.'
+  alertas:
+  - condicion: cpm real sube > 30% vs promedio 4 semanas
+    severidad: media
+  relacionados:
+  - MKT-20
+- id: MKT-03
+  nombre: CTR
+  pregunta: ¿Qué porcentaje de quienes ven el anuncio hace clic?
+  definicion: Clics al sitio (link clicks) / impresiones.
+  formula: select sum(clics_enlace)::numeric/nullif(sum(impresiones),0) from core.fct_ads_diario where fecha between :desde and :hasta;
+  cube: ads.ctr
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - campana
+  - conjunto
+  - anuncio
+  - tipo_campana
+  filtros_base: []
+  parametros:
+    tipo_clic: enlace|todos
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.impresiones
+    - fct_ads_diario.clics_enlace
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - Comparar CTR solo dentro de la misma plataforma y tipo de campaña (search vs social difieren por naturaleza).
+  alertas:
+  - condicion: anuncio con ctr cae > 30% vs su primera semana y frecuencia > 3 (fatiga)
+    severidad: media
+  relacionados:
+  - MKT-20
+- id: MKT-04
+  nombre: CPC
+  pregunta: ¿Cuánto nos cuesta cada clic?
+  definicion: Gasto / clics al sitio.
+  formula: select sum(gasto)/nullif(sum(clics_enlace),0) from core.fct_ads_diario where fecha between :desde and :hasta;
+  cube: ads.cpc
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - campana
+  - conjunto
+  - anuncio
+  filtros_base: []
+  parametros:
+    ajuste: real por defecto en comparaciones
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_ads_diario.clics_enlace
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - ''
+  alertas: []
+  relacionados:
+  - MKT-03
+- id: MKT-05
+  nombre: Conversiones y CPA de plataforma
+  pregunta: ¿Cuántas compras/leads reporta cada plataforma y a qué costo?
+  definicion: Σ conversiones_plataforma; CPA = gasto / conversiones (por plataforma, nunca sumado entre plataformas).
+  formula: select plataforma, sum(conversiones_plataforma), sum(gasto)/nullif(sum(conversiones_plataforma),0) from core.fct_ads_diario where fecha between :desde
+    and :hasta group by 1;
+  cube: ads.conversiones_plataforma, ads.cpa_plataforma
+  unidad: cantidad | moneda
+  direccion: menor_mejor (CPA)
+  agregacion: aditivo dentro de plataforma / ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma (obligatoria)
+  - campana
+  - conjunto
+  - anuncio
+  - objetivo
+  filtros_base:
+  - objetivo in (ventas) para compras; (leads) para leads
+  parametros:
+    conversion: compra|lead
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    opcionales:
+    - dim_campana.objetivo
+    alternativas:
+    - nombre: compras
+      obligatorias:
+      - fct_ads_diario.conversiones_plataforma
+    - nombre: leads
+      obligatorias:
+      - fct_ads_diario.leads_plataforma
+  roles_minimos:
+  - publicidad
+  - publicidad o publicidad
+  casos_borde:
+  - Si se pide sin dimensión plataforma, el MCP fuerza el desglose y advierte que no son sumables.
+  alertas:
+  - condicion: cpa_plataforma de campaña de ventas > 1.5× CPA objetivo 3 días seguidos
+    severidad: media
+  relacionados:
+  - MKT-06
+  - MKT-08
+- id: MKT-06
+  nombre: ROAS de plataforma
+  pregunta: ¿Cuánto dice cada plataforma que vendió por cada unidad de moneda invertida?
+  definicion: Valor de conversiones de plataforma / gasto, por plataforma.
+  formula: select plataforma, sum(valor_conversiones_plataforma)/nullif(sum(gasto),0) from core.fct_ads_diario where fecha between :desde and :hasta group by 1;
+  cube: ads.roas_plataforma
+  unidad: ratio
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma (obligatoria)
+  - campana
+  - conjunto
+  - anuncio
+  filtros_base:
+  - objetivo = ventas
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_ads_diario.valor_conversiones_plataforma
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - valor_conversiones incluye impuesto indirecto y a veces envío (lo que envía la etiqueta de conversión); para comparar con venta neta dividir por (1+impuesto indirecto)
+    si el tenant lo configura.
+  - Útil para optimizar DENTRO de una plataforma; para decidir presupuesto total usar MKT-07.
+  alertas:
+  - condicion: roas_plataforma < roas_minimo tenant (default 3) en campaña con gasto > 10% del total
+    severidad: media
+  relacionados:
+  - MKT-07
+- id: MKT-07
+  nombre: MER / ROAS real
+  pregunta: ¿Cuánto vendemos en total por cada unidad de moneda invertida en marketing?
+  definicion: MER = venta neta total (VEN-01) / inversión total en marketing (ads + otros gastos de marketing opcionales). ROAS real por canal = venta atribuida last-click
+    al canal / gasto del canal.
+  formula: |
+    mer = VEN-01.venta_neta / nullif(MKT-01.inversion, 0)
+    roas_real_canal = Σ fct_pedido.importe_neto join fct_atribucion_pedido(modelo='ultimo_clic_utm') por canal_marketing
+                      / Σ fct_ads_diario.gasto por canal_marketing
+  cube: marketing.mer, marketing.roas_real
+  unidad: ratio
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia (semana recomendado)
+  dimensiones:
+  - canal_marketing
+  - plataforma (solo roas_real)
+  - campana (solo si utm consistente)
+  filtros_base:
+  - pedido_valido
+  parametros:
+    incluir_canales: online|todos
+    modelo: ultimo_clic_utm
+    incluir_otros_gastos_mkt: false
+  requisitos:
+    obligatorias:
+    - fct_pedido.importe_neto
+    - fct_ads_diario.gasto
+    opcionales:
+    - fct_atribucion_pedido.canal_marketing
+    - fct_atribucion_pedido.campana_id
+    - fct_pedido.utm_source
+    - fct_pedido.utm_medium
+    - fct_pedido.utm_campaign
+  roles_minimos:
+  - publicidad
+  - ventas
+  casos_borde:
+  - MER con incluir_canales='online' excluye mostrador/mayorista para no inflar.
+  - Last-click subestima plataformas de awareness (awareness); el agente lo menciona al comparar canales.
+  alertas:
+  - condicion: mer semanal cae > 20% vs promedio 4 semanas
+    severidad: alta
+  relacionados:
+  - MKT-06
+  - MKT-08
+  - MKT-22
+- id: MKT-08
+  nombre: CAC (costo de adquisición de cliente)
+  pregunta: ¿Cuánto nos cuesta conseguir un cliente nuevo?
+  definicion: Inversión en marketing de adquisición / clientes nuevos (VEN-11) del período; CAC por canal usando atribución de primer pedido.
+  formula: |
+    cac_blended = MKT-01.inversion / nullif(VEN-11.nuevos, 0)
+    cac_pago = gasto canales pagos / nuevos cuyo primer pedido se atribuye a canal pago
+  cube: marketing.cac_blended, marketing.cac_pago
+  unidad: moneda
+  direccion: menor_mejor
+  agregacion: ratio
+  grano_min: mes
+  dimensiones:
+  - canal_marketing
+  - plataforma (cac_pago)
+  filtros_base:
+  - canales online por defecto
+  parametros:
+    costo: plataforma|total
+    excluir_retargeting: true
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_pedido.cliente_id
+    - fct_pedido.fecha_pedido
+    opcionales:
+    - dim_campana.objetivo
+    - fct_atribucion_pedido.canal_marketing
+  roles_minimos:
+  - publicidad
+  - ventas
+  casos_borde:
+  - Campañas objetivo 'retargeting' se excluyen del numerador si excluir_retargeting (no adquieren).
+  alertas:
+  - condicion: cac real sube > 25% vs trimestre anterior
+    severidad: alta
+  relacionados:
+  - MKT-09
+  - VEN-11
+- id: MKT-09
+  nombre: LTV/CAC y payback
+  pregunta: ¿Recuperamos lo que invertimos para conseguir clientes? ¿En cuánto tiempo?
+  definicion: LTV 12m (VEN-14, en margen) / CAC; payback = meses hasta que el margen acumulado de la cohorte iguala su CAC.
+  formula: |
+    ltv_cac = VEN-14.ltv_12m / nullif(MKT-08.cac_blended, 0)   -- misma cohorte/período de adquisición
+    payback_meses = min(m) tal que margen_acumulado_cohorte(m)/clientes >= cac_cohorte
+  cube: marketing.ltv_cac, marketing.payback_meses
+  unidad: ratio | meses
+  direccion: mayor_mejor (ltv_cac) / menor_mejor (payback)
+  agregacion: calculado por cohorte
+  grano_min: mes
+  dimensiones:
+  - cohorte
+  - canal_marketing adquisición
+  filtros_base: []
+  parametros:
+    ajuste: real
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_pedido.cliente_id
+    - fct_pedido.fecha_pedido
+    - fct_pedido_linea.costo_total
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  - ventas
+  historia_minima: ≥ 12 meses de ventas + ads
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: ltv_cac < 3
+    severidad: media
+  - condicion: ltv_cac < 1
+    severidad: alta
+  relacionados:
+  - VEN-14
+  - MKT-08
+- id: MKT-10
+  nombre: Sesiones web y mix de tráfico
+  pregunta: ¿Cuántas visitas tuvo el sitio y de dónde vienen?
+  definicion: Σ sesiones de la analítica web; participación por canal de marketing.
+  formula: select canal_marketing, sum(sesiones) from core.fct_web_diario where fecha between :desde and :hasta group by 1;
+  cube: web.sesiones
+  unidad: cantidad
+  direccion: mayor_mejor
+  agregacion: aditivo (sesiones) — usuarios NO aditivo
+  grano_min: dia
+  dimensiones:
+  - canal_marketing
+  - fuente
+  - medio
+  - campana
+  - dispositivo
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_web_diario.sesiones
+    opcionales:
+    - fct_web_diario.canal_marketing
+    - fct_web_diario.usuarios
+    - fct_web_diario.dispositivo
+  roles_minimos:
+  - analitica_web
+  casos_borde:
+  - Usuarios de un período = consulta directa a la analítica web del rango (no suma de días); se guarda solo por día.
+  alertas:
+  - condicion: sesiones diarias < 50% del promedio del mismo día de semana (posible caída de tracking o sitio)
+    severidad: critica
+  relacionados:
+  - MKT-11
+  - MKT-21
+- id: MKT-11
+  nombre: Tasa de conversión web
+  pregunta: ¿Qué porcentaje de visitas termina en compra?
+  definicion: Pedidos e-commerce válidos (fuente de verdad, canal ecommerce_propio) / sesiones la analítica web. Alternativa la analítica web pura = transacciones
+    / sesiones.
+  formula: |
+    cr = count(pedidos validos canal='ecommerce_propio') / nullif(sum(fct_web_diario.sesiones), 0)
+    cr_analitica = sum(transacciones) / nullif(sum(sesiones), 0)
+  cube: web.tasa_conversion
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - canal_marketing
+  - dispositivo
+  - campana (solo cr_analitica)
+  filtros_base: []
+  parametros:
+    base: negocio|analitica
+  requisitos:
+    obligatorias:
+    - fct_web_diario.sesiones
+    opcionales:
+    - fct_web_diario.transacciones
+    - fct_web_diario.canal_marketing
+    alternativas:
+    - nombre: base_negocio
+      obligatorias:
+      - fct_pedido.canal_id
+      - fct_pedido.fecha_pedido
+    - nombre: base_analitica
+      obligatorias:
+      - fct_web_diario.transacciones
+  roles_minimos:
+  - analitica_web
+  - ventas o analitica_web
+  casos_borde:
+  - Diferencia grande entre cr y cr_analitica (> 20%) indica tracking roto o bloqueo de cookies → DQ-16.
+  alertas:
+  - condicion: cr cae > 20% vs promedio 4 semanas con sesiones estables
+    severidad: alta
+  relacionados:
+  - MKT-12
+- id: MKT-12
+  nombre: Funnel e-commerce
+  pregunta: ¿En qué paso del recorrido perdemos compradores?
+  definicion: Tasas de paso sesiones → vista de producto → carrito → checkout → compra.
+  formula: |
+    select sum(vistas_producto)/nullif(sum(sesiones),0) s_a_producto,
+           sum(agregados_carrito)/nullif(sum(vistas_producto),0) producto_a_carrito,
+           sum(checkouts_iniciados)/nullif(sum(agregados_carrito),0) carrito_a_checkout,
+           sum(transacciones)/nullif(sum(checkouts_iniciados),0) checkout_a_compra
+    from core.fct_web_diario where fecha between :desde and :hasta;
+  cube: web.funnel_*
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - dispositivo
+  - canal_marketing
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_web_diario.sesiones
+    - fct_web_diario.vistas_producto
+    - fct_web_diario.agregados_carrito
+    - fct_web_diario.checkouts_iniciados
+    - fct_web_diario.transacciones
+    opcionales: []
+  roles_minimos:
+  - analitica_web
+  casos_borde:
+  - Eventos de e-commerce mal implementados (vistas_producto = 0) → KPI no disponible.
+  alertas:
+  - condicion: checkout_a_compra cae > 15% vs 4 semanas (posible problema de pago)
+    severidad: critica
+  relacionados:
+  - MKT-11
+  - MKT-13
+- id: MKT-13
+  nombre: Abandono de carrito
+  pregunta: ¿Cuántos carritos no terminan en compra?
+  definicion: 1 − transacciones / carritos iniciados (la analítica web); alternativa e-commerce = checkouts abandonados de la plataforma de e-commerce / checkouts
+    creados.
+  formula: abandono = 1 - sum(transacciones) / nullif(sum(agregados_carrito), 0)
+  cube: web.abandono_carrito
+  unidad: porcentaje
+  direccion: menor_mejor
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - dispositivo
+  - canal_marketing
+  filtros_base: []
+  parametros:
+    base: analitica|plataforma
+  requisitos:
+    obligatorias:
+    - fct_web_diario.agregados_carrito
+    - fct_web_diario.transacciones
+    opcionales: []
+  roles_minimos:
+  - analitica_web
+  casos_borde:
+  - La base 'plataforma' requiere que la fuente de e-commerce exponga checkouts/carritos abandonados (mapearlos a fct_web_diario.checkouts_iniciados por día).
+  alertas: []
+  relacionados:
+  - MKT-12
+- id: MKT-14
+  nombre: Venta atribuida por canal de marketing
+  pregunta: ¿Qué canales de marketing traen las ventas?
+  definicion: Venta neta y pedidos por canal_marketing según modelo de atribución.
+  formula: |
+    select a.canal_marketing, sum(p.importe_neto * a.peso), count(distinct p.pedido_id)
+    from core.fct_pedido p join core.fct_atribucion_pedido a using (tenant_id, pedido_id)
+    where pedido_valido and a.modelo = :modelo and p.fecha_pedido between :desde and :hasta group by 1;
+  cube: ventas.venta_neta (dimensión canal_marketing, modelo)
+  unidad: moneda | cantidad
+  direccion: neutral
+  agregacion: aditivo
+  grano_min: dia
+  dimensiones:
+  - canal_marketing
+  - campana
+  - fuente
+  - medio
+  filtros_base:
+  - pedido_valido
+  parametros:
+    modelo: ultimo_clic_utm|primer_contacto
+  requisitos:
+    obligatorias:
+    - fct_pedido.importe_neto
+    - fct_atribucion_pedido.canal_marketing
+    opcionales:
+    - fct_atribucion_pedido.campana_id
+    - fct_pedido.utm_source
+    - fct_pedido.utm_medium
+    - fct_pedido.utm_campaign
+  roles_minimos:
+  - ventas
+  - ventas (con UTM)
+  casos_borde:
+  - '% de venta ''sin_asignar'' > 20% → UTMs mal configuradas; el agente recomienda revisar.'
+  alertas: []
+  relacionados:
+  - MKT-07
+- id: MKT-15
+  nombre: Leads y costo por lead (CPL)
+  pregunta: ¿Cuántos leads generamos y cuánto nos cuesta cada uno?
+  definicion: Leads creados en CRM en el período (fuente de verdad); CPL = gasto de campañas objetivo leads / leads atribuidos a esas campañas (o total).
+  formula: |
+    leads = count(fct_lead where fecha_creacion in periodo)
+    cpl = Σ gasto (objetivo='leads') / nullif(count(leads con canal pago), 0)
+    cpl_plataforma = Σ gasto / Σ leads_plataforma   (por plataforma)
+  cube: leads.cantidad, leads.cpl, ads.cpl_plataforma
+  unidad: cantidad | moneda
+  direccion: menor_mejor (CPL)
+  agregacion: aditivo / ratio
+  grano_min: dia
+  dimensiones:
+  - canal_marketing
+  - campana
+  - formulario
+  - vendedor
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias: []
+    opcionales:
+    - fct_ads_diario.gasto
+    - dim_campana.objetivo
+    - fct_lead.canal_marketing
+    - fct_lead.utm_campaign
+    alternativas:
+    - nombre: crm
+      obligatorias:
+      - fct_lead.fecha_creacion
+    - nombre: analitica_web
+      obligatorias:
+      - fct_web_diario.leads_web
+    - nombre: plataforma
+      obligatorias:
+      - fct_ads_diario.leads_plataforma
+  roles_minimos:
+  - crm o analitica_web o publicidad
+  casos_borde:
+  - Leads duplicados (mismo email/teléfono en 30 días) se cuentan una vez.
+  alertas:
+  - condicion: cpl sube > 30% vs 4 semanas
+    severidad: media
+  relacionados:
+  - MKT-16
+- id: MKT-16
+  nombre: Conversión de leads (lead → calificado → cliente) y velocidad de contacto
+  pregunta: ¿Cuántos leads se convierten en clientes y qué tan rápido los atendemos?
+  definicion: '% calificados, % convertidos (cohorte por fecha de creación); mediana de minutos hasta el primer contacto.'
+  formula: |
+    pct_calificado = count(estado in (calificado, convertido)) / count(*)
+    pct_convertido = count(estado = convertido) / count(*)        -- cohorte, madurez ≥ ciclo de venta
+    tiempo_primer_contacto = median(primer_contacto_at - creado_at)
+  cube: leads.pct_calificado, leads.pct_convertido, leads.minutos_primer_contacto
+  unidad: porcentaje | minutos
+  direccion: mayor_mejor (conversión) / menor_mejor (tiempo)
+  agregacion: ratio / mediana
+  grano_min: semana
+  dimensiones:
+  - canal_marketing
+  - campana
+  - vendedor
+  - formulario
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_lead.fecha_creacion
+    - fct_lead.estado
+    opcionales:
+    - fct_lead.primer_contacto_at
+    - fct_lead.fecha_conversion
+    - fct_lead.canal_marketing
+  roles_minimos:
+  - crm
+  casos_borde:
+  - 'Cohortes recientes no maduraron: marcar.'
+  alertas:
+  - condicion: leads sin contactar > 24 h
+    severidad: alta
+  relacionados:
+  - MKT-15
+  - VEN-20
+- id: MKT-17
+  nombre: Rendimiento de email marketing
+  pregunta: ¿Funcionan nuestros emails?
+  definicion: Tasa de apertura = aperturas únicas / entregados; CTR = clics únicos / entregados; CTOR = clics / aperturas; bajas = bajas / entregados; ingresos por
+    email = ingresos atribuidos / entregados × 1000.
+  formula: |
+    select sum(aperturas_unicas)::numeric/nullif(sum(entregados),0) open_rate,
+           sum(clics_unicos)::numeric/nullif(sum(entregados),0) ctr,
+           sum(bajas)::numeric/nullif(sum(entregados),0) unsub_rate,
+           sum(ingresos_atribuidos)/nullif(sum(entregados),0)*1000 ingresos_por_mil
+    from core.fct_email_campana where fecha_envio between :desde and :hasta;
+  cube: email.open_rate, email.ctr, email.unsub_rate, email.ingresos_por_mil
+  unidad: porcentaje | moneda
+  direccion: mayor_mejor (salvo bajas)
+  agregacion: ratio
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - tipo (campana|flow)
+  - nombre
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_email_campana.entregados
+    - fct_email_campana.clics_unicos
+    opcionales:
+    - fct_email_campana.aperturas_unicas
+    - fct_email_campana.bajas
+    - fct_email_campana.ingresos_atribuidos
+  roles_minimos:
+  - email_marketing
+  casos_borde:
+  - 'Open rate inflado por protecciones de privacidad de clientes de correo: priorizar CTR y clics.'
+  alertas:
+  - condicion: unsub_rate > 0.5% o spam > 0.1% en un envío
+    severidad: alta
+  relacionados:
+  - MKT-18
+- id: MKT-18
+  nombre: Crecimiento de la base de suscriptores
+  pregunta: ¿Crece nuestra base de contactos?
+  definicion: Suscriptores activos al cierre; altas netas = altas − bajas del período; tasa de crecimiento neta.
+  formula: select (array_agg(suscriptores_activos order by fecha desc))[1] activos_cierre, sum(altas) - sum(bajas) altas_netas from core.fct_suscriptores_diario where
+    fecha between :desde and :hasta;
+  cube: email.suscriptores, email.altas_netas
+  unidad: cantidad | porcentaje
+  direccion: mayor_mejor
+  agregacion: snapshot / aditivo
+  grano_min: dia
+  dimensiones:
+  - plataforma
+  - lista
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_suscriptores_diario.suscriptores_activos
+    - fct_suscriptores_diario.altas
+    - fct_suscriptores_diario.bajas
+    opcionales: []
+  roles_minimos:
+  - email_marketing
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: altas_netas < 0 en el mes
+    severidad: media
+  relacionados:
+  - MKT-17
+- id: MKT-19
+  nombre: Distribución de inversión y eficiencia por plataforma
+  pregunta: ¿Cómo repartimos el presupuesto y dónde rinde más?
+  definicion: '% del gasto por plataforma/campaña junto a su ROAS real (MKT-07), CAC pago (MKT-08) y ROAS plataforma (MKT-06).'
+  formula: vista compuesta MKT-01 (share), MKT-06, MKT-07 (roas_real por plataforma), MKT-08 (cac_pago)
+  cube: view marketing_scorecard
+  unidad: varias
+  direccion: neutral
+  agregacion: vista
+  grano_min: semana
+  dimensiones:
+  - plataforma
+  - campana
+  - objetivo
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    opcionales:
+    - fct_ads_diario.valor_conversiones_plataforma
+    - fct_ads_diario.conversiones_plataforma
+    - fct_atribucion_pedido.canal_marketing
+    - fct_atribucion_pedido.campana_id
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - ''
+  alertas: []
+  relacionados:
+  - MKT-07
+  - MKT-08
+- id: MKT-20
+  nombre: Frecuencia y fatiga creativa
+  pregunta: ¿Estamos saturando a la audiencia con los mismos anuncios?
+  definicion: Frecuencia (impresiones / alcance) por anuncio en 7 días y tendencia de CTR/CPA del anuncio vs su primera semana.
+  formula: |
+    frecuencia_7d = impresiones_7d / alcance_7d (dato de la API a nivel anuncio)
+    fatiga = frecuencia_7d > 3 and ctr_7d < 0.7 × ctr_primera_semana
+  cube: ads.frecuencia, ads.anuncios_fatigados
+  unidad: ratio | cantidad
+  direccion: menor_mejor
+  agregacion: calculado
+  grano_min: semana
+  dimensiones:
+  - plataforma
+  - campana
+  - anuncio
+  filtros_base:
+  - plataformas sociales
+  parametros:
+    umbral_frecuencia: 3
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.impresiones
+    - fct_ads_diario.alcance
+    - fct_ads_diario.frecuencia
+    - fct_ads_diario.clics_enlace
+    opcionales: []
+  roles_minimos:
+  - publicidad
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: anuncio fatigado con gasto > 10% de su campaña
+    severidad: media
+  relacionados:
+  - MKT-03
+- id: MKT-21
+  nombre: Peso del tráfico orgánico
+  pregunta: ¿Cuánto del tráfico y la venta no depende de pagar publicidad?
+  definicion: Sesiones y venta atribuida de canales no pagos (busqueda_organica, social_organico, directo, referral, email) / total.
+  formula: |
+    pct_sesiones_organicas = Σ sesiones where not es_pago / Σ sesiones
+    pct_venta_no_paga = Σ venta atribuida canal no pago / Σ venta atribuida
+  cube: web.pct_organico, ventas.pct_venta_no_paga
+  unidad: porcentaje
+  direccion: mayor_mejor
+  agregacion: ratio
+  grano_min: semana
+  dimensiones:
+  - canal_marketing
+  filtros_base: []
+  parametros: {}
+  requisitos:
+    obligatorias: []
+    opcionales: []
+    alternativas:
+    - nombre: web
+      obligatorias:
+      - fct_web_diario.sesiones
+      - fct_web_diario.canal_marketing
+    - nombre: pedidos
+      obligatorias:
+      - fct_atribucion_pedido.canal_marketing
+  roles_minimos:
+  - analitica_web o ventas (con UTM)
+  casos_borde:
+  - ''
+  alertas:
+  - condicion: pct_venta_no_paga cae > 10 pp en el trimestre
+    severidad: media
+  relacionados:
+  - MKT-10
+  - MKT-14
+- id: MKT-22
+  nombre: Inversión en marketing sobre ventas
+  pregunta: ¿Qué porcentaje de la venta reinvertimos en marketing?
+  definicion: Inversión en marketing (ads + otros gastos de marketing de cuentas cuenta estándar 6.1.03 si incluir_otros) / venta neta.
+  formula: mkt_pct_venta = (MKT-01.inversion + otros_gastos_mkt) / nullif(VEN-01.venta_neta, 0)
+  cube: marketing.inversion_pct_venta
+  unidad: porcentaje
+  direccion: neutral (objetivo tenant)
+  agregacion: ratio
+  grano_min: mes
+  dimensiones:
+  - canal (online vs total)
+  filtros_base: []
+  parametros:
+    incluir_otros_gastos_mkt: true
+  requisitos:
+    obligatorias:
+    - fct_ads_diario.gasto
+    - fct_pedido.importe_neto
+    opcionales:
+    - fct_asiento_linea.saldo
+    - dim_cuenta_contable.codigo_estandar
+  roles_minimos:
+  - publicidad
+  - ventas
+  casos_borde:
+  - 'Evitar doble conteo: si las facturas de las plataformas publicitarias están contabilizadas en cuenta estándar 6.1.03, no sumar fct_ads_diario además.'
+  alertas:
+  - condicion: mkt_pct_venta > objetivo tenant + 3 pp
+    severidad: media
+  relacionados:
+  - MKT-07
+  - FIN-04

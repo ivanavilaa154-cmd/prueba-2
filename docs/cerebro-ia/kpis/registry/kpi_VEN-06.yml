@@ -1,0 +1,46 @@
+id: VEN-06
+nombre: Crecimiento de ventas (nominal y real)
+pregunta: ¿Crecemos? ¿Y por encima de la inflación?
+definicion: Variación % de venta neta vs período de comparación, nominal y ajustada por índice de precios.
+formula: 'var_nominal = venta(periodo) / nullif(venta(comp), 0) - 1
+
+  var_real = real_amount(venta(periodo)) / nullif(real_amount(venta(comp)), 0) - 1
+
+  -- comp: mes_anterior | mismo_periodo_anio_anterior | mismo_periodo_a_la_fecha (MTD vs MTD con igual cantidad de días hábiles)
+
+  '
+cube: ventas.venta_neta con comparación (time dimension compareDateRange)
+unidad: porcentaje
+direccion: mayor_mejor
+agregacion: calculado
+grano_min: dia
+dimensiones:
+- canal
+- sucursal
+- categoria
+- vendedor
+filtros_base:
+- pedido_valido
+parametros:
+  comparacion: mes_anterior|anio_anterior|mtd
+  ajuste: real por defecto
+requisitos:
+  obligatorias:
+  - fct_pedido.fecha_pedido
+  - fct_pedido.importe_neto
+  opcionales:
+  - ref.indice_precios.indice
+  - ref.feriado.fecha
+roles_minimos:
+- ventas
+historia_minima: ≥ 13 meses de historia para interanual
+casos_borde:
+- Comparación MTD debe igualar días hábiles transcurridos (ref.fecha.es_habil), no días calendario.
+- En contextos inflacionarios el agente debe reportar SIEMPRE la variación real junto a la nominal.
+alertas:
+- condicion: var_real interanual < -5%
+  severidad: alta
+relacionados:
+- VEN-01
+- FIN-22
+area: ventas

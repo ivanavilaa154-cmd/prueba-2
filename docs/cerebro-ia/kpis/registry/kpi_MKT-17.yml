@@ -1,0 +1,37 @@
+id: MKT-17
+nombre: Rendimiento de email marketing
+pregunta: ¿Funcionan nuestros emails?
+definicion: Tasa de apertura = aperturas únicas / entregados; CTR = clics únicos / entregados; CTOR = clics / aperturas; bajas = bajas / entregados;
+  ingresos por email = ingresos atribuidos / entregados × 1000.
+formula: "select sum(aperturas_unicas)::numeric/nullif(sum(entregados),0) open_rate,\n       sum(clics_unicos)::numeric/nullif(sum(entregados),0)\
+  \ ctr,\n       sum(bajas)::numeric/nullif(sum(entregados),0) unsub_rate,\n       sum(ingresos_atribuidos)/nullif(sum(entregados),0)*1000 ingresos_por_mil\n\
+  from core.fct_email_campana where fecha_envio between :desde and :hasta;\n"
+cube: email.open_rate, email.ctr, email.unsub_rate, email.ingresos_por_mil
+unidad: porcentaje | moneda
+direccion: mayor_mejor (salvo bajas)
+agregacion: ratio
+grano_min: dia
+dimensiones:
+- plataforma
+- tipo (campana|flow)
+- nombre
+filtros_base: []
+parametros: {}
+requisitos:
+  obligatorias:
+  - fct_email_campana.entregados
+  - fct_email_campana.clics_unicos
+  opcionales:
+  - fct_email_campana.aperturas_unicas
+  - fct_email_campana.bajas
+  - fct_email_campana.ingresos_atribuidos
+roles_minimos:
+- email_marketing
+casos_borde:
+- 'Open rate inflado por protecciones de privacidad de clientes de correo: priorizar CTR y clics.'
+alertas:
+- condicion: unsub_rate > 0.5% o spam > 0.1% en un envío
+  severidad: alta
+relacionados:
+- MKT-18
+area: marketing

@@ -1,0 +1,54 @@
+id: FIN-20
+nombre: Punto de equilibrio
+pregunta: ¿Cuánto necesitamos vender por mes para no perder plata?
+definicion: Costos fijos mensuales / margen de contribución %. Costos fijos = gastos_administracion + gastos_personal + parte fija de comercialización;
+  margen de contribución = (ventas − CMV − gastos variables) / ventas.
+formula: 'margen_contribucion_pct = (ventas_netas - cmv - gastos_variables) / ventas_netas   -- promedio 3 meses
+
+  gastos_variables = comisiones + fletes + comisiones medios de pago + IIBB (cuentas 6.1.01, 6.1.02, 6.1.04, 6.1.05)
+
+  costos_fijos = gastos_operativos - gastos_variables
+
+  punto_equilibrio = costos_fijos / nullif(margen_contribucion_pct, 0)
+
+  '
+cube: eerr.punto_equilibrio
+unidad: moneda
+direccion: menor_mejor
+agregacion: calculado
+grano_min: mes
+dimensiones: []
+filtros_base: []
+parametros:
+  ventana_meses: 3
+  cuentas_variables: configurable por tenant
+requisitos:
+  obligatorias: []
+  opcionales: []
+  alternativas:
+  - nombre: contable
+    obligatorias:
+    - fct_asiento_linea.fecha_contable
+    - fct_asiento_linea.saldo
+    - fct_asiento_linea.cuenta_id
+    - dim_cuenta_contable.codigo_estandar
+  - nombre: gestion
+    obligatorias:
+    - fct_comprobante.circuito
+    - fct_comprobante.clase
+    - fct_comprobante.fecha_emision
+    - fct_comprobante.importe_neto
+    - fct_comprobante.estado
+    - fct_comprobante.categoria_gasto
+    - fct_pedido_linea.costo_total
+roles_minimos:
+- contabilidad o facturacion+ventas
+casos_borde:
+- La clasificación fijo/variable es configurable; el agente menciona el supuesto.
+alertas:
+- condicion: ventas_netas proyectadas del mes (VEN-24) < punto_equilibrio
+  severidad: alta
+relacionados:
+- FIN-05
+- VEN-24
+area: finanzas

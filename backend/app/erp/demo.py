@@ -116,6 +116,7 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
                           fecha_vencimiento=venc.isoformat(), fecha_cobro=None if pendiente else cobro.isoformat(),
                           importe=round(total, 2), saldo=round(total, 2) if pendiente else 0.0)
     _completar(con, hoy)
+    _casos_actividades(con, hoy)
     con.commit()
     con.close()
     return ruta
@@ -249,6 +250,72 @@ def _completar(con, hoy: date) -> None:
               cuota_importe=57_600, saldo=780_000, proximo_vencimiento=(hoy + timedelta(days=12)).isoformat())
     for d in range(30):
         _insertar(con, "tipos_cambio", fecha=dia(d), moneda="USD", cotizacion=round(40 + rnd.uniform(-0.6, 0.6), 2))
+
+
+def _casos_actividades(con, hoy: date) -> None:
+    """Situaciones para que cada actividad (config/actividades.yml) tenga algo que detectar en la demo."""
+    q = lambda sql, *a: con.execute(sql, a).fetchall()  # noqa: E731
+    dia = lambda n: (hoy - timedelta(days=n)).isoformat()  # noqa: E731
+
+    # Perecederos con vida útil y un proveedor con días de pedido
+    for prod, vida in ((1, 10), (2, 25), (3, 60)):
+        con.execute("UPDATE productos SET vida_util_dias = ? WHERE id = ?", (vida, prod))
+    con.execute("UPDATE productos SET fecha_alta = ?", (dia(400),))
+    con.execute("UPDATE proveedores SET dias_pedido = 'lunes' WHERE id = 3")
+
+    # ACT-01 quiebre oculto: el refresco se vende todos los días en Centro y hace 3 días que no se vende, con stock
+    for (fecha,) in q("SELECT DISTINCT fecha FROM ventas WHERE sucursal_id = 1 AND anulada = 0 AND fecha >= ? AND fecha < ?", dia(45), dia(3)):
+        tiene = q("SELECT 1 FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id WHERE v.sucursal_id = 1 AND v.fecha = ? "
+                  "AND l.producto_id = 10", fecha)
+        if not tiene:
+            vid = q("SELECT MIN(id) FROM ventas WHERE sucursal_id = 1 AND anulada = 0 AND fecha = ?", fecha)[0][0]
+            _insertar(con, "ventas_lineas", venta_id=vid, producto_id=10, cantidad=8, precio_unitario=89.0, costo_unitario=70.0,
+                      impuestos=round(8 * 89.0 * 0.22, 2))
+    con.execute("DELETE FROM ventas_lineas WHERE producto_id = 10 AND venta_id IN (SELECT id FROM ventas WHERE sucursal_id = 1 AND fecha >= ?)",
+                (dia(3),))
+    con.execute("UPDATE stock SET cantidad = 48 WHERE producto_id = 10 AND sucursal_id = 1")
+    # ... y un conteo de hace 2 días con mucho menos de lo que dice el sistema (stock fantasma)
+    con.execute("UPDATE stock SET cantidad = 60 WHERE producto_id = 4 AND sucursal_id = 2")
+    _insertar(con, "conteos", id=1000, fecha=dia(2), producto_id=4, sucursal_id=2, cantidad_sistema=60, cantidad_contada=18, usuario="Depósito")
+
+    # ACT-03: un producto que nunca se vendió y la cerveza que no se vende en Norte pero falta en Centro
+    _insertar(con, "productos", id=16, codigo="P016", descripcion="Jabón de tocador x3", categoria="Limpieza", proveedor_id=5, costo=64,
+              precio=92, unidades_bulto=12, perecedero=0, unidad="u", tasa_iva=0.22, estado="activo", fecha_alta=dia(400))
+    _insertar(con, "stock", producto_id=16, sucursal_id=2, cantidad=90)
+    con.execute("DELETE FROM ventas_lineas WHERE producto_id = 12 AND venta_id IN (SELECT id FROM ventas WHERE sucursal_id = 2 AND fecha >= ?)",
+                (dia(40),))
+    con.execute("UPDATE stock SET cantidad = 60 WHERE producto_id = 12 AND sucursal_id = 2")
+    con.execute("UPDATE stock SET cantidad = 20 WHERE producto_id = 12 AND sucursal_id = 1")
+
+    # ACT-04: lista nueva del proveedor de bebidas (+8 %), un precio por debajo del costo y dos listas de precios muy distintas
+    for prod in (10, 11, 12):
+        ultimo = q("SELECT costo FROM costos_historial WHERE producto_id = ? ORDER BY fecha DESC LIMIT 1", prod)[0][0]
+        _insertar(con, "costos_historial", producto_id=prod, fecha=dia(4), costo=round(ultimo * (1.07 + 0.01 * (prod - 10)), 2))
+    con.execute("UPDATE productos SET precio = 25 WHERE id = 14")
+    _insertar(con, "listas_precios", id=1, nombre="Mayorista", moneda="UYU")
+    _insertar(con, "listas_precios", id=2, nombre="Minorista", moneda="UYU")
+    for prod, precio in q("SELECT id, precio FROM productos WHERE id <= 15"):
+        _insertar(con, "precios", lista_precios_id=1, producto_id=prod, precio=precio, desde=dia(200))
+        _insertar(con, "precios", lista_precios_id=2, producto_id=prod, precio=round(precio * (1.45 if prod == 8 else 1.15), 2), desde=dia(200))
+
+    # ACT-05: una promoción que rindió, una que no movió la venta y una en curso que no despega
+    _insertar(con, "promociones", id=1, nombre="Detergente 10 % off", producto_id=13, desde=dia(30), hasta=dia(18), tipo="descuento",
+              descuento_pct=10)
+    con.execute("UPDATE ventas_lineas SET cantidad = cantidad * 3, en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.9, 2) "
+                "WHERE producto_id = 13 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ? AND fecha <= ?)", (dia(30), dia(18)))
+    _insertar(con, "promociones", id=2, nombre="Fideos 30 % off", producto_id=6, desde=dia(35), hasta=dia(22), tipo="descuento",
+              descuento_pct=30)
+    con.execute("UPDATE ventas_lineas SET en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.7, 2) "
+                "WHERE producto_id = 6 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ? AND fecha <= ?)", (dia(35), dia(22)))
+    _insertar(con, "promociones", id=3, nombre="Salsa de tomate precio especial", producto_id=7, desde=dia(5), hasta=dia(-9),
+              tipo="precio_especial", precio_promocional=36)
+    con.execute("UPDATE ventas_lineas SET cantidad = MAX(1, ROUND(cantidad * 0.6)), en_promocion = 1, precio_unitario = 36 "
+                "WHERE producto_id = 7 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ?)", (dia(5),))
+
+    # ACT-06: un lote de leche en Norte que no llega a venderse a precio normal y queso sin fecha de vencimiento
+    con.execute("UPDATE stock SET cantidad = 150, lote = 'L0102N', fecha_vencimiento = ? WHERE producto_id = 1 AND sucursal_id = 2",
+                ((hoy + timedelta(days=9)).isoformat(),))
+    _insertar(con, "stock", producto_id=3, sucursal_id=2, lote=None, fecha_vencimiento=None, cantidad=8)
 
 
 if __name__ == "__main__":

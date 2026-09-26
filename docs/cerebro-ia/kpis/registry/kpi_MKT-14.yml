@@ -1,0 +1,43 @@
+id: MKT-14
+nombre: Venta atribuida por canal de marketing
+pregunta: ¿Qué canales de marketing traen las ventas?
+definicion: Venta neta y pedidos por canal_marketing según modelo de atribución.
+formula: 'select a.canal_marketing, sum(p.importe_neto * a.peso), count(distinct p.pedido_id)
+
+  from core.fct_pedido p join core.fct_atribucion_pedido a using (tenant_id, pedido_id)
+
+  where pedido_valido and a.modelo = :modelo and p.fecha_pedido between :desde and :hasta group by 1;
+
+  '
+cube: ventas.venta_neta (dimensión canal_marketing, modelo)
+unidad: moneda | cantidad
+direccion: neutral
+agregacion: aditivo
+grano_min: dia
+dimensiones:
+- canal_marketing
+- campana
+- fuente
+- medio
+filtros_base:
+- pedido_valido
+parametros:
+  modelo: ultimo_clic_utm|primer_contacto
+requisitos:
+  obligatorias:
+  - fct_pedido.importe_neto
+  - fct_atribucion_pedido.canal_marketing
+  opcionales:
+  - fct_atribucion_pedido.campana_id
+  - fct_pedido.utm_source
+  - fct_pedido.utm_medium
+  - fct_pedido.utm_campaign
+roles_minimos:
+- ventas
+- ventas (con UTM)
+casos_borde:
+- '% de venta ''sin_asignar'' > 20% → UTMs mal configuradas; el agente recomienda revisar.'
+alertas: []
+relacionados:
+- MKT-07
+area: marketing
