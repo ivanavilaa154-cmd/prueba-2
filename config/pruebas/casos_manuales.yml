@@ -1,0 +1,104 @@
+# Pruebas guiadas manuales del Centro de pruebas. Lenguaje simple: las ejecuta un tester sin conocimientos técnicos.
+# rol: con qué usuario se hace la prueba (se elige en "Ver como usuario" o en el selector "Ver como").
+casos:
+  - codigo: MAN-01
+    titulo: Cada pantalla carga en la computadora
+    pantalla: Todas
+    rol: dueño
+    pasos:
+      - Abrí la plataforma en la computadora.
+      - "Recorré una por una las pestañas: Tablero, Actividades, Gestión, Integraciones, Consultas y permisos, Chat y Centro de Decisiones."
+      - En el Tablero, cambiá el mes y tocá Ventas, Inventario y Finanzas.
+    esperado: Todas las pestañas muestran datos o un aviso claro de qué falta. No aparece ningún "Error" ni pantallas en blanco.
+  - codigo: MAN-02
+    titulo: Cada pantalla carga en el celular
+    pantalla: Todas
+    rol: dueño
+    pasos:
+      - Abrí el mismo link en el celular.
+      - Recorré todas las pestañas y hacé scroll hasta abajo en cada una.
+    esperado: Todo se lee sin hacer zoom y no hay que mover la pantalla de costado. Los botones se pueden tocar.
+  - codigo: MAN-03
+    titulo: Un usuario de sucursal o un vendedor no ve lo de otro
+    pantalla: Tablero y Actividades
+    rol: vendedor
+    pasos:
+      - En "Ver como usuario" elegí a un vendedor (por ejemplo Laura).
+      - Mirá el Tablero, las Actividades y Gestión.
+      - Anotá los clientes que aparecen y compará con otro vendedor.
+    esperado: Cada vendedor ve solo sus clientes, sus tareas y sus objetivos. No aparece nada de otro vendedor ni de otra sucursal.
+  - codigo: MAN-04
+    titulo: Quiebre oculto tiene sentido con datos reales
+    pantalla: Actividades
+    rol: dueño
+    pasos:
+      - En Actividades, filtrá por "Quiebre oculto".
+      - Elegí una tarea y fijate el producto, la sucursal y la evidencia.
+      - Verificá en el sistema o en el local si el producto tiene stock y no se está vendiendo.
+    esperado: La tarea describe una situación real y las acciones son razonables. Si no hay tareas, que no haya productos en esa situación.
+  - codigo: MAN-05
+    titulo: Pedido sugerido tiene sentido con datos reales
+    pantalla: Actividades
+    rol: compras
+    pasos:
+      - Filtrá por "Pedido sugerido" y abrí el detalle de un proveedor.
+      - Descargá el CSV y revisá las cantidades con quien compra.
+    esperado: Las cantidades y los productos son razonables para ese proveedor (múltiplos del bulto, sin pedir lo que sobra).
+  - codigo: MAN-06
+    titulo: Rotación, remarcación, promociones y vencimientos tienen sentido
+    pantalla: Actividades
+    rol: dueño
+    pasos:
+      - Revisá una tarea de cada una de estas actividades.
+      - Compará la evidencia (stock, precios, fechas) con lo que dice el sistema.
+    esperado: Cada tarea corresponde a una situación real y las acciones propuestas se pueden hacer.
+  - codigo: MAN-07
+    titulo: Casos trabados de un proceso tienen sentido
+    pantalla: Gestión → Procesos
+    rol: administración
+    pasos:
+      - En Gestión → Procesos, abrí "Casos trabados" de Cobranza.
+      - Elegí una factura y confirmá en el sistema que está vencida y sin cobrar.
+      - Registrá la gestión de cobranza con el botón.
+    esperado: La factura está realmente vencida. Después de registrar la gestión, el paso aparece como hecho.
+  - codigo: MAN-08
+    titulo: Un objetivo cambia de estado y genera su tarea
+    pantalla: Gestión → Objetivos
+    rol: dueño
+    pasos:
+      - En Gestión → Configurar objetivo, creá un objetivo de venta con una meta muy alta (escribí la justificación).
+      - Esperá hasta 15 minutos o tocá "Revisar ahora" en Actividades.
+    esperado: El objetivo aparece en rojo o amarillo y en Actividades hay una tarea "Fuera de camino" o "En riesgo" con las acciones de la plantilla.
+  - codigo: MAN-09
+    titulo: El botón "¿Por qué difiere?" explica la diferencia
+    pantalla: Centro de pruebas → Cuadratura
+    rol: tester
+    pasos:
+      - Con Odoo como fuente, en Cuadratura elegí un mes y tocá "¿Por qué difiere?".
+      - Tomá uno de los pedidos de la lista y buscalo en Odoo.
+    esperado: La lista explica la diferencia pedido por pedido (falta, sobra o importe distinto) con una causa que se confirma mirando Odoo.
+  - codigo: MAN-10
+    titulo: El agente responde con números y cita período y fuente
+    pantalla: Chat
+    rol: dueño
+    pasos:
+      - "En el Chat preguntá: ¿Cuánto vendimos el mes pasado y cuál fue el margen?"
+      - "Preguntá también: ¿Qué clientes tienen deuda vencida?"
+    esperado: Las respuestas tienen números, dicen de qué período son y de qué fuente salen, y coinciden con el Tablero.
+  - codigo: MAN-11
+    titulo: El total de ventas coincide con Odoo
+    pantalla: Tablero → Ventas
+    rol: dueño
+    pasos:
+      - En el Tablero elegí el mes pasado.
+      - Compará "Total con impuestos" con la columna Total del reporte Análisis de ventas de Odoo (filtro Órdenes de venta).
+    esperado: Los dos números son iguales (o el panel "Control contra Odoo" explica la diferencia).
+  - codigo: MAN-12
+    titulo: El modo "ver como" es solo lectura
+    pantalla: Centro de pruebas → Ver como usuario
+    rol: tester
+    pasos:
+      - Activá "Ver como" con un vendedor.
+      - Intentá cerrar una tarea en Actividades.
+      - Salí del modo con el botón del banner.
+    esperado: Mientras está activo se ve el banner y no deja cambiar nada. Al salir, el banner desaparece.

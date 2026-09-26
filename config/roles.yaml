@@ -41,8 +41,17 @@ roles:
     tablas: [sucursales, clientes, proveedores, ventas, cxc, cobranzas, cheques, cxp, pagos, cuentas_bancarias,
              movimientos_bancarios, gastos, impuestos, prestamos, tipos_cambio, presupuesto]
 
-# Usuarios de demostración.
+  operador:
+    descripcion: Opera la plataforma para el cliente. Entra al Centro de pruebas; ve todos los datos (solo lectura).
+    tablas: "*"
+  tester:
+    descripcion: Verifica que la plataforma funcione para el cliente. Entra al Centro de pruebas; ve todos los datos (solo lectura).
+    tablas: "*"
+
+# Usuarios de demostración. Operador y tester entran al Centro de pruebas con su clave (CLAVE_U4, CLAVE_U5 en backend/.env).
 usuarios:
   u1: {nombre: Iván, rol: dueno}
   u2: {nombre: Laura, rol: vendedor, vendedor_id: 1}
   u3: {nombre: Martín, rol: compras}
+  u4: {nombre: Ana, rol: operador}
+  u5: {nombre: Tomás, rol: tester}

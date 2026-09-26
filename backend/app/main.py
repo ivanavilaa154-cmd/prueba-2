@@ -27,6 +27,9 @@ from .erp import conector, fuente, importar
 from .gestion import objetivos as gestion_objetivos
 from .gestion import procesos as gestion_procesos
 from .gestion import servicio as gestion
+from .pruebas import cuadratura as pruebas_cuadratura
+from .pruebas import rutas as pruebas_rutas
+from .pruebas import sesion as pruebas_sesion
 from .integraciones import gestor, odoo
 from .permisos import AccesoDenegado, Usuario, obtener_usuario, preparar_consulta
 
@@ -46,6 +49,10 @@ def _revisar_actividades() -> None:
 def _usar_odoo(entrada: dict) -> None:
     if entrada["ok"]:
         fuente.usar("odoo")
+        try:
+            pruebas_cuadratura.registrar_control(entrada)   # verificación del día contra el reporte de Odoo
+        except Exception:
+            pass
         _revisar_actividades()
 
 @asynccontextmanager
@@ -73,7 +80,23 @@ async def _ciclo_de_vida(_app):
 
 
 app = FastAPI(title="Plataforma IA para ERP", version="0.1.0", lifespan=_ciclo_de_vida)
+
+
+@app.middleware("http")
+async def _solo_lectura_en_ver_como(request, call_next):
+    """En modo «ver como usuario» (Centro de pruebas) no se puede cambiar nada, salvo salir del modo."""
+    permitidas = ("/pruebas/api/ver-como/salir", "/pruebas/salir", "/login", "/salir")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not request.url.path.startswith(permitidas) \
+            and pruebas_sesion.ver_como_activo(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Estás en modo «ver como usuario»: es solo lectura. Salí del modo para hacer cambios."},
+                            status_code=403)
+    return await call_next(request)
+
+
 acceso.registrar(app)
+app.include_router(pruebas_rutas.router)
+app.include_router(pruebas_rutas.api)
 
 
 class PreguntaChat(BaseModel):
@@ -233,7 +256,8 @@ def kpis_catalogo():
 @app.get("/usuarios")
 def usuarios():
     """Usuarios de demo y, si la fuente tiene vendedores, uno por vendedor para probar carteras."""
-    lista = [{"id": uid, "nombre": d["nombre"], "rol": d["rol"]} for uid, d in config.roles()["usuarios"].items()]
+    lista = [{"id": uid, "nombre": d["nombre"], "rol": d["rol"]} for uid, d in config.roles()["usuarios"].items()
+             if d["rol"] not in ("operador", "tester")]   # esos entran con su clave al Centro de pruebas
     try:
         vendedores = conector.consultar("SELECT id, nombre FROM vendedores ORDER BY nombre", max_filas=500)
         lista += [{"id": f"vendedor:{int(v[0])}", "nombre": v[1] or f"Vendedor {v[0]}", "rol": "vendedor"}

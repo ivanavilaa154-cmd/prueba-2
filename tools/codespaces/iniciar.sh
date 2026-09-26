@@ -19,6 +19,8 @@ fi
 pkill -f "uvicorn app.main:app" 2>/dev/null && sleep 1 || true
 python -m pip install -q -r requirements.txt >/dev/null 2>&1 || true
 [ -f .env ] || cp .env.example .env
+# Claves del Centro de pruebas: si el .env es de una versión anterior, se agregan las de ejemplo.
+grep -q "^CLAVE_U5=" .env || printf "\n# Claves del Centro de pruebas (cambialas antes de publicar)\nCLAVE_U4=operador-demo\nCLAVE_U5=tester-demo\n" >> .env
 # La demo es de ejemplo: se regenera siempre, así tiene todas las tablas de la versión actual.
 python -m app.erp.demo >/dev/null
 echo "Abriendo la plataforma… si no se abre sola, andá a la pestaña PORTS y abrí el puerto 8000."

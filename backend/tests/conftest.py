@@ -24,8 +24,11 @@ def base_demo_config(base_demo, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def bases_propias_aisladas(tmp_path, monkeypatch):
-    """Las tareas y la gestión de las pruebas nunca tocan backend/actividades.db ni backend/gestion.db."""
+    """Las pruebas nunca tocan backend/actividades.db, backend/gestion.db ni backend/ops.db."""
     from app.actividades import motor
     from app.gestion import almacen
+    from app.pruebas import almacen as ops
     monkeypatch.setattr(motor, "RUTA", tmp_path / "actividades.db")
     monkeypatch.setattr(almacen, "RUTA", tmp_path / "gestion.db")
+    monkeypatch.setattr(ops, "RUTA", tmp_path / "ops.db")
+    monkeypatch.setattr(ops, "EVIDENCIAS", tmp_path / "evidencias")

@@ -8,3 +8,5 @@ node_modules/
 preview.html
 backend/integraciones_estado.json
 !backend/.env.example
+backend/evidencias/
+backend/.secreto_sesiones

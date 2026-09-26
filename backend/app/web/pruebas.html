@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centro de pruebas</title>
+<style>
+:root {
+  --fondo: #f6f7f9; --panel: #ffffff; --texto: #1c2430; --suave: #5b6675; --borde: #dde2e8;
+  --acento: #1f6feb; --acento-texto: #ffffff; --ok: #1a7f37; --ok-fondo: #e6f4ea;
+  --alerta: #9a6700; --alerta-fondo: #fff4d6; --error: #c62828; --error-fondo: #fdecec; --codigo: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --fondo: #0f141a; --panel: #171d25; --texto: #e4e9ef; --suave: #98a4b3; --borde: #2a333e;
+    --acento: #4c8dff; --ok: #56c271; --ok-fondo: #13291b; --alerta: #e0b44c; --alerta-fondo: #2c2412;
+    --error: #ff7b72; --error-fondo: #2d1517; --codigo: #1f2730; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { background: var(--panel); border-bottom: 1px solid var(--borde); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px;
+  align-items: center; justify-content: space-between; }
+header h1 { font-size: 17px; margin: 0; } header .sub { color: var(--suave); font-size: 13px; }
+header a { color: var(--acento); }
+nav { display: flex; gap: 4px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--borde); overflow-x: auto; }
+nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; color: var(--suave); font: inherit; cursor: pointer; white-space: nowrap; }
+nav button.activa { color: var(--texto); border-bottom-color: var(--acento); font-weight: 600; }
+main { max-width: 1150px; margin: 0 auto; padding: 16px; }
+section { display: none; } section.activa { display: block; }
+.tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 16px; margin-bottom: 14px; min-width: 0; }
+.tarjeta h2 { font-size: 16px; margin: 0 0 6px; } .tarjeta h3 { font-size: 15px; margin: 14px 0 6px; }
+.nota { color: var(--suave); font-size: 13px; margin: 4px 0; }
+button.primario, button.sec { font: inherit; border-radius: 7px; padding: 7px 14px; cursor: pointer; }
+button.primario { background: var(--acento); color: var(--acento-texto); border: 1px solid var(--acento); }
+button.sec { background: var(--panel); color: var(--texto); border: 1px solid var(--borde); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+select, input, textarea { font: inherit; color: var(--texto); background: var(--panel); border: 1px solid var(--borde); border-radius: 7px; padding: 6px 8px; max-width: 100%; }
+textarea { width: 100%; }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.aviso { border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 14px; }
+.aviso.ok { background: var(--ok-fondo); color: var(--ok); } .aviso.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.aviso.error { background: var(--error-fondo); color: var(--error); }
+.tabla-scroll { overflow-x: auto; max-height: 460px; border: 1px solid var(--borde); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 9px; border-bottom: 1px solid var(--borde); text-align: left; vertical-align: top; }
+th { position: sticky; top: 0; background: var(--codigo); white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+pre { background: var(--codigo); padding: 8px; border-radius: 7px; white-space: pre-wrap; word-break: break-word; font-size: 12px; margin: 4px 0; max-height: 240px; overflow: auto; }
+.semaforo { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.luz { width: 22px; height: 22px; border-radius: 50%; flex: none; }
+.luz.verde { background: var(--ok); } .luz.amarillo { background: var(--alerta); } .luz.rojo { background: var(--error); }
+.grande { font-size: 20px; font-weight: 700; }
+.chip { display: inline-block; font-size: 12px; border-radius: 999px; padding: 1px 9px; background: var(--codigo); color: var(--suave); white-space: nowrap; }
+.chip.ok { background: var(--ok-fondo); color: var(--ok); } .chip.alerta { background: var(--alerta-fondo); color: var(--alerta); }
+.chip.error { background: var(--error-fondo); color: var(--error); }
+.historial { display: flex; flex-wrap: wrap; gap: 3px; margin: 6px 0; }
+.historial span { width: 14px; height: 22px; border-radius: 3px; background: var(--ok); }
+.historial span.no { background: var(--error); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+.caso { border: 1px solid var(--borde); border-radius: 9px; padding: 12px; margin-bottom: 10px; }
+.caso ol { margin: 6px 0; padding-left: 20px; }
+details summary { cursor: pointer; color: var(--acento); font-size: 13.5px; }
+a.accion { color: var(--acento); cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Centro de pruebas</h1><div class="sub" id="quien">…</div></div>
+  <div class="fila"><a href="/">Ir a la plataforma</a> · <a href="/pruebas/salir">Salir</a></div>
+</header>
+<nav>
+  <button data-p="estado" class="activa">1. Estado general</button><button data-p="cuadratura">2. Cuadratura</button>
+  <button data-p="integridad">3. Integridad de datos</button><button data-p="muestra">4. Verificación por muestra</button>
+  <button data-p="automaticas">5. Pruebas automáticas</button><button data-p="manuales">6. Pruebas guiadas</button>
+  <button data-p="vercomo">7. Ver como usuario</button><button data-p="incidencias">8. Incidencias</button>
+  <button data-p="revision">9. Revisión independiente</button><button data-p="auditoria">Auditoría</button>
+</nav>
+<main>
+<section id="estado" class="activa"></section>
+<section id="cuadratura"></section>
+<section id="integridad"></section>
+<section id="muestra"></section>
+<section id="automaticas"></section>
+<section id="manuales"></section>
+<section id="vercomo"></section>
+<section id="incidencias"></section>
+<section id="revision"></section>
+<section id="auditoria"></section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const MONEDA = new Intl.NumberFormat("es-UY", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const plata = v => v === null || v === undefined ? "—" : "$ " + MONEDA.format(v);
+const aviso = (t, x) => `<div class="aviso ${t}">${esc(x)}</div>`;
+const fecha = f => f ? f.replace("T", " ").slice(0, 16) : "—";
+async function api(ruta, op = {}) {
+  const r = await fetch("/pruebas/api" + ruta, op);
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.detail ? (typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail)) : `Error ${r.status}`);
+  return d;
+}
+const post = (ruta, cuerpo) => api(ruta, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(cuerpo || {})});
+function tabla(cols, filas, num = []) {
+  if (!filas.length) return `<p class="nota">Sin filas.</p>`;
+  return `<div class="tabla-scroll"><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${filas.map(f =>
+    `<tr>${f.map((v, i) => `<td class="${num.includes(i) ? "num" : ""}">${v}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+const CARGA = {};
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, section").forEach(e => e.classList.remove("activa"));
+  b.classList.add("activa"); $("#" + b.dataset.p).classList.add("activa"); CARGA[b.dataset.p]();
+});
+function ir(p) { document.querySelector(`nav button[data-p="${p}"]`).click(); }
+
+// 1. Estado general
+CARGA.estado = async () => {
+  const s = $("#estado");
+  try {
+    const e = await api("/estado");
+    const texto = e.listo ? "LISTO PARA PRODUCCIÓN" : "TODAVÍA NO ESTÁ LISTO PARA PRODUCCIÓN";
+    s.innerHTML = `<div class="tarjeta"><div class="semaforo"><span class="luz ${e.color}" aria-hidden="true"></span>
+      <span class="grande">${texto}</span><span class="chip">fuente: ${esc(e.fuente)}</span><span class="chip">${e.incidencias_abiertas} incidencias abiertas</span></div>
+      <p class="nota">Verde: se cumplen todos los criterios. Cada criterio dice qué falta y a qué pantalla ir.</p>
+      ${tabla(["Criterio", "Estado", "Valor", "Qué falta", ""], e.criterios.map(c => [esc(c.criterio),
+        c.ok ? `<span class="chip ok">✓ Cumple</span>` : `<span class="chip error">✗ Falta</span>`, esc(c.valor), esc(c.falta || "—"),
+        c.ok ? "" : `<a class="accion" onclick="ir('${c.pantalla}')">Ir →</a>`]))}</div>`;
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+// 2. Cuadratura
+let metricaCuad = "ventas";
+CARGA.cuadratura = async () => {
+  const s = $("#cuadratura");
+  try {
+    const f = await api("/cuadratura?metrica=" + metricaCuad);
+    const sel = f.sello;
+    const clase = sel.sello === "cuadrado" ? "ok" : sel.sello === "en_revision" ? "alerta" : "";
+    const hace = sel.verificado_at ? ` (${fecha(sel.verificado_at)})` : "";
+    const meses = [...new Set(f.evidencia.map(e => e.periodo))];
+    s.innerHTML = `<div class="tarjeta"><div class="fila"><label>Métrica <select id="c-metrica">${f.metricas.map(m => `<option value="${m.id}" ${m.id === metricaCuad ? "selected" : ""}>${esc(m.nombre)}</option>`).join("")}</select></label>
+        <span class="chip ${clase}" style="font-size:14px">${esc(sel.texto)}${esc(hace)}</span>
+        <button class="sec" id="c-descubrir">Reejecutar descubrimiento</button><button class="sec" id="c-verificar">Reejecutar verificación</button></div>
+      ${sel.motivo ? `<p class="nota">${esc(sel.motivo)}</p>` : ""}<div id="c-msj"></div>
+      <h3>Definición usada ${f.descubrimiento === "pendiente" ? `<span class="chip alerta">descubrimiento automático pendiente (docs/16)</span>` : ""}</h3>
+      <p>${esc(f.definicion || "Esta métrica todavía no tiene referencia del sistema de origen.")}</p>
+      ${f.definiciones_registradas.length ? `<details><summary>Definiciones registradas en la ficha (${f.definiciones_registradas.length})</summary><ul>${f.definiciones_registradas.map(d => `<li>${esc(d.descripcion)} · ${esc(d.registrada_por)} ${fecha(d.registrada_at)}</li>`).join("")}</ul></details>` : ""}
+      <h3>Historial de días verificados</h3>
+      ${f.historial.length ? `<div class="historial">${f.historial.map(d => `<span class="${d.cuadra ? "" : "no"}" title="${esc(d.verificado_el)}: ${d.cuadra ? "cuadró" : "con diferencias"}"></span>`).join("")}</div>
+        <p class="nota">Verde: cuadró ese día · Rojo: hubo diferencias. Marcha blanca: ${f.marcha_blanca.dias_en_paralelo} días en paralelo, ${f.marcha_blanca.racha_sin_diferencias} seguidos sin diferencias.</p>` : `<p class="nota">Todavía no hay verificaciones: se registran en cada sincronización con Odoo.</p>`}
+      <h3>Evidencia de la última verificación${f.verificado_el ? " (" + esc(f.verificado_el) + ")" : ""}</h3>
+      ${tabla(["Mes", "Equipo", "Odoo", "Plataforma", "Diferencia", "Líneas Odoo / plataforma", ""], f.evidencia.map(e => [esc(e.periodo), esc(e.grupo), plata(e.origen), plata(e.plataforma),
+        plata(e.diferencia), `${e.origen_lineas ?? "—"} / ${e.plataforma_lineas ?? "—"}`, e.cuadra ? `<span class="chip ok">✓</span>` : `<span class="chip error">✗</span>`]), [2, 3, 4])}
+      <h3>¿Por qué difiere? Puente de conciliación y diferencias registro por registro</h3>
+      <div class="fila"><label>Mes <select id="c-mes">${(meses.length ? meses : [new Date().toISOString().slice(0, 7)]).map(m => `<option>${m}</option>`).join("")}</select></label>
+        <button class="primario" id="c-difiere">¿Por qué difiere?</button></div>
+      <div id="c-dif"></div></div>`;
+    $("#c-metrica").onchange = e => { metricaCuad = e.target.value; CARGA.cuadratura(); };
+    $("#c-descubrir").onclick = async () => { const r = await post("/cuadratura/descubrir?metrica=" + metricaCuad); $("#c-msj").innerHTML = aviso("alerta", r.mensaje); };
+    $("#c-verificar").onclick = async () => { try { const r = await post("/cuadratura/verificar"); $("#c-msj").innerHTML = aviso("ok", r.mensaje); } catch (e) { $("#c-msj").innerHTML = aviso("error", e.message); } };
+    $("#c-difiere").onclick = porQueDifiere;
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+async function porQueDifiere() {
+  const d = $("#c-dif"); d.innerHTML = aviso("alerta", "Comparando pedido por pedido con Odoo…");
+  try {
+    const r = await api("/cuadratura/diferencias?mes=" + $("#c-mes").value);
+    const TIPO = {falta: "Falta en la plataforma", sobra: "Sobra en la plataforma", importe_distinto: "Importe distinto"};
+    d.innerHTML = `<p class="nota">Hora de ${esc(r.zona)} · última sincronización ${fecha(r.sincronizado)}. Importes sin impuestos.</p>
+      ${tabla(["Paso", "Importe", "Registros"], r.puente.map(p => [esc(p.paso), plata(p.importe), p.registros]), [1, 2])}
+      <p class="nota">${Math.abs(r.sin_explicar) < 0.01 ? "Toda la diferencia queda explicada por los registros de abajo." : "Sin explicar: " + plata(r.sin_explicar)}</p>
+      <h3>${r.total_diferencias} registros con diferencia</h3>
+      ${tabla(["Tipo", "ID", "Número", "Fecha", "Odoo", "Plataforma", "Causa probable", ""], r.diferencias.map((x, i) => [esc(TIPO[x.tipo]), x.id, esc(x.numero), esc(x.fecha),
+        plata(x.origen), plata(x.plataforma), esc(x.causa), `<a class="accion" data-inc="${i}">Crear incidencia</a>`]), [4, 5])}`;
+    d.querySelectorAll("[data-inc]").forEach(a => a.onclick = async () => {
+      const x = r.diferencias[+a.dataset.inc];
+      try { const i = await post("/incidencias", {origen: "automatico", titulo: `Ventas ${r.mes}: ${TIPO[x.tipo]} · ${x.numero || x.id}`, tipo: "datos", metrica: "ventas",
+        registro_clave: String(x.id), fecha_dato: x.fecha, descripcion: x.causa, evidencia: x}); a.textContent = `Incidencia #${i.id}`; }
+      catch (e) { a.textContent = e.message; }
+    });
+  } catch (err) { d.innerHTML = aviso("error", err.message); }
+}
+
+// 3. Integridad
+CARGA.integridad = async () => {
+  const s = $("#integridad");
+  try {
+    const d = await api("/integridad");
+    const rec = d.reconciliacion;
+    const ctl = (d.cobertura.controles || []);
+    s.innerHTML = `<div class="tarjeta"><h2>Fuente: ${esc(d.fuente)}</h2>
+      ${d.sincronizacion ? `<p>Última sincronización correcta: <b>${fecha(d.sincronizacion.fecha)}</b> (${d.sincronizacion.segundos ?? "—"} s).</p>` : `<p class="nota">La fuente activa no se sincroniza (demo o archivos).</p>`}
+      <h3>Registros por tabla</h3>
+      ${tabla(["Tabla", "En la plataforma", "Leídos del origen"], Object.entries(d.resumen.tablas || {}).map(([t, n]) => [esc(t), n ?? "no existe", d.sincronizacion && d.sincronizacion.conteos ? (d.sincronizacion.conteos[t] ?? "—") : "—"]), [1, 2])}
+      <p class="nota">${esc(d.pendiente)}</p>
+      <h3>Reconciliación de IDs con el origen (ventas, 90 días)</h3>
+      <div class="fila"><button class="primario" id="i-rec">Reconciliar ahora</button><span id="i-msj"></span></div>
+      ${rec ? `<p>Última: ${fecha(rec.ejecutado_at)} · en Odoo ${rec.en_origen} · en la plataforma ${rec.en_plataforma}</p>
+        ${tabla(["Resultado", "Cantidad", "IDs"], [["Faltan en la plataforma", rec.faltantes.length, esc(rec.faltantes.slice(0, 30).join(", ") || "—")],
+          ["Borrados en el origen", rec.borrados.length, esc(rec.borrados.slice(0, 30).join(", ") || "—")],
+          ["Duplicados (mismo número)", rec.duplicados.length, esc(rec.duplicados.slice(0, 30).join(", ") || "—")]], [1])}` : `<p class="nota">Todavía no se ejecutó.</p>`}
+      <h3>Controles de calidad abiertos</h3>
+      ${ctl.length ? ctl.map(c => aviso(c.nivel === "error" ? "error" : "alerta", c.texto)).join("") : aviso("ok", "Sin controles abiertos.")}
+      <h3>Valores sin mapear y avisos de la última lectura</h3>
+      ${d.sincronizacion && d.sincronizacion.avisos && d.sincronizacion.avisos.length ? `<ul>${d.sincronizacion.avisos.map(a => `<li>${esc(typeof a === "string" ? a : JSON.stringify(a))}</li>`).join("")}</ul>` : `<p class="nota">Sin avisos.</p>`}</div>`;
+    $("#i-rec").onclick = async () => { $("#i-msj").textContent = "Comparando con Odoo…"; try { await post("/integridad/reconciliar"); CARGA.integridad(); } catch (e) { $("#i-msj").innerHTML = aviso("error", e.message); } };
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+// 4. Muestra
+CARGA.muestra = async () => {
+  const s = $("#muestra");
+  const hoy = new Date(), mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), finAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+  const iso = d => d.toISOString().slice(0, 10);
+  try {
+    const d = await api("/muestra");
+    s.innerHTML = `<div class="tarjeta"><h2>Tomar 20 registros al azar</h2>
+      <div class="fila"><label>Métrica <select id="m-metrica">${Object.entries(d.metricas).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
+      <label>Desde <input type="date" id="m-desde" value="${iso(mesAnt)}"></label><label>Hasta <input type="date" id="m-hasta" value="${iso(finAnt)}"></label>
+      <button class="primario" id="m-tomar">Tomar muestra</button></div>
+      ${d.lotes.length ? `<h3>Muestras anteriores</h3>${tabla(["Fecha", "Métrica", "Período", "Marcados", "No coinciden", ""], d.lotes.map(l => [fecha(l.creado_at), esc(l.metrica), `${l.desde} a ${l.hasta}`,
+        `${l.marcados}/${l.n}`, l.no_coinciden, `<a class="accion" data-lote="${l.lote_id}">Abrir</a>`]))}` : ""}</div><div id="m-lote"></div>`;
+    $("#m-tomar").onclick = async () => { $("#m-lote").innerHTML = aviso("alerta", "Tomando la muestra y leyendo el origen…");
+      try { pintarLote(await post("/muestra", {metrica: $("#m-metrica").value, desde: $("#m-desde").value, hasta: $("#m-hasta").value})); } catch (e) { $("#m-lote").innerHTML = aviso("error", e.message); } };
+    s.querySelectorAll("[data-lote]").forEach(a => a.onclick = async () => pintarLote(await api("/muestra/" + a.dataset.lote)));
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+function pintarLote(l) {
+  $("#m-lote").innerHTML = `<div class="tarjeta"><h2>${esc(l.nombre)} · ${l.desde} a ${l.hasta}</h2>${l.aviso ? aviso("alerta", l.aviso) : ""}
+    <p class="nota">${l.marcados} de ${l.registros.length} marcados · ${l.no_coinciden} no coinciden. La pista compara el importe sin impuestos; la decisión es tuya.</p>
+    ${l.registros.map(r => `<div class="caso"><div class="fila"><b>Registro ${esc(r.registro_clave)}</b>${r.plataforma.numero ? " · " + esc(r.plataforma.numero) : ""}
+      ${r.sugerencia ? `<span class="chip ${r.sugerencia === "coincide" ? "ok" : "alerta"}">pista: ${r.sugerencia}</span>` : ""}
+      ${r.resultado !== "pendiente" ? `<span class="chip ${r.resultado === "coincide" ? "ok" : "error"}">${r.resultado === "coincide" ? "✓ coincide" : "✗ no coincide"}${r.incidencia_id ? " · incidencia #" + r.incidencia_id : ""}</span>` : ""}</div>
+      <div class="grid2"><div><b>En el origen (tal cual)</b><pre>${esc(r.origen ? JSON.stringify(r.origen, null, 1) : "Sin origen para comparar")}</pre></div>
+      <div><b>En la plataforma (canónico = espejo)</b><pre>${esc(JSON.stringify(r.plataforma, null, 1))}</pre></div></div>
+      <div class="fila"><input placeholder="Comentario" data-com="${r.id}" style="flex:1 1 220px" value="${esc(r.comentario || "")}">
+      <button class="sec" data-marca="${r.id}" data-res="coincide">Coincide</button><button class="sec" data-marca="${r.id}" data-res="no_coincide">No coincide</button></div></div>`).join("")}</div>`;
+  $("#m-lote").querySelectorAll("[data-marca]").forEach(b => b.onclick = async () => {
+    try { pintarLote(await post("/muestra/registro/" + b.dataset.marca, {resultado: b.dataset.res, comentario: $(`[data-com="${b.dataset.marca}"]`).value})); }
+    catch (e) { b.insertAdjacentHTML("afterend", aviso("error", e.message)); }
+  });
+}
+
+// 5. Automáticas
+let sondeo = null;
+CARGA.automaticas = async () => {
+  const s = $("#automaticas");
+  try {
+    const r = await api("/suites");
+    s.innerHTML = `<div class="tarjeta"><div class="fila"><button class="primario" id="a-todas" ${r.en_curso ? "disabled" : ""}>Ejecutar todas en el entorno de prueba</button>
+      ${r.en_curso ? `<span class="chip alerta">Corriendo: ${esc(r.corriendo || "")}</span>` : ""}</div>
+      <p class="nota">Corren en un entorno de prueba aislado (base demo propia y bases temporales). Nunca tocan producción ni los datos de Odoo.</p>
+      ${tabla(["Suite", "Última corrida", "Duración", "Resultado", ""], r.suites.map(x => { const u = x.ultima;
+        return [`<b>${esc(x.nombre)}</b><div class="nota">${esc(x.descripcion)}</div>`, u ? fecha(u.fin_at || u.inicio_at) : "—", u && u.duracion_s ? u.duracion_s + " s" : "—",
+          !u ? `<span class="chip">sin correr</span>` : u.estado === "aprobado" ? `<span class="chip ok">✓ ${u.total} de ${u.total}</span>` : u.estado === "corriendo" ? `<span class="chip alerta">corriendo</span>`
+            : `<span class="chip error">✗ ${u.fallidas ?? "?"} fallan de ${u.total ?? "?"}</span>`,
+          `<button class="sec" data-suite="${x.id}" ${r.en_curso ? "disabled" : ""}>Ejecutar</button>` +
+          (u && u.fallas && u.fallas.length ? `<details><summary>Ver fallas</summary>${u.fallas.map(f => `<p><b>${esc(f.prueba)}</b><br>${esc(f.mensaje)}</p><pre>${esc(f.detalle)}</pre>`).join("")}</details>` : "")]; }))}</div>`;
+    $("#a-todas").onclick = () => correr([]);
+    s.querySelectorAll("[data-suite]").forEach(b => b.onclick = () => correr([b.dataset.suite]));
+    clearTimeout(sondeo);
+    if (r.en_curso) sondeo = setTimeout(() => { if ($("#automaticas").classList.contains("activa")) CARGA.automaticas(); }, 4000);
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+async function correr(lista) { try { await post("/suites/correr", {suites: lista}); } catch (e) { alert(e.message); } CARGA.automaticas(); }
+
+// 6. Manuales
+CARGA.manuales = async () => {
+  const s = $("#manuales");
+  try {
+    const d = await api("/manuales");
+    s.innerHTML = `<div class="tarjeta"><h2>Pruebas guiadas</h2><p class="nota">Seguí los pasos con el rol indicado (podés usar «Ver como usuario»), marcá el resultado, adjuntá una captura y dejá un comentario. Un fallido crea una incidencia.</p></div>` +
+      d.casos.map(c => { const u = c.ultima; return `<div class="caso"><div class="fila"><b>${esc(c.codigo)} · ${esc(c.titulo)}</b>
+        <span class="chip">rol: ${esc(c.rol_ejecucion)}</span><span class="chip">${esc(c.pantalla)}</span>
+        ${u ? `<span class="chip ${u.estado === "aprobado" ? "ok" : "error"}">${u.estado} · ${esc(u.usuario)} ${fecha(u.fin_at)}</span>` : `<span class="chip">sin ejecutar</span>`}</div>
+        <ol>${c.pasos.map(p => `<li>${esc(p)}</li>`).join("")}</ol><p><b>Resultado esperado:</b> ${esc(c.resultado_esperado)}</p>
+        <div class="fila"><input type="file" accept="image/*,application/pdf" data-arch="${c.id}"><input placeholder="Comentario" data-com="${c.id}" style="flex:1 1 220px">
+        <button class="sec" data-caso="${c.id}" data-est="aprobado">Aprobado</button><button class="sec" data-caso="${c.id}" data-est="fallido">Fallido</button></div><div data-msj="${c.id}"></div></div>`; }).join("");
+    s.querySelectorAll("[data-caso]").forEach(b => b.onclick = async () => {
+      const id = b.dataset.caso, msj = s.querySelector(`[data-msj="${id}"]`);
+      try {
+        let evidencia_id = null;
+        const arch = s.querySelector(`[data-arch="${id}"]`).files[0];
+        if (arch) { const fd = new FormData(); fd.append("archivo", arch); evidencia_id = (await api("/evidencias", {method: "POST", body: fd})).id; }
+        const r = await post("/manuales/" + id, {estado: b.dataset.est, comentario: s.querySelector(`[data-com="${id}"]`).value, evidencia_id});
+        msj.innerHTML = aviso(r.estado === "aprobado" ? "ok" : "alerta", r.estado === "aprobado" ? "Registrado como aprobado." : `Registrado como fallido: incidencia #${r.incidencia_id}.`);
+        setTimeout(CARGA.manuales, 900);
+      } catch (e) { msj.innerHTML = aviso("error", e.message); }
+    });
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+// 7. Ver como
+CARGA.vercomo = async () => {
+  const s = $("#vercomo");
+  try {
+    const [us, est] = await Promise.all([api("/usuarios"), fetch("/ver-como/estado").then(r => r.json())]);
+    s.innerHTML = `<div class="tarjeta"><h2>Ver la plataforma como otro usuario</h2>
+      <p class="nota">Modo de solo lectura para probar permisos: la plataforma se abre con el usuario elegido, un banner lo indica en todas las pantallas y no se puede cambiar nada. Queda registrado en la auditoría.</p>
+      ${est.activo ? aviso("alerta", `Activo: viendo como ${est.nombre}.`) : ""}
+      <div class="fila"><select id="v-us">${us.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(u.rol)}</option>`).join("")}</select>
+      <button class="primario" id="v-entrar">Entrar en modo «ver como»</button>${est.activo ? `<button class="sec" id="v-salir">Salir del modo</button>` : ""}</div></div>`;
+    $("#v-entrar").onclick = async () => { await post("/ver-como", {usuario_id: $("#v-us").value}); window.open("/", "_blank"); CARGA.vercomo(); };
+    if ($("#v-salir")) $("#v-salir").onclick = async () => { await post("/ver-como/salir"); CARGA.vercomo(); };
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+// 8. Incidencias
+let filtroInc = "abiertas";
+CARGA.incidencias = async () => {
+  const s = $("#incidencias");
+  try {
+    const d = await api("/incidencias" + (filtroInc ? "?estado=" + filtroInc : ""));
+    const ORIGEN = {automatico: "Automático", muestra: "Muestra", prueba_manual: "Prueba manual", revision: "Revisión"};
+    s.innerHTML = `<div class="tarjeta"><div class="fila"><label>Ver <select id="n-filtro"><option value="abiertas">Abiertas</option><option value="">Todas</option>
+      ${d.estados.map(e => `<option value="${e}">${e.replace("_", " ")}</option>`).join("")}</select></label></div>
+      <p class="nota">Una incidencia de datos no se puede cerrar sin un test de regresión vinculado o una definición registrada en la ficha de cuadratura.</p>
+      ${tabla(["#", "Origen", "Métrica / pantalla", "Título", "Causa", "Estado", "Responsable", "Test de regresión", "Resuelta"], d.incidencias.map(i => [
+        `<a class="accion" data-inc="${i.id}">#${i.id}</a>`, esc(ORIGEN[i.origen] || i.origen), esc(i.metrica || i.pantalla || "—"), esc(i.titulo), esc(i.causa_texto || "—"),
+        `<span class="chip ${["resuelta", "descartada"].includes(i.estado) ? "ok" : "alerta"}">${esc(i.estado)}</span>`, esc(i.responsable || "—"),
+        i.test_regresion ? `<code>${esc(i.test_regresion)}</code>` : (i.definicion_id ? `definición #${i.definicion_id}` : "—"), i.resuelta_at ? fecha(i.resuelta_at) : "—"]))}</div><div id="n-det"></div>`;
+    $("#n-filtro").value = filtroInc;
+    $("#n-filtro").onchange = e => { filtroInc = e.target.value; CARGA.incidencias(); };
+    s.querySelectorAll("[data-inc]").forEach(a => a.onclick = () => detalleInc(+a.dataset.inc, d));
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+async function detalleInc(id, catalogo) {
+  const i = await api("/incidencias/" + id);
+  const cont = $("#n-det");
+  cont.innerHTML = `<div class="tarjeta"><h2>#${i.id} · ${esc(i.titulo)}</h2>
+    <p class="nota">Origen: ${esc(i.origen)} · tipo: ${esc(i.tipo)} · creada por ${esc(i.creada_por)} el ${fecha(i.creada_at)}${i.registro_clave ? " · registro " + esc(i.registro_clave) : ""}</p>
+    ${i.descripcion ? `<pre>${esc(i.descripcion)}</pre>` : ""}
+    ${i.evidencia ? `<details><summary>Evidencia</summary><pre>${esc(JSON.stringify(i.evidencia, null, 1))}</pre>${i.evidencia.archivo ? `<a href="/pruebas/api/evidencias/${i.evidencia.archivo.id}" target="_blank">Ver archivo adjunto</a>` : ""}</details>` : ""}
+    <div class="grid2" style="margin-top:8px">
+      <label>Estado <select id="d-estado">${catalogo.estados.map(e => `<option ${e === i.estado ? "selected" : ""}>${e}</option>`).join("")}</select></label>
+      <label>Causa del checklist <select id="d-causa"><option value="">—</option>${Object.entries(catalogo.causas).map(([k, v]) => `<option value="${k}" ${k === i.causa ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <label>Responsable <input id="d-resp" value="${esc(i.responsable || "")}"></label>
+      <label>Test de regresión (ruta en tests/) <input id="d-test" value="${esc(i.test_regresion || "")}" placeholder="tests/test_tablero.py::test_..."></label>
+    </div>
+    <label>Definición para la ficha de cuadratura (si la diferencia se explica por la definición)<textarea id="d-def" rows="2"></textarea></label>
+    <label>Comentario<textarea id="d-com" rows="2"></textarea></label>
+    <div class="fila" style="margin-top:8px"><button class="primario" id="d-guardar">Guardar</button>
+      ${i.tipo === "datos" ? `<button class="sec" id="d-caso">Guardar como caso de regresión permanente</button>` : ""}</div><div id="d-msj"></div>
+    <h3>Historial</h3><ul>${i.historial.map(h => `<li>${fecha(h.at)} · ${esc(h.usuario)}: ${esc(h.texto)}</li>`).join("")}</ul></div>`;
+  $("#d-guardar").onclick = async () => {
+    try {
+      await post("/incidencias/" + id, {estado: $("#d-estado").value, causa: $("#d-causa").value || null, responsable: $("#d-resp").value,
+        test_regresion: $("#d-test").value, definicion: $("#d-def").value || null, comentario: $("#d-com").value || null});
+      CARGA.incidencias(); setTimeout(() => detalleInc(id, catalogo), 300);
+    } catch (e) { $("#d-msj").innerHTML = aviso("error", e.message); }
+  };
+  if ($("#d-caso")) $("#d-caso").onclick = async () => { try { await post(`/incidencias/${id}/caso-regresion`); detalleInc(id, catalogo); } catch (e) { $("#d-msj").innerHTML = aviso("error", e.message); } };
+  cont.scrollIntoView({behavior: "smooth"});
+}
+
+// 9. Revisión
+CARGA.revision = async () => {
+  const s = $("#revision");
+  try {
+    const r = await api("/revision");
+    const u = r.ultima;
+    s.innerHTML = `<div class="tarjeta"><h2>Revisión independiente</h2>
+      <p class="nota">Compara la especificación (docs y pedidos) con lo que hace el sistema para este cliente. Tiene dos partes: chequeos fijos contra el estado real y, si hay clave de Anthropic, un agente separado que no participó del desarrollo. Todo lo que encuentra entra como incidencia «para revisar».</p>
+      <div class="fila"><button class="primario" id="r-lanzar" ${r.corriendo ? "disabled" : ""}>Lanzar revisión</button>${r.corriendo ? `<span class="chip alerta">Revisando…</span>` : ""}</div>
+      ${u ? `<p>Última: ${fecha(u.ejecutada_at)} · ${u.fijos.length + u.agente.length} discrepancias · ${u.incidencias_nuevas.length} incidencias nuevas.
+        ${u.agente_disponible ? (u.agente_error ? "El agente no respondió: " + esc(u.agente_error) : "") : "Agente separado: falta ANTHROPIC_API_KEY (solo corrieron los chequeos fijos)."}</p>
+        ${tabla(["Discrepancia", "Qué dice la especificación", "Qué hace el sistema", "Evidencia", "Revisor"], [...u.fijos.map(x => [x, "chequeo fijo"]), ...u.agente.map(x => [x, "agente"])].map(([x, q]) =>
+          [esc(x.titulo), esc(x.especificacion), esc(x.sistema), esc(x.evidencia), q]))}` : `<p class="nota">Todavía no se lanzó.</p>`}</div>`;
+    $("#r-lanzar").onclick = async () => { try { await post("/revision"); } catch (e) { alert(e.message); } setTimeout(CARGA.revision, 1500); };
+    if (r.corriendo) setTimeout(() => { if ($("#revision").classList.contains("activa")) CARGA.revision(); }, 3000);
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+CARGA.auditoria = async () => {
+  const s = $("#auditoria");
+  try {
+    const d = await api("/auditoria");
+    s.innerHTML = `<div class="tarjeta"><h2>Auditoría</h2><p class="nota">Cada acción del Centro de pruebas (últimas 200).</p>
+      ${tabla(["Cuándo", "Quién", "Rol", "Acción", "Sobre", "Ver como"], d.eventos.map(e => [fecha(e.at), esc(e.usuario), esc(e.rol || ""), esc(e.accion), esc(e.objeto || ""), esc(e.ver_como || "")]))}</div>`;
+  } catch (err) { s.innerHTML = aviso("error", err.message); }
+};
+
+(async () => {
+  try { const u = await api("/sesion"); $("#quien").textContent = `${u.nombre} · ${u.rol} · fuente activa: ${u.fuente}`; CARGA.estado(); }
+  catch (e) { location.href = "/pruebas/ingresar"; }
+})();
+</script>
+</body>
+</html>

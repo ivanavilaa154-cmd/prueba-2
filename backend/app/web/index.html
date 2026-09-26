@@ -236,6 +236,7 @@ ul { margin: 6px 0; padding-left: 20px; }
     <select id="usuario"></select>
   </label>
 </header>
+<div id="banner-ver-como" role="status" hidden style="background:var(--alerta);color:#fff;padding:8px 16px;font-weight:600;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"></div>
 <nav>
   <button data-pestana="tablero" class="activa">Tablero</button>
   <button data-pestana="actividades">Actividades <span id="act-badge" class="cuenta" hidden></span></button>
@@ -1335,6 +1336,33 @@ $("#gs-guardar").onclick = async () => {
 $("#usuario").addEventListener("change", () => { $("#gs-detalle").innerHTML = ""; cargarObjetivos(); if (!$("#gs-procesos").hidden) cargarProcesos(); if (!$("#gs-configurar").hidden) cargarPlantillas(); });
 setInterval(() => { if ($("#gestion").classList.contains("activa") && !$("#gs-objetivos").hidden) cargarObjetivos(); }, 60000);
 
+// Centro de pruebas: enlace (solo con sesión de operador o tester) y modo «ver como» (solo lectura)
+let verComo = null;
+async function revisarVerComo() {
+  try {
+    const e = await fetch("/ver-como/estado").then(r => r.json());
+    if (e.probador && !document.querySelector("#link-pruebas"))
+      $("#salir").insertAdjacentHTML("afterend", ` · <a id="link-pruebas" href="/pruebas">Centro de pruebas</a>`);
+    verComo = e.activo ? e : null;
+    const b = $("#banner-ver-como");
+    b.hidden = !verComo;
+    if (verComo) {
+      b.innerHTML = `<span>VIENDO COMO ${esc(verComo.nombre)} · solo lectura</span><button class="sec" id="salir-ver-como">Salir del modo</button>`;
+      $("#salir-ver-como").onclick = async () => { await fetch("/pruebas/api/ver-como/salir", {method: "POST"}); location.reload(); };
+    }
+  } catch (e) { /* sin sesión de pruebas */ }
+}
+const _cargarUsuariosOriginal = cargarUsuarios;
+cargarUsuarios = async function () {
+  if (verComo) {
+    $("#usuario").innerHTML = `<option value="${esc(verComo.usuario_id)}">${esc(verComo.nombre)}</option>`;
+    $("#usuario").disabled = true;
+    cargarTablero(); cargarActividades(); cargarObjetivos();
+    return;
+  }
+  return _cargarUsuariosOriginal();
+};
+
 // Inicio
 (async () => {
   try {
@@ -1347,6 +1375,7 @@ setInterval(() => { if ($("#gestion").classList.contains("activa") && !$("#gs-ob
       aviso("alerta", "El chat necesita ANTHROPIC_API_KEY en backend/.env (después reiniciá el servidor). Mientras tanto podés usar Consultas y Decisiones.");
     $("#enviar").disabled = !chatHabilitado;
     const d = await cargarIntegraciones(true);
+    await revisarVerComo();
     await cargarUsuarios();
     if (d.odoo.progreso.corriendo) seguirSincronizacion();
   } catch (e) { document.querySelector("main").insertAdjacentHTML("afterbegin", aviso("error", "No pude conectar con la API: " + e.message)); }

@@ -120,6 +120,30 @@ Pestaña **Gestión** (`backend/app/gestion/`, catálogos en `config/gestion/`):
 
 Qué se integró de la especificación "Cerebro IA" y qué falta: [`docs/evaluacion-cerebro-ia.md`](docs/evaluacion-cerebro-ia.md).
 
+## Centro de pruebas (operador y tester)
+
+En `/pruebas` (o el enlace «Centro de pruebas» del encabezado, que solo aparece con esa sesión). Entran únicamente
+los roles **operador** (Ana, `u4`) y **tester** (Tomás, `u5`) con su clave (`CLAVE_U4` y `CLAVE_U5` en `backend/.env`;
+en el Codespace se cargan de ejemplo `operador-demo` y `tester-demo`: cambialas antes de publicar). Cualquier otro rol
+recibe 403, por la dirección o por la API. Cada acción queda en la auditoría (`backend/ops.db`).
+
+1. **Estado general:** semáforo «Listo para producción» con 6 criterios (días en paralelo, días seguidos sin
+   diferencias, métricas cuadradas, controles críticos, suites en verde, pruebas manuales) y qué falta en cada uno.
+2. **Cuadratura:** sello de cada métrica, definición usada, historial de días, evidencia por mes y equipo, y el botón
+   **«¿Por qué difiere?»**: puente de conciliación y diferencias pedido por pedido contra Odoo con su causa probable.
+3. **Integridad de datos:** registros por tabla, última sincronización, controles de calidad y reconciliación de IDs
+   con Odoo (faltantes, borrados en el origen, duplicados).
+4. **Verificación por muestra:** 20 registros al azar, lado a lado Odoo (tal cual) y la plataforma.
+5. **Pruebas automáticas:** 8 suites que corren en un entorno de prueba aislado, nunca sobre producción.
+6. **Pruebas guiadas:** 12 casos en lenguaje simple (`config/pruebas/casos_manuales.yml`) con captura y comentario.
+7. **Ver como usuario:** la plataforma como la ve otro usuario, en solo lectura, con banner y auditoría.
+8. **Incidencias:** todas en una lista; las de datos no se cierran sin test de regresión o definición registrada.
+   Una diferencia se puede guardar como caso permanente (`backend/tests/cuadratura/casos/`).
+9. **Revisión independiente:** chequeos fijos contra la especificación y, con `ANTHROPIC_API_KEY`, un agente separado.
+
+Lo que depende de `docs/16_cuadratura_con_origen.md` (descubrimiento automático de la definición, DQ-25 a DQ-27,
+controles de origen para facturación, tesorería y stock) aparece en pantalla como pendiente.
+
 ## Integraciones: de dónde toma los datos
 
 En la pestaña **Integraciones** del preview local (`uvicorn app.main:app`, http://localhost:8000) se elige
@@ -224,5 +248,6 @@ Usuarios de demo: `u1` dueño, `u2` vendedora (cartera del vendedor 1), `u3` com
 | `backend/app/decisiones/` | Simulador de crédito (tres pruebas) |
 | `backend/app/actividades/` | Motor de actividades (reglas ACT-01 a ACT-08 y tareas) |
 | `backend/app/gestion/` | Procesos, objetivos, métricas y ciclo de reevaluación |
+| `backend/app/pruebas/` | Centro de pruebas: cuadratura, muestras, suites, pruebas guiadas, incidencias y revisión |
 | `docs/cerebro-ia/` | Especificación completa "Cerebro IA" (KPIs, actividades, procesos y objetivos) |
 | `docs/` | Arquitectura, plan por fases, preguntas de prueba, primer mensaje |
