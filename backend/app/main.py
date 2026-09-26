@@ -7,6 +7,7 @@ Docs:      http://localhost:8000/docs
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -130,11 +131,14 @@ def chat(pregunta: PreguntaChat):
 
 
 @app.get("/tablero")
-def tablero(usuario_id: str, dias: int = 30):
-    """Indicadores de Ventas, Inventario y Finanzas con los permisos del usuario."""
-    if dias not in (7, 30, 90):
-        raise HTTPException(status_code=400, detail="El período tiene que ser 7, 30 o 90 días.")
-    return tablero_analisis.tablero(_usuario(usuario_id), dias)
+def tablero(usuario_id: str, mes: str | None = None):
+    """Indicadores de Ventas, Inventario y Finanzas de un mes (AAAA-MM), con los permisos del usuario.
+
+    Sin mes, el más reciente con ventas. La respuesta trae la lista de meses para elegir.
+    """
+    if mes is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
+        raise HTTPException(status_code=400, detail="El mes tiene que tener el formato AAAA-MM, por ejemplo 2026-09.")
+    return tablero_analisis.tablero(_usuario(usuario_id), mes)
 
 
 @app.get("/cobertura")

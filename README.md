@@ -55,13 +55,24 @@ uvicorn app.main:app --reload   # preview: http://localhost:8000 · API: /docs
 ## Tablero
 
 La primera pestaña muestra los indicadores clave de los tres pilares, con los datos de la fuente activa
-(Odoo, archivos o demo) y los permisos del usuario elegido en "Ver como":
+(Odoo, archivos o demo) y los permisos del usuario elegido en "Ver como". Se elige el **mes** (septiembre 2026,
+agosto 2026…): el mes en curso se compara con los mismos días del mes anterior; un mes cerrado, con el mes
+anterior completo. Los saldos (deuda, caja, stock) son siempre los de hoy.
 
 - **Ventas:** venta neta, margen, pedidos, pedido promedio, clientes activos y nuevos, venta en riesgo por
   clientes que dejaron de comprar, venta por mes, por vendedor y por sucursal.
 - **Inventario:** valor a costo, días de inventario, rotación, quiebres y venta perdida, productos por
   quebrar y capital inmovilizado.
-- **Finanzas:** deuda de clientes, vencida y en riesgo, antigüedad, DSO, días reales de cobro y atraso.
+- **Finanzas** (`backend/app/analisis/finanzas.py`), en bloques:
+  - *Resultados del mes:* estado de resultados de 12 meses, gastos por categoría, resultado operativo, punto de
+    equilibrio, crecimiento real contra el año anterior y cumplimiento del presupuesto.
+  - *Cobranzas y crédito:* deuda y antigüedad, efectividad de cobranza, DSO, riesgo de crédito por cliente,
+    clientes sobre su límite, agenda de cobranza, cobranzas por medio de pago y cheques.
+  - *Pagos a proveedores:* deuda, vencimientos de 7 y 30 días, DPO y próximos pagos.
+  - *Tesorería:* caja y bancos, semanas de cobertura, flujo de 13 semanas, faltante o excedente contra la caja
+    mínima y préstamos.
+  - *Capital de trabajo y salud:* ciclo de conversión de caja, capital de trabajo, liquidez corriente y monedas.
+  - *Impuestos* y *Controles y alertas* (duplicados, ventas bajo costo, descuentos altos, pagos sin factura…).
 
 Las cuentas están en `backend/app/analisis/tablero.py` (con pruebas contra SQL directo). Lo que falta en los
 datos (caja, cuentas por pagar, lotes, merma) se muestra como "todavía no se puede calcular".

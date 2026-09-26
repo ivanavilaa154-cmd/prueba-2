@@ -82,6 +82,18 @@ ul { margin: 6px 0; padding-left: 20px; }
 .tablero-cab { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: end; margin-bottom: 14px; }
 .tablero-titulo { margin: 0; font-size: 20px; }
 .periodo { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--suave); }
+.periodo select { font-size: 15px; min-width: 210px; }
+.tablero-controles { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+.ver { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-ver { font: inherit; font-size: 13.5px; border: 1px solid var(--borde); background: var(--panel); color: var(--texto); border-radius: 999px;
+  padding: 5px 12px; cursor: pointer; }
+.chip-ver.activa { background: var(--acento); border-color: var(--acento); color: #fff; }
+.grupo { margin: 18px 0 8px; padding-top: 12px; border-top: 1px solid var(--borde); }
+.grupo:first-of-type { border-top: 0; padding-top: 0; margin-top: 4px; }
+.grupo h4 { margin: 0 0 2px; font-size: 15px; }
+.grupo > p { margin: 0 0 10px; font-size: 13px; color: var(--suave); }
+.grafico .barra.otro { opacity: .38; }
+.grafico .barra-click { cursor: pointer; }
 .pilar { margin-bottom: 22px; }
 .pilar > h3 { font-size: 16px; margin: 0 0 10px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .pilar > h3 .nota { font-weight: 400; }
@@ -175,9 +187,14 @@ ul { margin: 6px 0; padding-left: 20px; }
       <h2 class="tablero-titulo">Tablero</h2>
       <p class="nota" id="tablero-sub">Cargando indicadores…</p>
     </div>
-    <label class="periodo" for="periodo">Período
-      <select id="periodo"><option value="7">Últimos 7 días</option><option value="30" selected>Últimos 30 días</option><option value="90">Últimos 90 días</option></select>
-    </label>
+    <div class="tablero-controles">
+      <div class="ver" role="group" aria-label="Qué pilar ver">
+        <button class="chip-ver activa" data-ver="todo">Todo</button><button class="chip-ver" data-ver="ventas">Ventas</button><button class="chip-ver" data-ver="inventario">Inventario</button><button class="chip-ver" data-ver="finanzas">Finanzas</button>
+      </div>
+      <label class="periodo" for="periodo">Mes
+        <select id="periodo"></select>
+      </label>
+    </div>
   </div>
   <div id="tablero-cuerpo"></div>
   <div id="grafico-tip" class="grafico-tip" role="tooltip" hidden></div>
@@ -377,7 +394,7 @@ $("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; 
 
 // Fuente de datos
 function pintarFuente(f) {
-  if (f.fuente !== pintarFuente.ultima) { pintarFuente.ultima = f.fuente; cargarCobertura(); }
+  if (f.fuente !== pintarFuente.ultima) { pintarFuente.ultima = f.fuente; mesElegido = null; cargarCobertura(); }
   const nombres = {demo: "datos de demostración", importada: "tus archivos", odoo: "datos de Odoo", erp: "conexión directa al ERP"};
   $("#estado-fuente").textContent = "Usando " + nombres[f.fuente];
   document.querySelectorAll(".fuente").forEach(e => e.classList.toggle("activa", e.dataset.fuente === f.fuente));
@@ -478,12 +495,12 @@ function graficoMensual(serie) {
     const [a, mm] = m.mes.split("-"), etiqueta = MES[+mm - 1];
     const d = `M${x},${y(0)} v${-(alto - r)} q0,${-r} ${r},${-r} h${barra - 2 * r} q${r},0 ${r},${r} v${alto - r} z`;
     const tip = `${etiqueta} ${a}${m.en_curso ? " (en curso)" : ""} · $ ${MONEDA.format(m.venta)}` + (m.margen_pct !== null ? ` · margen ${(m.margen_pct * 100).toFixed(1).replace(".", ",")} %` : "");
-    return `<path class="barra${m.en_curso ? " curso" : ""}" d="${d}" data-tip="${esc(tip)}"/>
-      <rect x="${izq + i * ancho}" y="${arriba}" width="${ancho}" height="${H - arriba - abajo}" fill="transparent" data-tip="${esc(tip)}"/>
+    return `<path class="barra${m.elegido ? "" : " otro"}" d="${d}" data-tip="${esc(tip)}"/>
+      <rect class="barra-click" x="${izq + i * ancho}" y="${arriba}" width="${ancho}" height="${H - arriba - abajo}" fill="transparent" data-tip="${esc(tip + " · clic para ver este mes")}" data-mes="${m.mes}"/>
       ${i % (serie.length > 8 ? 2 : 1) === 0 || i === serie.length - 1 ? `<text class="eje" x="${x + barra / 2}" y="${H - 6}" text-anchor="middle">${etiqueta}</text>` : ""}`;
   }).join("");
   return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="Venta neta por mes, últimos 12 meses">${grilla}${barras}</svg>
-    <p class="nota" style="margin:4px 0 0">La barra más clara es el mes en curso. Pasá el mouse para ver el detalle.</p>`;
+    <p class="nota" style="margin:4px 0 0">La barra destacada es el mes elegido. Pasá el mouse para ver el detalle; hacé clic en una barra para ver ese mes.</p>`;
 }
 function graficoAntiguedad(tramos) {
   const max = Math.max(...tramos.map(t => t.saldo)) || 1, W = 520, fila = 30, izq = 118;
@@ -499,22 +516,36 @@ function panelTabla(titulo, columnas, tipos, filas, vacio) {
   return `<div class="panel"><h4>${esc(titulo)}</h4>${filas.length ? tablaT(columnas, tipos, filas) : `<p class="nota">${esc(vacio)}</p>`}</div>`;
 }
 const pct = v => v === null || v === undefined ? "—" : (v * 100).toFixed(1).replace(".", ",") + " %";
+function panelGen(p) {
+  return `<div class="panel${p.ancho ? " ancho" : ""}"><h4>${esc(p.titulo)}</h4>${p.filas.length
+    ? tablaT(p.columnas, p.tipos, p.filas) : `<p class="nota">${esc(p.vacio)}</p>`}</div>`;
+}
+function pilarGrupos(titulo, id, s, extraPorGrupo) {
+  if (s.sin_acceso || s.sin_datos) return `<div class="pilar" data-pilar="${id}"><h3>${titulo}</h3>${aviso(s.sin_acceso ? "" : "alerta", s.mensaje)}</div>`;
+  return `<div class="pilar" data-pilar="${id}"><h3>${titulo}</h3>${s.grupos.map(g => `<div class="grupo"><h4>${esc(g.titulo)}</h4>
+    ${g.descripcion ? `<p>${esc(g.descripcion)}</p>` : ""}${tarjetas(g.kpis)}
+    <div class="paneles">${(extraPorGrupo[g.titulo] || "")}${g.paneles.map(panelGen).join("")}</div></div>`).join("")}</div>`;
+}
 function pilar(titulo, s, contenido) {
-  if (s.sin_acceso || s.sin_datos) return `<div class="pilar"><h3>${titulo}</h3>${aviso(s.sin_acceso ? "" : "alerta", s.mensaje)}</div>`;
+  const id = titulo.toLowerCase();
+  if (s.sin_acceso || s.sin_datos) return `<div class="pilar" data-pilar="${id}"><h3>${titulo}</h3>${aviso(s.sin_acceso ? "" : "alerta", s.mensaje)}</div>`;
   const extra = (s.paneles_extra || []).map(p => `<div class="panel${p.ancho ? " ancho" : ""}"><h4>${esc(p.titulo)}</h4>${p.filas.length
     ? tablaT(p.columnas, p.tipos, p.filas) : `<p class="nota">${esc(p.vacio)}</p>`}</div>`).join("");
-  return `<div class="pilar"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}${extra}</div></div>`;
+  return `<div class="pilar" data-pilar="${id}"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}${extra}</div></div>`;
 }
 async function cargarTablero() {
   const u = $("#usuario").value;
   if (!u) return;
   try {
-    const t = await api(`/tablero?usuario_id=${encodeURIComponent(u)}&dias=${$("#periodo").value}`);
-    const fecha = new Date(t.fecha + "T12:00").toLocaleDateString("es-UY", {day: "numeric", month: "long", year: "numeric"});
-    $("#tablero-sub").textContent = `Últimos ${t.dias} días al ${fecha}, comparado con los ${t.dias} días anteriores · ${$("#estado-fuente").textContent} · viendo como ${$("#usuario").selectedOptions[0]?.textContent || u}`;
-    let html = t.fecha_ajustada ? aviso("alerta", `No hay ventas en los últimos 30 días: el tablero se calcula al ${fecha}, el último día con ventas.`) : "";
+    const pedido = mesElegido ? `&mes=${mesElegido}` : "";
+    const t = await api(`/tablero?usuario_id=${encodeURIComponent(u)}${pedido}`);
+    mesElegido = t.mes;
+    $("#periodo").innerHTML = t.meses.map(m => `<option value="${m.valor}">${esc(m.nombre.charAt(0).toUpperCase() + m.nombre.slice(1))}${m.en_curso ? " (en curso)" : ""}${m.con_ventas ? "" : " · sin ventas"}</option>`).join("");
+    $("#periodo").value = t.mes;
+    $("#tablero-sub").textContent = `${t.periodo} · ${$("#estado-fuente").textContent} · viendo como ${$("#usuario").selectedOptions[0]?.textContent || u}`;
+    let html = "";
     html += pilar("Ventas", t.ventas, s => `
-      <div class="panel ancho"><h4>Venta neta por mes (últimos 12 meses)</h4>${graficoMensual(s.serie_mensual)}</div>
+      <div class="panel ancho"><h4>Venta neta por mes (12 meses hasta el elegido)</h4>${graficoMensual(s.serie_mensual)}</div>
       ${panelTabla("Clientes que más compraron", ["Cliente", "Venta"], ["t", "$"], s.top_clientes.map(c => [c.cliente, c.venta]), "Sin ventas a clientes en el período.")}
       ${panelTabla("Clientes en riesgo (dejaron de comprar)", ["Cliente", "Días sin comprar", "Compra por mes"], ["t", "n", "$"], s.clientes_en_riesgo.map(c => [c.cliente, c.dias_sin_comprar, c.compra_mensual]), "Ningún cliente habitual dejó de comprar.")}
       ${panelTabla("Por vendedor", ["Vendedor", "Venta", "Margen", "Clientes"], ["t", "$", "%", "n"], s.vendedores.map(v => [v.vendedor, v.venta, v.margen_pct, v.clientes]), "Sin ventas en el período.")}
@@ -523,16 +554,30 @@ async function cargarTablero() {
       ${panelTabla("Quiebres: se venden y están en 0", ["Producto", "Unidades por día", "Venta perdida por día"], ["t", "n", "$"], s.quiebres.map(q => [q.producto, q.venta_diaria, q.venta_perdida_diaria]), "No hay quiebres de stock.")}
       ${t.inventario.por_quebrar && !t.inventario.nota ? panelTabla("Por quebrar (menos de 7 días)", ["Producto", "Stock", "Días de cobertura"], ["t", "n", "n"], s.por_quebrar.map(q => [q.producto, q.stock, q.dias_cobertura]), "Ningún producto está por quebrar.") : ""}
       ${t.inventario.inmovilizado && !t.inventario.nota ? panelTabla("Stock inmovilizado (sin venta en 90 días)", ["Producto", "Stock", "Valor a costo", "Última venta"], ["t", "n", "$", "t"], s.inmovilizado.map(q => [q.producto, q.stock, q.valor, q.ultima_venta || "más de un año"]), "No hay stock inmovilizado.") : ""}`);
-    html += pilar("Finanzas", t.finanzas, s => `
-      ${s.antiguedad.length ? `<div class="panel"><h4>Deuda por antigüedad</h4>${graficoAntiguedad(s.antiguedad)}</div>` : ""}
-      ${!s.antiguedad.length ? "" : panelTabla("Clientes con deuda vencida", ["Cliente", "Vencido", "Días de atraso"], ["t", "$", "n"], s.deudores.map(d => [d.cliente, d.vencido, d.dias_max_atraso]), "Nadie tiene deuda vencida.")}`);
+    const f = t.finanzas;
+    html += pilarGrupos("Finanzas", "finanzas", f, f.antiguedad && f.antiguedad.length ? {"Cobranzas y crédito":
+      `<div class="panel"><h4>Deuda de clientes por antigüedad (hoy)</h4>${graficoAntiguedad(f.antiguedad)}</div>
+       ${panelTabla("Clientes con deuda vencida", ["Cliente", "Vencido", "Días de atraso"], ["t", "$", "n"], f.deudores.map(d => [d.cliente, d.vencido, d.dias_max_atraso]), "Nadie tiene deuda vencida.")}`} : {});
     if (t.no_disponibles.length) html += `<div class="panel faltan"><h4>Indicadores que todavía no se pueden calcular</h4>
       <p style="margin:0 0 6px">Se habilitan solos cuando el sistema integrado trae esos datos (ver «Cobertura de datos» en Integraciones).</p>
       <ul>${t.no_disponibles.map(n => `<li><b>${esc(n.indicador)}</b>: ${esc(n.motivo)}.</li>`).join("")}</ul></div>`;
     $("#tablero-cuerpo").innerHTML = html;
+    aplicarVista();
   } catch (e) { $("#tablero-cuerpo").innerHTML = aviso("error", "No se pudo armar el tablero: " + e.message); }
 }
-$("#periodo").addEventListener("change", cargarTablero);
+let mesElegido = null, vista = "todo";
+function aplicarVista() {
+  document.querySelectorAll("[data-ver]").forEach(b => b.classList.toggle("activa", b.dataset.ver === vista));
+  document.querySelectorAll("#tablero-cuerpo .pilar").forEach(p => p.hidden = vista !== "todo" && p.dataset.pilar !== vista);
+  const faltan = $("#tablero-cuerpo .faltan");
+  if (faltan) faltan.hidden = vista !== "todo";
+}
+document.querySelectorAll("[data-ver]").forEach(b => b.addEventListener("click", () => { vista = b.dataset.ver; aplicarVista(); }));
+$("#periodo").addEventListener("change", () => { mesElegido = $("#periodo").value; cargarTablero(); });
+$("#tablero-cuerpo").addEventListener("click", (e) => {
+  const barra = e.target.closest("[data-mes]");
+  if (barra && barra.dataset.mes !== mesElegido) { mesElegido = barra.dataset.mes; cargarTablero(); window.scrollTo({top: 0, behavior: "smooth"}); }
+});
 $("#usuario").addEventListener("change", cargarTablero);
 // Detalle al pasar el mouse (o tocar) sobre las barras
 document.addEventListener("pointermove", (e) => {

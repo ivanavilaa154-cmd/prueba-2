@@ -12,24 +12,74 @@ tiene (caja, cuentas por pagar, lotes, merma...) se listan como no disponibles.
 """
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ..erp import conector
 from ..erp.conector import ConsultaNoPermitida
 from ..permisos import AccesoDenegado, Usuario
+from . import finanzas as finanzas_analisis
 from . import indicadores
 
 SIN_LIMITE = 1_000_000
 TRAMOS = [("Al día", None, 0), ("1 a 15 días", 1, 15), ("16 a 30 días", 16, 30),
           ("31 a 60 días", 31, 60), ("61 a 90 días", 61, 90), ("Más de 90 días", 91, None)]
-NO_DISPONIBLES = [
-    ("Saldo de caja y flujo de 13 semanas", "no hay movimientos de caja ni bancos"),
-    ("Cuentas por pagar y DPO", "no hay facturas de proveedores"),
-    ("EBITDA y resultado neto", "no hay gastos operativos"),
-    ("Mercadería por vencer", "no hay lotes con fecha de vencimiento"),
-    ("Merma y exactitud de inventario", "no hay ajustes ni conteos de inventario"),
-]
+MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+         "noviembre", "diciembre"]
+
+
+def nombre_mes(mes: str) -> str:
+    """'2026-09' -> 'septiembre 2026'."""
+    return f"{MESES[int(mes[5:7]) - 1]} {mes[:4]}"
+
+
+@dataclass
+class Periodo:
+    """Un mes calendario. Si es el mes en curso, va hasta hoy y se compara con los mismos días del mes anterior."""
+    mes: str
+    desde: date
+    hasta: date
+    ant_desde: date
+    ant_hasta: date
+    en_curso: bool
+    hoy: date
+
+    @classmethod
+    def crear(cls, mes: str, hoy: date) -> "Periodo":
+        anio, m = int(mes[:4]), int(mes[5:7])
+        desde = date(anio, m, 1)
+        fin = date(anio, m, calendar.monthrange(anio, m)[1])
+        en_curso = desde <= hoy <= fin
+        hasta = hoy if en_curso else fin
+        ant_hasta_mes = desde - timedelta(days=1)
+        ant_desde = ant_hasta_mes.replace(day=1)
+        ant_hasta = min(ant_desde + timedelta(days=(hasta - desde).days), ant_hasta_mes) if en_curso else ant_hasta_mes
+        return cls(mes, desde, hasta, ant_desde, ant_hasta, en_curso, hoy)
+
+    @property
+    def dias(self) -> int:
+        return (self.hasta - self.desde).days + 1
+
+    @property
+    def nombre(self) -> str:
+        return nombre_mes(self.mes)
+
+    @property
+    def nombre_anterior(self) -> str:
+        return nombre_mes(self.ant_desde.isoformat()[:7])
+
+    def describir(self) -> str:
+        if self.en_curso:
+            return (f"{self.nombre.capitalize()} (en curso, del 1 al {self.hasta.day}), comparado con los mismos días de "
+                    f"{self.nombre_anterior}")
+        return f"{self.nombre.capitalize()}, comparado con {self.nombre_anterior}"
+
+
+def _mas_meses(mes: str, n: int) -> str:
+    anio, m = int(mes[:4]), int(mes[5:7]) - 1 + n
+    return f"{anio + m // 12}-{m % 12 + 1:02d}"
 
 
 class _SinDatos(Exception):
@@ -71,23 +121,35 @@ def _nombres(usuario: Usuario, sql: str, prefijo: str) -> dict:
         return {}
 
 
-def fecha_de_referencia(usuario: Usuario, hoy: date | None = None) -> tuple[date, bool]:
-    """Hoy, salvo que no haya ventas recientes (datos importados viejos): entonces el último día con ventas."""
-    hoy = hoy or date.today()
+def meses_disponibles(usuario: Usuario, hoy: date) -> list[dict]:
+    """Meses para elegir (hasta 24 hacia atrás), el más reciente primero, marcando los que tienen ventas."""
+    actual = hoy.isoformat()[:7]
     try:
-        ultima = _q(usuario, "SELECT MAX(fecha) FROM ventas WHERE anulada = 0")[0][0]
+        filas = _q(usuario, "SELECT MIN(fecha), MAX(fecha) FROM ventas WHERE anulada = 0")
+        primero, ultimo = filas[0] if filas else (None, None)
     except Exception:
-        return hoy, False
-    if ultima and date.fromisoformat(ultima[:10]) < hoy - timedelta(days=30):
-        return date.fromisoformat(ultima[:10]), True
-    return hoy, False
+        primero = ultimo = None
+    con_ventas = set()
+    try:
+        desde = _mas_meses(actual, -23) + "-01"
+        for (fecha,) in _q(usuario, f"SELECT DISTINCT fecha FROM ventas WHERE anulada = 0 AND fecha >= '{desde}'"):
+            con_ventas.add(fecha[:7])
+    except Exception:
+        pass
+    fin = max(actual, ultimo[:7]) if ultimo else actual
+    inicio = max(primero[:7] if primero else fin, _mas_meses(fin, -23))
+    meses, m = [], fin
+    while m >= inicio:
+        meses.append({"valor": m, "nombre": nombre_mes(m), "en_curso": m == actual, "con_ventas": m in con_ventas})
+        m = _mas_meses(m, -1)
+    return meses
 
 
 # --- Ventas ---------------------------------------------------------------------
 
-def ventas(usuario: Usuario, ref: date, dias: int) -> dict:
-    d0, d1, d365 = (ref - timedelta(days=dias - 1)).isoformat(), (ref - timedelta(days=2 * dias - 1)).isoformat(), \
-        (ref - timedelta(days=364)).isoformat()
+def ventas(usuario: Usuario, p: Periodo) -> dict:
+    ref = p.hasta
+    d0, d1, d365 = p.desde.isoformat(), p.ant_desde.isoformat(), min((ref - timedelta(days=364)), p.ant_desde).isoformat()
     hasta = ref.isoformat()
     por_dia = _q(usuario, f"""
         SELECT v.fecha, COUNT(DISTINCT v.id), SUM(l.cantidad * l.precio_unitario), SUM(l.cantidad * l.costo_unitario), COUNT(*)
@@ -101,7 +163,7 @@ def ventas(usuario: Usuario, ref: date, dias: int) -> dict:
         return (sum(f[1] for f in filas), sum(f[2] or 0 for f in filas), sum(f[3] or 0 for f in filas), sum(f[4] for f in filas))
 
     ped, venta, costo, lineas = sumar(d0, hasta)
-    ped_a, venta_a, costo_a, _ = sumar(d1, (ref - timedelta(days=dias)).isoformat())
+    ped_a, venta_a, costo_a, _ = sumar(d1, p.ant_hasta.isoformat())
     margen, margen_a = venta - costo, venta_a - costo_a
 
     # Serie de 12 meses: desde el primer mes completo; el mes actual se marca "en curso".
@@ -114,7 +176,7 @@ def ventas(usuario: Usuario, ref: date, dias: int) -> dict:
             meses[f[0][:7]][0] += f[2] or 0
             meses[f[0][:7]][1] += f[3] or 0
     serie = [{"mes": m, "venta": round(v, 2), "margen_pct": round((v - c) / v, 4) if v else None,
-              "en_curso": m == ref.isoformat()[:7]} for m, (v, c) in sorted(meses.items())]
+              "en_curso": m == p.hoy.isoformat()[:7], "elegido": m == p.mes} for m, (v, c) in sorted(meses.items())]
 
     # Clientes: activos, nuevos y en riesgo (compraban seguido y dejaron de comprar)
     clientes = _q(usuario, f"""
@@ -156,8 +218,8 @@ def ventas(usuario: Usuario, ref: date, dias: int) -> dict:
             _kpi("Pedidos", ped, "numero", _variacion(ped, ped_a)),
             _kpi("Pedido promedio", round(venta / ped, 2) if ped else None, "moneda"),
             _kpi("Líneas por pedido", round(lineas / ped, 1) if ped else None, "numero"),
-            _kpi("Clientes activos", len(activos), "numero", nota=f"compraron en los últimos {dias} días"),
-            _kpi("Clientes nuevos", len(nuevos), "numero", nota="primera compra del año en el período"),
+            _kpi("Clientes activos", len(activos), "numero", nota="compraron en el mes"),
+            _kpi("Clientes nuevos", len(nuevos), "numero", nota="primera compra del año en el mes"),
             _kpi("Venta en riesgo", round(sum(r["compra_mensual"] for r in riesgo), 2), "moneda",
                  nota=(f"{len(riesgo)} cliente que dejó" if len(riesgo) == 1 else f"{len(riesgo)} clientes que dejaron") + " de comprar (por mes)", estado="alerta" if riesgo else None),
         ],
@@ -174,7 +236,8 @@ def ventas(usuario: Usuario, ref: date, dias: int) -> dict:
 
 # --- Inventario -----------------------------------------------------------------
 
-def inventario(usuario: Usuario, ref: date, dias: int) -> dict:
+def inventario(usuario: Usuario, p: Periodo) -> dict:
+    ref = p.hasta
     productos = {p[0]: p for p in _q(usuario, "SELECT id, descripcion, categoria, costo, precio FROM productos")}
     stock = {s[0]: s[1] or 0 for s in _q(usuario, "SELECT producto_id, SUM(cantidad) FROM stock GROUP BY producto_id")}
     if not productos:
@@ -247,57 +310,6 @@ def inventario(usuario: Usuario, ref: date, dias: int) -> dict:
     }
 
 
-# --- Finanzas -------------------------------------------------------------------
-
-def finanzas(usuario: Usuario, ref: date, dias: int) -> dict:
-    hasta, d90 = ref.isoformat(), (ref - timedelta(days=89)).isoformat()
-    facturas = _q(usuario, f"""
-        SELECT cliente_id, fecha_emision, fecha_vencimiento, fecha_cobro, importe, saldo FROM cxc
-        WHERE saldo <> 0 OR (fecha_cobro >= '{d90}' AND fecha_cobro <= '{hasta}')""")
-    if not facturas:
-        raise _SinDatos("No hay facturas a cobrar: sincronizá Facturación en Odoo o cargá el archivo cxc.")
-    abiertas = [f for f in facturas if f[5]]
-    total = sum(f[5] for f in abiertas)
-    tramos = {nombre: 0.0 for nombre, _, _ in TRAMOS}
-    vencida_cliente = defaultdict(lambda: [0.0, 0])
-    for f in abiertas:
-        atraso = _dias(hasta, f[2]) if f[2] else 0
-        for nombre, desde, hasta_ in TRAMOS:
-            if (desde is None and atraso <= 0) or (desde is not None and atraso >= desde and (hasta_ is None or atraso <= hasta_)):
-                tramos[nombre] += f[5]
-                break
-        if atraso > 0:
-            vencida_cliente[f[0]][0] += f[5]
-            vencida_cliente[f[0]][1] = max(vencida_cliente[f[0]][1], atraso)
-    vencida = total - tramos["Al día"]
-    cobradas = [f for f in facturas if f[3] and f[1] and d90 <= f[3][:10] <= hasta]
-    dias_cobro = sum(_dias(f[3], f[1]) for f in cobradas) / len(cobradas) if cobradas else None
-    atraso_prom = sum(_dias(f[3], f[2]) for f in cobradas if f[2]) / len(cobradas) if cobradas else None
-    try:
-        venta_90 = _q(usuario, f"""SELECT SUM(l.cantidad * l.precio_unitario) FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id
-                                   WHERE v.anulada = 0 AND v.fecha >= '{d90}' AND v.fecha <= '{hasta}'""")[0][0] or 0
-    except (AccesoDenegado, ConsultaNoPermitida):
-        venta_90 = 0
-    nombres = _nombres(usuario, "SELECT id, razon_social FROM clientes", "Cliente")
-    en_riesgo = sum(v for n, v in tramos.items() if n in ("61 a 90 días", "Más de 90 días"))
-    return {
-        "kpis": [
-            _kpi("Deuda de clientes", round(total, 2), "moneda", nota="saldo pendiente"),
-            _kpi("Deuda vencida", round(vencida, 2), "moneda", nota=f"{(vencida / total * 100 if total else 0):.1f} % del total".replace(".", ","),
-                 estado="critico" if total and vencida / total > 0.3 else ("alerta" if vencida else "ok")),
-            _kpi("Deuda en riesgo", round(en_riesgo, 2), "moneda", nota="más de 60 días vencida", estado="critico" if en_riesgo else None),
-            _kpi("DSO", round(total / (venta_90 / 90), 1) if venta_90 else None, "dias", nota="días de venta en la calle"),
-            _kpi("Días reales de cobro", round(dias_cobro, 1) if dias_cobro is not None else None, "dias",
-                 nota="facturas cobradas en 90 días"),
-            _kpi("Atraso promedio", round(atraso_prom, 1) if atraso_prom is not None else None, "dias",
-                 nota="sobre el vencimiento", estado="alerta" if atraso_prom and atraso_prom > 7 else None),
-        ],
-        "antiguedad": [{"tramo": n, "saldo": round(v, 2)} for n, v in tramos.items()],
-        "deudores": [{"cliente": nombres.get(c, f"Cliente {c}"), "vencido": round(v[0], 2), "dias_max_atraso": v[1]}
-                     for c, v in sorted(vencida_cliente.items(), key=lambda x: -x[1][0])[:10]],
-    }
-
-
 def _valor(seccion: dict, nombre: str):
     return next((k["valor"] for k in seccion.get("kpis", []) if k["nombre"] == nombre), None)
 
@@ -310,31 +322,42 @@ def _sumar(seccion: dict, bloque) -> None:
     seccion["paneles_extra"] = bloque.paneles
 
 
-def tablero(usuario: Usuario, dias: int = 30, hoy: date | None = None) -> dict:
-    ref, ajustada = fecha_de_referencia(usuario, hoy)
-    v = _seccion(ventas, usuario, ref, dias)
-    i = _seccion(inventario, usuario, ref, dias)
-    f = _seccion(finanzas, usuario, ref, dias)
+def tablero(usuario: Usuario, mes: str | None = None, hoy: date | None = None) -> dict:
+    hoy = hoy or date.today()
+    meses = meses_disponibles(usuario, hoy)
+    validos = [m["valor"] for m in meses]
+    if mes not in validos:  # por defecto, el mes más reciente con ventas
+        mes = next((m["valor"] for m in meses if m["con_ventas"]), validos[0])
+    p = Periodo.crear(mes, hoy)
+    v = _seccion(ventas, usuario, p)
+    i = _seccion(inventario, usuario, p)
+
     def bloque(fn, *args):
         try:
             return fn(*args)
         except Exception:  # un bloque que no se puede calcular se omite; el resto del tablero se muestra
             return indicadores.Bloque()
 
-    bloques = [bloque(indicadores.ventas, usuario, ref, dias, _valor(v, "Venta neta")),
-               bloque(indicadores.inventario, usuario, ref, dias),
-               bloque(indicadores.finanzas, usuario, ref, dias, _valor(v, "Margen bruto"))]
-    for seccion, bloque in zip((v, i, f), bloques):
-        _sumar(seccion, bloque)
-    if f.get("sin_datos") and bloques[2].kpis:  # sin facturas de clientes, pero con otros datos financieros
-        f = {"kpis": bloques[2].kpis, "paneles_extra": bloques[2].paneles, "antiguedad": [], "deudores": [],
-             "nota": "Sin facturas de clientes: se muestran los demás datos financieros."}
+    bloques = [bloque(indicadores.ventas, usuario, p.hasta, p.dias, _valor(v, "Venta neta")),
+               bloque(indicadores.inventario, usuario, p.hasta, p.dias)]
+    for seccion, b in zip((v, i), bloques):
+        _sumar(seccion, b)
+    if not p.en_curso and "kpis" in i:
+        i["nota"] = "El stock y los lotes son los de hoy; las ventas y mermas, las del mes elegido."
+    try:
+        f = finanzas_analisis.finanzas(usuario, p)
+    except Exception as e:  # nunca un error 500
+        f = {"sin_datos": True, "mensaje": f"No se pudo calcular Finanzas ({type(e).__name__}: {str(e).splitlines()[0][:160]})."}
     return {
-        "fecha": ref.isoformat(),
-        "fecha_ajustada": ajustada,
-        "dias": dias,
+        "mes": p.mes,
+        "nombre": p.nombre,
+        "periodo": p.describir(),
+        "desde": p.desde.isoformat(),
+        "hasta": p.hasta.isoformat(),
+        "en_curso": p.en_curso,
+        "meses": meses,
         "ventas": v,
         "inventario": i,
         "finanzas": f,
-        "no_disponibles": [x for b in bloques for x in b.faltan],
+        "no_disponibles": [x for b in bloques for x in b.faltan] + f.pop("faltan", []),
     }
