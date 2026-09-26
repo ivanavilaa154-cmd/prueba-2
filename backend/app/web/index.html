@@ -666,6 +666,7 @@ function pilar(titulo, s, contenido) {
   return `<div class="pilar" data-pilar="${id}"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}${extra}</div></div>`;
 }
 function panelControlOdoo(c) {
+  if (c.mensaje) return `<div class="panel ancho"><h4>Control contra Odoo · «Análisis de ventas» del mes</h4>${aviso("alerta", c.mensaje)}</div>`;
   const fila = (n, o, p) => [n, o, p, Math.round((p - o) * 100) / 100];
   return `<div class="panel ancho"><h4>Control contra Odoo · «Análisis de ventas» del mes ${c.coincide ? `<span class="estado-chip ok">✓ Coincide</span>` : `<span class="estado-chip alerta">Revisar</span>`}</h4>
     <p class="nota" style="margin:0 0 8px">Mismo filtro que «Órdenes de venta» en Odoo (sin cotizaciones, presupuestos enviados ni anulados), hora de ${esc(c.zona || "")}. Tomado en la sincronización del ${diaMes(c.sincronizado || "")}.
@@ -1339,6 +1340,7 @@ setInterval(() => { if ($("#gestion").classList.contains("activa") && !$("#gs-ob
   try {
     const s = await api("/salud");
     $("#empresa").textContent = s.empresa + " · Plataforma IA";
+    if (s.version) $("#salir").insertAdjacentHTML("afterend", ` <span class="nota" title="Versión del programa que está corriendo">· versión ${esc(s.version)}</span>`);
     chatHabilitado = s.chat_habilitado;
     $("#salir").hidden = !s.con_clave;
     $("#chat-aviso").innerHTML = chatHabilitado ? "" :

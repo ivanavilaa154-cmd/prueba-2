@@ -179,9 +179,22 @@ def preview():
     return FileResponse(WEB / "index.html")
 
 
+def _version() -> str | None:
+    """Versión del código que está corriendo (commit y fecha), para saber si el Codespace se actualizó."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "log", "-1", "--format=%h del %ad", "--date=format:%d/%m %H:%M"], cwd=config.RAIZ,
+                              capture_output=True, text=True, timeout=3).stdout.strip() or None
+    except Exception:
+        return None
+
+
+VERSION = _version()
+
+
 @app.get("/salud")
 def salud():
-    return {"estado": "ok", "empresa": config.empresa()["EMPRESA"], "modelo": config.ANTHROPIC_MODEL,
+    return {"estado": "ok", "empresa": config.empresa()["EMPRESA"], "modelo": config.ANTHROPIC_MODEL, "version": VERSION,
             "chat_habilitado": _chat_habilitado(), "fuente": fuente.actual(), "con_clave": bool(os.getenv("PANEL_CLAVE"))}
 
 

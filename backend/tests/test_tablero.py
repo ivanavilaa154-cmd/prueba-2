@@ -357,3 +357,13 @@ def test_control_odoo_en_el_tablero(base_demo_config, monkeypatch):
     c = tablero.control_odoo(obtener_usuario("u1"), "2026-08")
     assert (c["odoo_con_impuestos"], c["plataforma_con_impuestos"], c["coincide"]) == (183.0, 170.8, False)
     assert tablero.control_odoo(obtener_usuario("u2"), "2026-08") is None       # la vendedora ve solo su cartera
+
+
+def test_control_odoo_explica_por_que_no_esta(base_demo_config, monkeypatch):
+    from app.erp import fuente
+    from app.integraciones import gestor
+    monkeypatch.setattr(fuente, "actual", lambda: "odoo")
+    monkeypatch.setattr(gestor, "_leer_estado", lambda: {"historial": [{"ok": True, "fecha": "2026-09-20T10:00:00"}]})
+    assert "Sincronizar ahora" in tablero.control_odoo(obtener_usuario("u1"), "2026-08")["mensaje"]
+    monkeypatch.setattr(gestor, "_leer_estado", lambda: {"historial": []})
+    assert "Todavía no hay" in tablero.control_odoo(obtener_usuario("u1"), "2026-08")["mensaje"]

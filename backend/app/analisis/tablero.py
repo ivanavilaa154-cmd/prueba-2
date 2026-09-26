@@ -337,8 +337,16 @@ def control_odoo(usuario: Usuario, mes: str) -> dict | None:
     ultima = next((h for h in gestor._leer_estado().get("historial", []) if h.get("ok")), None)
     ctl = (ultima or {}).get("control_ventas") or {}
     filas = [f for f in ctl.get("filas", []) if f["mes"] == mes]
-    if not ctl.get("disponible") or not filas:
-        return None
+    if not ultima:
+        return {"mensaje": "Todavía no hay una sincronización completa con Odoo: el control se hace al sincronizar."}
+    if not ctl:
+        return {"mensaje": "La última sincronización es de una versión anterior, sin el control: tocá «Sincronizar ahora» en "
+                           "Integraciones → Odoo."}
+    if not ctl.get("disponible"):
+        return {"mensaje": ctl.get("motivo") or "No se pudo leer el reporte de ventas de Odoo."}
+    if not filas:
+        return {"mensaje": f"El reporte «Análisis de ventas» de Odoo no tiene ventas de este mes (o el mes queda fuera de los "
+                           f"meses que se sincronizan)."}
     suma = lambda campo: round(sum(f[campo] for f in filas), 2)  # noqa: E731
     return {"mes": mes, "sincronizado": ultima.get("fecha"), "zona": ctl.get("zona"),
             "odoo_con_impuestos": suma("odoo_con_impuestos"), "plataforma_con_impuestos": suma("plataforma_con_impuestos"),
