@@ -175,3 +175,51 @@ def test_cobertura(base_demo_config):
     assert por_tabla["visitas"]["estado"] == "vacia"
     assert "nombre_fantasia" in por_tabla["clientes"]["campos_vacios"]
     assert [p["pilar"] for p in c["pilares"]] == ["Ventas", "Inventario", "Finanzas"]
+
+
+VIEJO = """
+CREATE TABLE sucursales (id INTEGER PRIMARY KEY, nombre TEXT);
+CREATE TABLE clientes (id INTEGER PRIMARY KEY, razon_social TEXT, vendedor_id INTEGER);
+CREATE TABLE productos (id INTEGER PRIMARY KEY, descripcion TEXT, costo REAL, precio REAL);
+CREATE TABLE stock (producto_id INTEGER, sucursal_id INTEGER, cantidad REAL);
+CREATE TABLE ventas (id INTEGER PRIMARY KEY, fecha TEXT, cliente_id INTEGER, vendedor_id INTEGER, sucursal_id INTEGER, anulada INTEGER DEFAULT 0);
+CREATE TABLE ventas_lineas (venta_id INTEGER, producto_id INTEGER, cantidad REAL, precio_unitario REAL, costo_unitario REAL);
+CREATE TABLE cxc (id INTEGER PRIMARY KEY, cliente_id INTEGER, fecha_emision TEXT, fecha_vencimiento TEXT, fecha_cobro TEXT, importe REAL, saldo REAL);
+INSERT INTO clientes VALUES (1, 'Almacén Viejo', 1);
+INSERT INTO productos VALUES (1, 'Arroz', 40, 55);
+INSERT INTO stock VALUES (1, 1, 10);
+INSERT INTO ventas VALUES (1, '2026-09-20', 1, 1, 1, 0);
+INSERT INTO ventas_lineas VALUES (1, 1, 5, 55, 40);
+INSERT INTO cxc VALUES (1, 1, '2026-09-20', '2026-10-20', NULL, 275, 275);
+"""
+
+
+def test_base_de_version_anterior(tmp_path, monkeypatch):
+    """Una base con el modelo viejo no rompe el tablero, y se actualiza sin perder datos."""
+    import sqlite3
+
+    from app import config
+    from app.erp import fuente, modelo
+
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(ruta)
+    con.executescript(VIEJO)
+    con.close()
+    monkeypatch.setattr(config, "ERP_URL", f"sqlite:///{ruta}")
+    antes = tablero.tablero(obtener_usuario("u1"), 30, hoy=HOY)  # sin actualizar: no falla
+    assert _kpis(antes["ventas"])["Venta neta"]["valor"] == 275.0
+    conector.olvidar_conexiones()
+
+    cambios = modelo.actualizar_base(ruta)
+    assert "tabla cheques" in cambios and "ventas_lineas.impuestos" in cambios and "clientes.canal" in cambios
+    assert modelo.actualizar_base(ruta) == []  # la segunda vez no hay nada que cambiar
+    con = sqlite3.connect(ruta)
+    assert con.execute("SELECT razon_social FROM clientes").fetchall() == [("Almacén Viejo",)]  # los datos siguen
+    con.close()
+    despues = tablero.tablero(obtener_usuario("u1"), 30, hoy=HOY)
+    assert _kpis(despues["ventas"])["Venta neta"]["valor"] == 275.0
+    assert any("caja" in n["indicador"].lower() for n in despues["no_disponibles"])
+
+    monkeypatch.setattr(fuente, "URL_DEMO", f"sqlite:///{ruta}")
+    fuente.usar("demo")  # al elegir una fuente también se actualiza
+    conector.olvidar_conexiones()

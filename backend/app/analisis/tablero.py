@@ -59,13 +59,15 @@ def _seccion(fn, *args) -> dict:
         return {"sin_acceso": True, "mensaje": "Tu perfil no tiene acceso a estos datos."}
     except _SinDatos as e:
         return {"sin_datos": True, "mensaje": str(e)}
+    except Exception as e:  # nunca un error 500: el pilar avisa y el resto del tablero se muestra
+        return {"sin_datos": True, "mensaje": f"No se pudo calcular esta sección ({type(e).__name__}: {str(e).splitlines()[0][:160]})."}
 
 
 def _nombres(usuario: Usuario, sql: str, prefijo: str) -> dict:
     """Nombres para mostrar; si el rol no ve la tabla, se usa "<prefijo> <id>"."""
     try:
         return {f[0]: f[1] for f in _q(usuario, sql)}
-    except (AccesoDenegado, ConsultaNoPermitida):
+    except Exception:  # sin acceso o sin esa tabla: se muestran los identificadores
         return {}
 
 
@@ -74,7 +76,7 @@ def fecha_de_referencia(usuario: Usuario, hoy: date | None = None) -> tuple[date
     hoy = hoy or date.today()
     try:
         ultima = _q(usuario, "SELECT MAX(fecha) FROM ventas WHERE anulada = 0")[0][0]
-    except (AccesoDenegado, ConsultaNoPermitida):
+    except Exception:
         return hoy, False
     if ultima and date.fromisoformat(ultima[:10]) < hoy - timedelta(days=30):
         return date.fromisoformat(ultima[:10]), True
@@ -313,9 +315,15 @@ def tablero(usuario: Usuario, dias: int = 30, hoy: date | None = None) -> dict:
     v = _seccion(ventas, usuario, ref, dias)
     i = _seccion(inventario, usuario, ref, dias)
     f = _seccion(finanzas, usuario, ref, dias)
-    bloques = [indicadores.ventas(usuario, ref, dias, _valor(v, "Venta neta")),
-               indicadores.inventario(usuario, ref, dias),
-               indicadores.finanzas(usuario, ref, dias, _valor(v, "Margen bruto"))]
+    def bloque(fn, *args):
+        try:
+            return fn(*args)
+        except Exception:  # un bloque que no se puede calcular se omite; el resto del tablero se muestra
+            return indicadores.Bloque()
+
+    bloques = [bloque(indicadores.ventas, usuario, ref, dias, _valor(v, "Venta neta")),
+               bloque(indicadores.inventario, usuario, ref, dias),
+               bloque(indicadores.finanzas, usuario, ref, dias, _valor(v, "Margen bruto"))]
     for seccion, bloque in zip((v, i, f), bloques):
         _sumar(seccion, bloque)
     if f.get("sin_datos") and bloques[2].kpis:  # sin facturas de clientes, pero con otros datos financieros

@@ -27,6 +27,12 @@ WEB = Path(__file__).resolve().parent / "web"
 
 @asynccontextmanager
 async def _ciclo_de_vida(_app):
+    # Las bases locales creadas con una versión anterior se completan con las tablas y columnas nuevas.
+    from .erp import modelo
+    for url in fuente.opciones().values():
+        if url and url.startswith("sqlite:///"):
+            modelo.actualizar_base(url.replace("sqlite:///", "", 1))
+    conector.olvidar_conexiones()
     # Si Odoo ya está configurado y sincronizado, se arranca con sus datos.
     odoo_listo = not os.getenv("ERP_URL") and gestor.config_odoo()["clave_guardada"]
     if odoo_listo and fuente.RUTA_ODOO.exists():

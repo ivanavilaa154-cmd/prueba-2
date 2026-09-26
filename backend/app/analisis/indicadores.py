@@ -24,6 +24,8 @@ def _q(usuario: Usuario, sql: str) -> list[list] | None:
         return conector.consultar(sql, max_filas=SIN_LIMITE, usuario=usuario)["filas"]
     except (AccesoDenegado, ConsultaNoPermitida):
         return None
+    except Exception:  # tabla o columna que esta base no tiene: el bloque no se muestra
+        return None
 
 
 def _uno(usuario: Usuario, sql: str):

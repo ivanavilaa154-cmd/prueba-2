@@ -9,7 +9,7 @@ import os
 import re
 
 from .. import config
-from . import conector, importar
+from . import conector, importar, modelo
 
 URL_DEMO = f"sqlite:///{config.BACKEND / 'demo_erp.db'}"
 URL_IMPORTADA = f"sqlite:///{importar.RUTA}"
@@ -47,6 +47,8 @@ def usar(tipo: str) -> None:
             "erp": "No hay ERP_URL en backend/.env.",
         }.get(tipo, f"Fuente desconocida: {tipo}"))
     conector.olvidar_conexiones()
+    if url.startswith("sqlite:///"):
+        modelo.actualizar_base(url.replace("sqlite:///", "", 1))  # bases creadas con una versión anterior
     config.ERP_URL = url
 
 

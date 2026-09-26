@@ -142,3 +142,41 @@ def es_fecha(columna: str) -> bool:
 
 def pilar_de(tabla: str) -> str | None:
     return next((p for p, tablas in PILARES.items() if tabla in tablas), None)
+
+
+def actualizar_base(ruta) -> list[str]:
+    """Lleva una base SQLite creada con una versión anterior al modelo actual, sin borrar datos.
+
+    Crea las tablas que faltan y agrega las columnas que faltan (quedan vacías). Devuelve qué cambió.
+    """
+    import re
+    import sqlite3
+    from pathlib import Path
+
+    ruta = Path(ruta)
+    if not ruta.exists():
+        return []
+    cambios = []
+    con = sqlite3.connect(ruta)
+    try:
+        existentes = {t for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        for sentencia in [x.strip() for x in ESQUEMA.split(";") if "CREATE TABLE" in x]:
+            sentencia = re.sub(r"--[^\n]*", "", sentencia).strip()
+            tabla = re.search(r"CREATE TABLE (\w+)", sentencia).group(1)
+            if tabla not in existentes:
+                con.execute(sentencia)
+                cambios.append(f"tabla {tabla}")
+                continue
+            tiene = {c[1] for c in con.execute(f"PRAGMA table_info({tabla})")}
+            cuerpo = sentencia[sentencia.index("(") + 1: sentencia.rindex(")")]
+            for definicion in re.split(r",\s*(?![^()]*\))", cuerpo):
+                partes = definicion.split()
+                if not partes or partes[0] in tiene:
+                    continue
+                tipo = " ".join(p for p in partes[1:] if p.upper() not in ("PRIMARY", "KEY"))
+                con.execute(f"ALTER TABLE {tabla} ADD COLUMN {partes[0]} {tipo}")
+                cambios.append(f"{tabla}.{partes[0]}")
+        con.commit()
+    finally:
+        con.close()
+    return cambios
