@@ -211,7 +211,7 @@ def ventas(usuario: Usuario, p: Periodo) -> dict:
 
     return {
         "kpis": [
-            _kpi("Venta neta", round(venta, 2), "moneda", _variacion(venta, venta_a), "sin impuestos"),
+            _kpi("Venta neta", round(venta, 2), "moneda", _variacion(venta, venta_a), "sin IVA, después de descuentos"),
             _kpi("Margen bruto", round(margen, 2), "moneda", _variacion(margen, margen_a)),
             _kpi("Margen %", round(margen / venta, 4) if venta else None, "porcentaje",
                  round(margen / venta - margen_a / venta_a, 4) if venta and venta_a else None, "variación en puntos"),
@@ -322,6 +322,31 @@ def _sumar(seccion: dict, bloque) -> None:
     seccion["paneles_extra"] = bloque.paneles
 
 
+def control_odoo(usuario: Usuario, mes: str) -> dict | None:
+    """Con Odoo como fuente: el mes elegido contra el reporte «Análisis de ventas» de Odoo, tomado en la última sincronización.
+
+    Es de toda la empresa: solo lo ven los roles que ven todas las ventas (no un vendedor con su cartera).
+    """
+    from ..erp import fuente
+    from ..integraciones import gestor
+    if fuente.actual() != "odoo" or usuario.vendedor_id is not None:
+        return None
+    permitidas = usuario.tablas_permitidas
+    if permitidas != "*" and "ventas" not in permitidas:
+        return None
+    ultima = next((h for h in gestor._leer_estado().get("historial", []) if h.get("ok")), None)
+    ctl = (ultima or {}).get("control_ventas") or {}
+    filas = [f for f in ctl.get("filas", []) if f["mes"] == mes]
+    if not ctl.get("disponible") or not filas:
+        return None
+    suma = lambda campo: round(sum(f[campo] for f in filas), 2)  # noqa: E731
+    return {"mes": mes, "sincronizado": ultima.get("fecha"), "zona": ctl.get("zona"),
+            "odoo_con_impuestos": suma("odoo_con_impuestos"), "plataforma_con_impuestos": suma("plataforma_con_impuestos"),
+            "odoo_sin_impuestos": suma("odoo_sin_impuestos"), "plataforma_sin_impuestos": suma("plataforma_sin_impuestos"),
+            "odoo_lineas": sum(f["odoo_lineas"] for f in filas), "plataforma_lineas": sum(f["plataforma_lineas"] for f in filas),
+            "coincide": all(f["coincide"] for f in filas), "equipos": filas}
+
+
 def tablero(usuario: Usuario, mes: str | None = None, hoy: date | None = None) -> dict:
     hoy = hoy or date.today()
     meses = meses_disponibles(usuario, hoy)
@@ -342,6 +367,15 @@ def tablero(usuario: Usuario, mes: str | None = None, hoy: date | None = None) -
                bloque(indicadores.inventario, usuario, p.hasta, p.dias)]
     for seccion, b in zip((v, i), bloques):
         _sumar(seccion, b)
+    # El total con impuestos va al lado de la venta neta: es el número que muestra Odoo en «Total»
+    kpis_v = v.get("kpis", [])
+    orden = ["Venta bruta", "Venta neta", "IVA de las ventas", "Total con impuestos"]
+    primeros = [k for nombre in orden for k in kpis_v if k["nombre"] == nombre]
+    if primeros:
+        v["kpis"] = primeros + [k for k in kpis_v if k not in primeros]
+    control = control_odoo(usuario, p.mes)
+    if control and "kpis" in v:
+        v["control_odoo"] = control
     if not p.en_curso and "kpis" in i:
         i["nota"] = "El stock y los lotes son los de hoy; las ventas y mermas, las del mes elegido."
     try:

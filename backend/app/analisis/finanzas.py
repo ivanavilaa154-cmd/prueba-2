@@ -21,7 +21,7 @@ from datetime import date, timedelta
 
 from .. import config
 from ..permisos import Usuario
-from .indicadores import _q, _uno, flujo_13_semanas
+from .indicadores import _q, _uno, desglose_iva, flujo_13_semanas
 
 TRAMOS = [("Al día", None, 0), ("1 a 15 días", 1, 15), ("16 a 30 días", 16, 30),
           ("31 a 60 días", 31, 60), ("61 a 90 días", 61, 90), ("Más de 90 días", 91, None)]
@@ -495,6 +495,55 @@ class Finanzas:
         g.paneles.append(_panel("Impuestos por período", ["Impuesto", "Período", "Vence", "Importe", "Estado"], ["t", "t", "t", "$", "t"], filas[:12]))
         return g
 
+    # --- 1b. Facturación e IVA -----------------------------------------------------------
+
+    def facturacion(self) -> Grupo | None:
+        """Qué se facturó en el mes (con y sin IVA, neto de notas de crédito) y el IVA de las ventas por tipo."""
+        docs = self.q(f"""SELECT tipo, COUNT(*), SUM(importe), SUM(importe_sin_impuestos), SUM(impuestos), COUNT(importe_sin_impuestos)
+                          FROM cxc WHERE fecha_emision >= '{self.desde}' AND fecha_emision <= '{self.hasta}' GROUP BY tipo""")
+        if docs is None:   # la facturación es de quien ve las cuentas de clientes (no de compras ni de un vendedor suelto)
+            return None
+        iva = desglose_iva(self.u, self.desde, self.hasta)
+        g = Grupo("Facturación e IVA",
+                  "Venta bruta: a precio de lista, antes de descuentos, sin IVA. Venta neta: después de descuentos, sin IVA. "
+                  "Total: con IVA, lo que paga el cliente (columna «Total» de Odoo). Facturación: documentos emitidos en el mes, "
+                  "facturas menos notas de crédito.")
+        if docs:
+            por = {t or "factura": f for t, *f in [[r[0], r[1], r[2], r[3], r[4], r[5]] for r in docs]}
+            fac = por.get("factura", [0, 0, 0, 0, 0])
+            nc = por.get("nota_credito", [0, 0, 0, 0, 0])
+            nd = por.get("nota_debito", [0, 0, 0, 0, 0])
+            total = (fac[1] or 0) + (nd[1] or 0) + (nc[1] or 0)          # las notas de crédito vienen en negativo
+            con_detalle = (fac[4] or 0) + (nc[4] or 0) > 0
+            sin = ((fac[2] or 0) + (nd[2] or 0) + (nc[2] or 0)) if con_detalle else None
+            g.kpis += [_kpi("Facturación con IVA", round(total, 2), "moneda", f"{fac[0]} facturas − {nc[0]} notas de crédito"),
+                       _kpi("Facturación sin IVA", round(sin, 2) if sin is not None else None, "moneda",
+                            "neta de notas de crédito" if sin is not None else "el sistema no separa el IVA de cada factura"),
+                       _kpi("IVA facturado", round(total - sin, 2) if sin is not None else None, "moneda", "débito fiscal del mes")]
+            filas = []
+            for nombre, f, signo in (("Facturas", fac, 1), ("Notas de débito", nd, 1), ("Notas de crédito", nc, 1)):
+                if f[0]:
+                    filas.append([nombre, f[0], round(f[2], 2) if f[4] else None, round((f[1] or 0) - (f[2] or 0), 2) if f[4] else None,
+                                  round(f[1] or 0, 2)])
+            filas.append(["Facturación neta", fac[0] + nd[0] + nc[0], round(sin, 2) if sin is not None else None,
+                          round(total - sin, 2) if sin is not None else None, round(total, 2)])
+            g.paneles.append(_panel("Facturación del mes (documentos emitidos)", ["Documento", "Cantidad", "Sin IVA", "IVA", "Con IVA"],
+                                    ["t", "n", "$", "$", "$"], filas))
+        elif docs is not None:
+            self.falta("Facturación del mes", "no hay facturas de clientes emitidas en el mes (tabla cxc)")
+        if iva:
+            if not docs:
+                g.kpis.append(_kpi("Total vendido con IVA", iva["total"], "moneda", "según los pedidos y tickets del mes"))
+            miles = lambda v: f"{v:,.0f}".replace(",", ".")  # noqa: E731
+            g.kpis.append(_kpi("Venta neta sin IVA", iva["neta"], "moneda",
+                               f"venta bruta $ {miles(iva['bruta'])}, descuentos $ {miles(iva['descuentos'])}"))
+            if docs and iva["neta"] and sin is not None:
+                g.kpis.append(_kpi("Vendido sin facturar", round(iva["neta"] - sin, 2), "moneda",
+                                   "venta neta sin IVA − facturación sin IVA (ventas de caja sin factura, pedidos por facturar)"))
+            g.paneles.append(_panel("IVA de las ventas por tipo", ["Impuesto", "Base sin IVA", "IVA", "Total"], ["t", "$", "$", "$"],
+                                    iva["por_tipo"], vacio="Las líneas de venta no traen el impuesto."))
+        return g
+
     # --- 7. Controles y alertas --------------------------------------------------------------
 
     def controles(self) -> Grupo | None:
@@ -551,7 +600,7 @@ class Finanzas:
 def finanzas(usuario: Usuario, p) -> dict:
     f = Finanzas(usuario, p)
     grupos, antiguedad, deudores = [], [], []
-    for metodo in (f.resultados, f.cobranzas, f.pagos, f.tesoreria, f.capital_de_trabajo, f.impuestos, f.controles):
+    for metodo in (f.resultados, f.facturacion, f.cobranzas, f.pagos, f.tesoreria, f.capital_de_trabajo, f.impuestos, f.controles):
         try:
             g = metodo()
         except Exception:  # un grupo que no se puede calcular se omite; el resto se muestra

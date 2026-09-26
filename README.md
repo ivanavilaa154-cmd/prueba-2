@@ -59,13 +59,17 @@ La primera pestaña muestra los indicadores clave de los tres pilares, con los d
 agosto 2026…): el mes en curso se compara con los mismos días del mes anterior; un mes cerrado, con el mes
 anterior completo. Los saldos (deuda, caja, stock) son siempre los de hoy.
 
-- **Ventas:** venta neta, margen, pedidos, pedido promedio, clientes activos y nuevos, venta en riesgo por
+- **Ventas:** venta bruta (a precio de lista, sin IVA), venta neta (después de descuentos, sin IVA), IVA por tipo
+  (22 %, 10 %, exento) y total con IVA (igual a la columna «Total» de Odoo); con Odoo, control del mes contra su
+  reporte «Análisis de ventas». Además margen, pedidos, pedido promedio, clientes activos y nuevos, venta en riesgo por
   clientes que dejaron de comprar, venta por mes, por vendedor y por sucursal.
 - **Inventario:** valor a costo, días de inventario, rotación, quiebres y venta perdida, productos por
   quebrar y capital inmovilizado.
 - **Finanzas** (`backend/app/analisis/finanzas.py`), en bloques:
   - *Resultados del mes:* estado de resultados de 12 meses, gastos por categoría, resultado operativo, punto de
     equilibrio, crecimiento real contra el año anterior y cumplimiento del presupuesto.
+  - *Facturación e IVA:* facturas menos notas de crédito del mes, con y sin IVA; IVA facturado; IVA de las ventas
+    por tipo y lo vendido sin facturar.
   - *Cobranzas y crédito:* deuda y antigüedad, efectividad de cobranza, DSO, riesgo de crédito por cliente,
     clientes sobre su límite, agenda de cobranza, cobranzas por medio de pago y cheques.
   - *Pagos a proveedores:* deuda, vencimientos de 7 y 30 días, DPO y próximos pagos.

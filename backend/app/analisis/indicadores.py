@@ -68,16 +68,70 @@ def _rango(ref: date, dias: int) -> tuple[str, str]:
 
 # --- Ventas -----------------------------------------------------------------------
 
+def _nombre_impuesto(nombre, tasa) -> str:
+    if nombre:
+        return str(nombre)
+    if tasa is None:
+        return "Sin dato de impuesto"
+    return "Exento / sin IVA" if abs(tasa) < 0.005 else f"IVA {round(tasa * 100):.0f} %"
+
+
+def desglose_iva(usuario: Usuario, desde: str, hasta: str) -> dict | None:
+    """De la venta bruta al total con impuestos, y el IVA separado por tipo (22 %, 10 %, exento...).
+
+    Bruta: a precio de lista, antes de descuentos, sin IVA. Neta: después de descuentos, sin IVA.
+    Total: con impuestos (lo que paga el cliente; la columna «Total» de Odoo).
+    """
+    base = (f"FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id "
+            f"WHERE v.anulada = 0 AND v.fecha >= '{desde}' AND v.fecha <= '{hasta}'")
+    filas = _q(usuario, f"""SELECT l.impuesto, ROUND(l.tasa_impuesto, 3),
+            SUM(CASE WHEN l.descuento_pct > 0 AND l.descuento_pct < 1 THEN l.cantidad * l.precio_unitario / (1 - l.descuento_pct)
+                     ELSE l.cantidad * l.precio_unitario END),
+            SUM(l.cantidad * l.precio_unitario), SUM(COALESCE(l.impuestos, 0)), COUNT(l.impuestos) {base}
+            GROUP BY l.impuesto, ROUND(l.tasa_impuesto, 3)""")
+    if not filas:
+        return None
+    tipos: dict[str, list] = {}
+    for nombre, tasa, bruta, neta, iva, con_dato in filas:
+        clave = _nombre_impuesto(nombre, tasa) if con_dato or nombre or tasa is not None else "Sin dato de impuesto"
+        t = tipos.setdefault(clave, [clave, tasa, 0.0, 0.0])
+        t[2] += neta or 0
+        t[3] += iva or 0
+    bruta = sum(f[2] or 0 for f in filas)
+    neta = sum(f[3] or 0 for f in filas)
+    iva = sum(f[4] or 0 for f in filas)
+    dev = _uno(usuario, f"SELECT SUM(importe) FROM devoluciones WHERE fecha >= '{desde}' AND fecha <= '{hasta}'")
+    return {"bruta": round(bruta, 2), "descuentos": round(bruta - neta, 2), "neta": round(neta, 2), "impuestos": round(iva, 2),
+            "total": round(neta + iva, 2), "devoluciones": round(dev or 0, 2) if dev is not None else None,
+            "con_dato_impuesto": any(f[5] for f in filas),
+            "por_tipo": sorted(([t[0], round(t[2], 2), round(t[3], 2), round(t[2] + t[3], 2)] for t in tipos.values()),
+                               key=lambda x: -x[1])}
+
+
 def ventas(usuario: Usuario, ref: date, dias: int, venta_neta: float | None) -> Bloque:
     b = Bloque()
     d0, hasta = _rango(ref, dias)
     periodo = f"v.anulada = 0 AND v.fecha >= '{d0}' AND v.fecha <= '{hasta}'"
     base = f"FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id WHERE {periodo}"
 
-    imp = _q(usuario, f"SELECT SUM(l.impuestos), COUNT(l.impuestos) {base}")
-    if imp and imp[0][1]:
-        b.kpis.append(_kpi("Venta con impuestos", round((venta_neta or 0) + (imp[0][0] or 0), 2), "moneda",
-                           "comparable con el «Total» de Odoo"))
+    iva = desglose_iva(usuario, d0, hasta)
+    if iva and iva["con_dato_impuesto"]:
+        b.kpis.append(_kpi("Total con impuestos", round((venta_neta or 0) + iva["impuestos"], 2), "moneda",
+                           "IVA incluido: lo mismo que la columna «Total» de Odoo"))
+        b.kpis.append(_kpi("IVA de las ventas", iva["impuestos"], "moneda", " · ".join(f"{t[0]}: $ {t[2]:,.0f}".replace(",", ".")
+                                                                                     for t in iva["por_tipo"] if t[2])[:120] or None))
+    if iva:
+        b.kpis.append(_kpi("Venta bruta", iva["bruta"], "moneda", "a precio de lista, antes de descuentos, sin IVA"))
+        filas = [["Venta bruta (precio de lista, sin IVA)", iva["bruta"]], ["− Descuentos", -iva["descuentos"]],
+                 ["= Venta neta sin IVA", iva["neta"]]]
+        filas += [[f"+ {t[0]} (sobre $ {t[1]:,.0f})".replace(",", "."), t[2]] for t in iva["por_tipo"] if t[2]]
+        filas.append(["= Total con impuestos (como Odoo)", iva["total"]])
+        if iva["devoluciones"]:
+            filas += [["− Devoluciones y notas de crédito (sin IVA)", -iva["devoluciones"]],
+                      ["Venta neta sin IVA después de devoluciones", round(iva["neta"] - iva["devoluciones"], 2)]]
+        b.paneles.append(_panel("De la venta bruta al total con IVA", ["Concepto", "Importe"], ["t", "$"], filas))
+        b.paneles.append(_panel("Venta por tipo de impuesto", ["Impuesto", "Base sin impuesto", "Impuesto", "Total"], ["t", "$", "$", "$"],
+                                iva["por_tipo"]))
 
     canales = _q(usuario, f"""SELECT v.canal, SUM(l.cantidad * l.precio_unitario), SUM(l.cantidad * l.precio_unitario + COALESCE(l.impuestos, 0)),
                                SUM(l.cantidad), COUNT(DISTINCT v.id) {base} GROUP BY v.canal""")

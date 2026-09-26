@@ -43,6 +43,9 @@ CLIENTES = [
 ]
 
 
+# IVA de Uruguay: tasa mínima (10 %) para alimentos de la canasta básica, básica (22 %) para el resto.
+TASA_IVA = {"Lácteos": 0.10, "Almacén": 0.10, "Bebidas": 0.22, "Limpieza": 0.22}
+
 CANAL = {"almacén": "Preventa", "kiosco": "Preventa", "autoservicio": "Institucional", "restaurante": "Televenta"}
 
 
@@ -96,15 +99,19 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
             anulada = 1 if rnd.random() < 0.01 else 0
             _insertar(con, "ventas", id=venta_id, tipo="factura", fecha=fecha.isoformat(), cliente_id=cli, vendedor_id=vend,
                       sucursal_id=suc, anulada=anulada, canal=CANAL[CLIENTES[cli - 1][1]])
-            total = 0.0
+            total = iva = 0.0
             for prod in rnd.sample(range(1, len(PRODUCTOS) + 1), rnd.randint(3, 7)):
                 costo = PRODUCTOS[prod - 1][3] * (1 + 0.004 * (365 - dia) / 30)  # inflación
                 margen = PRODUCTOS[prod - 1][4]
-                precio = costo / (1 - margen) * rnd.uniform(0.95, 1.0)
+                lista = costo / (1 - margen)
+                precio = lista * rnd.uniform(0.95, 1.0)
                 cant = rnd.randint(2, 24)
+                tasa = TASA_IVA[PRODUCTOS[prod - 1][1]]
                 total += cant * precio
+                iva += round(cant * precio * tasa, 2)
                 _insertar(con, "ventas_lineas", venta_id=venta_id, producto_id=prod, cantidad=cant, precio_unitario=round(precio, 2),
-                          costo_unitario=round(costo, 2), impuestos=round(cant * precio * 0.22, 2))
+                          precio_lista=round(lista, 2), descuento_pct=round(1 - precio / lista, 4), costo_unitario=round(costo, 2),
+                          impuestos=round(cant * precio * tasa, 2), tasa_impuesto=tasa, impuesto=f"IVA {tasa * 100:.0f} %")
             plazo = con.execute("SELECT condicion_pago_dias FROM clientes WHERE id=?", (cli,)).fetchone()[0]
             if plazo and not anulada:
                 cxc_id += 1
@@ -114,7 +121,8 @@ def crear(ruta: Path | None = None, hoy: date | None = None) -> Path:
                 pendiente = cobro > hoy
                 _insertar(con, "cxc", id=cxc_id, tipo="factura", cliente_id=cli, vendedor_id=vend, fecha_emision=fecha.isoformat(),
                           fecha_vencimiento=venc.isoformat(), fecha_cobro=None if pendiente else cobro.isoformat(),
-                          importe=round(total, 2), saldo=round(total, 2) if pendiente else 0.0)
+                          importe=round(total + iva, 2), importe_sin_impuestos=round(total, 2), impuestos=round(iva, 2),
+                          saldo=round(total + iva, 2) if pendiente else 0.0)
     _completar(con, hoy)
     _casos_actividades(con, hoy)
     con.commit()
@@ -270,7 +278,7 @@ def _casos_actividades(con, hoy: date) -> None:
         if not tiene:
             vid = q("SELECT MIN(id) FROM ventas WHERE sucursal_id = 1 AND anulada = 0 AND fecha = ?", fecha)[0][0]
             _insertar(con, "ventas_lineas", venta_id=vid, producto_id=10, cantidad=8, precio_unitario=89.0, costo_unitario=70.0,
-                      impuestos=round(8 * 89.0 * 0.22, 2))
+                      impuestos=round(8 * 89.0 * 0.22, 2), tasa_impuesto=0.22, impuesto="IVA 22 %")
     con.execute("DELETE FROM ventas_lineas WHERE producto_id = 10 AND venta_id IN (SELECT id FROM ventas WHERE sucursal_id = 1 AND fecha >= ?)",
                 (dia(3),))
     con.execute("UPDATE stock SET cantidad = 48 WHERE producto_id = 10 AND sucursal_id = 1")
@@ -301,15 +309,18 @@ def _casos_actividades(con, hoy: date) -> None:
     # ACT-05: una promoción que rindió, una que no movió la venta y una en curso que no despega
     _insertar(con, "promociones", id=1, nombre="Detergente 10 % off", producto_id=13, desde=dia(30), hasta=dia(18), tipo="descuento",
               descuento_pct=10)
-    con.execute("UPDATE ventas_lineas SET cantidad = cantidad * 3, en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.9, 2) "
+    con.execute("UPDATE ventas_lineas SET cantidad = cantidad * 3, en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.9, 2), "
+                "impuestos = ROUND(cantidad * 3 * ROUND(precio_unitario * 0.9, 2) * tasa_impuesto, 2) "
                 "WHERE producto_id = 13 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ? AND fecha <= ?)", (dia(30), dia(18)))
     _insertar(con, "promociones", id=2, nombre="Fideos 30 % off", producto_id=6, desde=dia(35), hasta=dia(22), tipo="descuento",
               descuento_pct=30)
-    con.execute("UPDATE ventas_lineas SET en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.7, 2) "
+    con.execute("UPDATE ventas_lineas SET en_promocion = 1, precio_unitario = ROUND(precio_unitario * 0.7, 2), "
+                "impuestos = ROUND(cantidad * ROUND(precio_unitario * 0.7, 2) * tasa_impuesto, 2) "
                 "WHERE producto_id = 6 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ? AND fecha <= ?)", (dia(35), dia(22)))
     _insertar(con, "promociones", id=3, nombre="Salsa de tomate precio especial", producto_id=7, desde=dia(5), hasta=dia(-9),
               tipo="precio_especial", precio_promocional=36)
-    con.execute("UPDATE ventas_lineas SET cantidad = MAX(1, ROUND(cantidad * 0.6)), en_promocion = 1, precio_unitario = 36 "
+    con.execute("UPDATE ventas_lineas SET cantidad = MAX(1, ROUND(cantidad * 0.6)), en_promocion = 1, precio_unitario = 36, "
+                "impuestos = ROUND(MAX(1, ROUND(cantidad * 0.6)) * 36 * tasa_impuesto, 2) "
                 "WHERE producto_id = 7 AND venta_id IN (SELECT id FROM ventas WHERE fecha >= ?)", (dia(5),))
 
     # ACT-06: un lote de leche en Norte que no llega a venderse a precio normal y queso sin fecha de vencimiento

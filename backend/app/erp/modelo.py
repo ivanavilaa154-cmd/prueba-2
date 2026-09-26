@@ -27,7 +27,8 @@ CREATE TABLE ventas (id INTEGER PRIMARY KEY, tipo TEXT, numero TEXT, fecha TEXT,
     vendedor_id INTEGER, sucursal_id INTEGER, canal TEXT, moneda TEXT, condicion_pago_dias INTEGER, medio_pago TEXT,
     caja TEXT, anulada INTEGER DEFAULT 0, motivo_anulacion TEXT);
 CREATE TABLE ventas_lineas (venta_id INTEGER, producto_id INTEGER, cantidad REAL, precio_lista REAL,
-    descuento_pct REAL, precio_unitario REAL, costo_unitario REAL, impuestos REAL, en_promocion INTEGER);
+    descuento_pct REAL, precio_unitario REAL, costo_unitario REAL, impuestos REAL, tasa_impuesto REAL, impuesto TEXT,
+    en_promocion INTEGER);
 CREATE TABLE devoluciones (id INTEGER PRIMARY KEY, fecha TEXT, cliente_id INTEGER, venta_id INTEGER,
     producto_id INTEGER, cantidad REAL, importe REAL, motivo TEXT);
 CREATE TABLE pedidos (id INTEGER PRIMARY KEY, numero TEXT, cliente_id INTEGER, vendedor_id INTEGER,
@@ -65,7 +66,8 @@ CREATE TABLE conteos (id INTEGER PRIMARY KEY, fecha TEXT, producto_id INTEGER, s
 
 -- ============ FINANZAS ============
 CREATE TABLE cxc (id INTEGER PRIMARY KEY, tipo TEXT, numero TEXT, cliente_id INTEGER, vendedor_id INTEGER,
-    fecha_emision TEXT, fecha_vencimiento TEXT, fecha_cobro TEXT, moneda TEXT, importe REAL, saldo REAL);
+    fecha_emision TEXT, fecha_vencimiento TEXT, fecha_cobro TEXT, moneda TEXT, importe REAL, importe_sin_impuestos REAL,
+    impuestos REAL, saldo REAL);
 CREATE TABLE cobranzas (id INTEGER PRIMARY KEY, fecha TEXT, cliente_id INTEGER, medio TEXT, importe REAL,
     moneda TEXT, cxc_id INTEGER);
 CREATE TABLE cheques (id INTEGER PRIMARY KEY, tipo TEXT, numero TEXT, banco TEXT, cliente_id INTEGER,

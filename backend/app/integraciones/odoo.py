@@ -78,6 +78,15 @@ def _num(valor) -> float | None:
 _CODIGO = re.compile(r"^\[[^\]]*\]\s*")
 
 
+def _tasa_cambio(valor) -> float:
+    """Cotización del documento respecto de la moneda de la empresa (Odoo: currency_rate). 0 o vacío = misma moneda."""
+    try:
+        v = float(valor or 0)
+    except (TypeError, ValueError):
+        return 1.0
+    return v if v > 0 else 1.0
+
+
 def _lotes(ids, tamano: int = 500):
     ids = sorted({i for i in ids if i})
     for i in range(0, len(ids), tamano):
@@ -600,7 +609,7 @@ class Extraccion:
 
     def _ventas_pedidos(self):
         campos = self.c._solo_existentes("sale.order", ["name", "date_order", "partner_id", "user_id", "warehouse_id", "state",
-                                                        "team_id", "currency_id", "payment_term_id"])
+                                                        "team_id", "currency_id", "payment_term_id", "currency_rate"])
         pedidos = list(self.c.leer_todo("sale.order", [("date_order", ">=", self._desde_utc()),
                                                        ("state", "in", ["sale", "done", "cancel"])], campos))
         empresa = self._empresa_de(_id(p["partner_id"]) for p in pedidos)
@@ -611,30 +620,38 @@ class Extraccion:
                 "id": p["id"], "tipo": "orden_venta", "numero": p.get("name"), "fecha": fecha, "hora": hora,
                 "cliente_id": empresa.get(_id(p["partner_id"])), "vendedor_id": _id(p.get("user_id")),
                 "sucursal_id": _id(p.get("warehouse_id")), "canal": _nombre(p.get("team_id")),
-                "moneda": _nombre(p.get("currency_id")), "condicion_pago_dias": plazos.get(_id(p.get("payment_term_id"))),
+                "moneda": None if "currency_rate" in p else _nombre(p.get("currency_id")), "condicion_pago_dias": plazos.get(_id(p.get("payment_term_id"))),
                 "anulada": 1 if p["state"] == "cancel" else 0})
+        tasas = {p["id"]: _tasa_cambio(p.get("currency_rate")) for p in pedidos}
         campos_l = self.c._solo_existentes("sale.order.line", ["order_id", "product_id", "product_uom_qty", "price_unit", "discount",
-                                                               "price_subtotal", "price_total", "purchase_price", "display_type"])
+                                                               "price_subtotal", "price_total", "purchase_price", "display_type",
+                                                               "tax_id", "tax_ids"])
+        lineas = []
         for lote in _lotes([p["id"] for p in pedidos]):
-            for l in self.c.leer_todo("sale.order.line", [("order_id", "in", lote), ("product_id", "!=", False)], campos_l):
-                if l.get("display_type"):
-                    continue
-                cantidad = float(l.get("product_uom_qty") or 0)
-                producto = _id(l["product_id"])
-                costo = l.get("purchase_price") if "purchase_price" in l else self._costo.get(producto, 0)
-                neto = float(l.get("price_subtotal") or 0)
-                self.tablas["ventas_lineas"].append({
-                    "venta_id": _id(l["order_id"]), "producto_id": producto, "cantidad": cantidad,
-                    "precio_lista": _num(l.get("price_unit")), "descuento_pct": (l.get("discount") or 0) / 100,
-                    "precio_unitario": round(neto / cantidad, 6) if cantidad else 0, "costo_unitario": float(costo or 0),
-                    "impuestos": round(float(l.get("price_total") or neto) - neto, 2)})
+            lineas += [l for l in self.c.leer_todo("sale.order.line", [("order_id", "in", lote), ("product_id", "!=", False)], campos_l)
+                       if not l.get("display_type")]
+        impuestos = self._impuestos(lineas, "tax_id", "tax_ids")
+        for l in lineas:
+            cantidad = float(l.get("product_uom_qty") or 0)
+            producto = _id(l["product_id"])
+            # Como el reporte de Odoo: importes en la moneda de la empresa, con la cotización del pedido
+            tasa = tasas.get(_id(l["order_id"]), 1.0)
+            neto = float(l.get("price_subtotal") or 0) / tasa
+            total = float(l.get("price_total") or 0) / tasa if l.get("price_total") is not None else neto
+            # purchase_price viene en la moneda del pedido; el costo del producto ya está en la de la empresa
+            costo = float(l.get("purchase_price") or 0) / tasa if "purchase_price" in l else self._costo.get(producto, 0)
+            self.tablas["ventas_lineas"].append({
+                "venta_id": _id(l["order_id"]), "producto_id": producto, "cantidad": cantidad,
+                "precio_lista": _num(l.get("price_unit")), "descuento_pct": (l.get("discount") or 0) / 100,
+                "precio_unitario": round(neto / cantidad, 6) if cantidad else 0, "costo_unitario": float(costo or 0),
+                "impuestos": round(total - neto, 2), **impuestos(l, neto, total)})
         if "purchase_price" not in self.c.campos("sale.order.line"):
             self._faltante("El costo de cada venta se toma del costo actual del producto (instalá el módulo "
                            "Márgenes en órdenes de venta para usar el costo del momento).")
 
     def _ventas_caja(self):
         campos = self.c._solo_existentes("pos.order", ["name", "date_order", "partner_id", "user_id", "config_id", "state",
-                                                       "crm_team_id", "currency_id"])
+                                                       "crm_team_id", "currency_id", "currency_rate"])
         tickets = list(self.c.leer_todo("pos.order", [("date_order", ">=", self._desde_utc()),
                                                       ("state", "in", ["paid", "done", "invoiced", "cancel"])], campos))
         if not tickets:
@@ -654,21 +671,45 @@ class Extraccion:
                 "id": OFFSET_POS + t["id"], "tipo": "ticket", "numero": t.get("name"), "fecha": fecha, "hora": hora,
                 "cliente_id": empresa.get(_id(t["partner_id"])), "vendedor_id": _id(t.get("user_id")),
                 "sucursal_id": almacen.get(_id(t["config_id"])), "canal": _nombre(t.get("crm_team_id")),
-                "moneda": _nombre(t.get("currency_id")), "medio_pago": medios.get(t["id"]),
+                "moneda": None if "currency_rate" in t else _nombre(t.get("currency_id")), "medio_pago": medios.get(t["id"]),
                 "caja": configs.get(_id(t["config_id"]), {}).get("name"), "anulada": 1 if t["state"] == "cancel" else 0})
+        tasas = {t["id"]: _tasa_cambio(t.get("currency_rate")) for t in tickets}
         campos_l = self.c._solo_existentes("pos.order.line", ["order_id", "product_id", "qty", "price_unit", "discount",
-                                                              "price_subtotal", "price_subtotal_incl", "total_cost"])
+                                                              "price_subtotal", "price_subtotal_incl", "total_cost",
+                                                              "tax_ids_after_fiscal_position", "tax_ids"])
+        lineas = []
         for lote in _lotes([t["id"] for t in tickets]):
-            for l in self.c.leer_todo("pos.order.line", [("order_id", "in", lote)], campos_l):
-                cantidad = float(l.get("qty") or 0)
-                producto = _id(l["product_id"])
-                costo = (float(l["total_cost"]) / cantidad if l.get("total_cost") and cantidad else self._costo.get(producto, 0))
-                neto = float(l.get("price_subtotal") or 0)
-                self.tablas["ventas_lineas"].append({
-                    "venta_id": OFFSET_POS + _id(l["order_id"]), "producto_id": producto, "cantidad": cantidad,
-                    "precio_lista": _num(l.get("price_unit")), "descuento_pct": (l.get("discount") or 0) / 100,
-                    "precio_unitario": round(neto / cantidad, 6) if cantidad else 0, "costo_unitario": round(costo, 4),
-                    "impuestos": round(float(l.get("price_subtotal_incl") or neto) - neto, 2)})
+            lineas += list(self.c.leer_todo("pos.order.line", [("order_id", "in", lote)], campos_l))
+        impuestos = self._impuestos(lineas, "tax_ids_after_fiscal_position", "tax_ids")
+        for l in lineas:
+            cantidad = float(l.get("qty") or 0)
+            producto = _id(l["product_id"])
+            tasa = tasas.get(_id(l["order_id"]), 1.0)
+            costo = (float(l["total_cost"]) / cantidad if l.get("total_cost") and cantidad else self._costo.get(producto, 0))
+            neto = float(l.get("price_subtotal") or 0) / tasa
+            total = float(l.get("price_subtotal_incl") or 0) / tasa if l.get("price_subtotal_incl") is not None else neto
+            self.tablas["ventas_lineas"].append({
+                "venta_id": OFFSET_POS + _id(l["order_id"]), "producto_id": producto, "cantidad": cantidad,
+                "precio_lista": _num(l.get("price_unit")), "descuento_pct": (l.get("discount") or 0) / 100,
+                "precio_unitario": round(neto / cantidad, 6) if cantidad else 0, "costo_unitario": round(costo, 4),
+                "impuestos": round(total - neto, 2), **impuestos(l, neto, total)})
+
+    def _impuestos(self, lineas: list[dict], *campos: str):
+        """Nombre y tasa del impuesto de cada línea (IVA 22 %, IVA 10 %, exento...), leídos de account.tax."""
+        campo = next((c for c in campos if lineas and c in lineas[0]), None)
+        ids = {i for l in lineas for i in (l.get(campo) or [])} if campo else set()
+        datos = self.c.leer_ids("account.tax", ids, ["name", "amount", "amount_type"]) if ids and self.c.puede_leer("account.tax") else {}
+
+        def de(l: dict, neto: float, total: float) -> dict:
+            propios = [datos[i] for i in (l.get(campo) or []) if i in datos] if campo else []
+            if propios:
+                nombre = " + ".join(t.get("name") or "" for t in propios)
+                tasa = sum(float(t.get("amount") or 0) / 100 for t in propios if t.get("amount_type") in ("percent", "division"))
+                return {"impuesto": nombre, "tasa_impuesto": round(tasa, 4)}
+            if campo and not (l.get(campo) or []):
+                return {"impuesto": "Sin impuesto", "tasa_impuesto": 0.0}
+            return {"impuesto": None, "tasa_impuesto": round((total - neto) / neto, 4) if neto else None}
+        return de
 
     def pedidos(self):
         """Pedidos (todo lo confirmado, con lo entregado) y presupuestos (todas las cotizaciones y si se aceptaron)."""
@@ -749,7 +790,8 @@ class Extraccion:
             "|", ("invoice_date", ">=", self.desde), ("amount_residual", "!=", 0)],
             self.c._solo_existentes("account.move", ["name", "move_type", "partner_id", "commercial_partner_id", "invoice_user_id",
                                                      "invoice_date", "invoice_date_due", "currency_id", "amount_total_signed",
-                                                     "amount_residual_signed", "amount_untaxed_signed", "payment_state", "ref"])))
+                                                     "amount_residual_signed", "amount_untaxed_signed", "amount_tax_signed",
+                                                     "payment_state", "ref"])))
         cobro = self._fechas_conciliacion([f["id"] for f in facturas if f.get("payment_state") in ("paid", "in_payment")],
                                           "asset_receivable", "matched_credit_ids")
         for f in facturas:
@@ -761,7 +803,8 @@ class Extraccion:
                 "vendedor_id": _id(f.get("invoice_user_id")), "fecha_emision": _fecha(f.get("invoice_date")),
                 "fecha_vencimiento": _fecha(f.get("invoice_date_due")) or _fecha(f.get("invoice_date")),
                 "fecha_cobro": cobro.get(f["id"]) if not saldo else None, "moneda": _nombre(f.get("currency_id")),
-                "importe": float(f.get("amount_total_signed") or 0), "saldo": saldo})
+                "importe": float(f.get("amount_total_signed") or 0), "saldo": saldo,
+                "importe_sin_impuestos": _num(f.get("amount_untaxed_signed")), "impuestos": _num(f.get("amount_tax_signed"))})
             if nota and _fecha(f.get("invoice_date")) and _fecha(f["invoice_date"]) >= self.desde:
                 self.tablas["devoluciones"].append({
                     "id": f["id"], "fecha": _fecha(f["invoice_date"]), "cliente_id": cliente,

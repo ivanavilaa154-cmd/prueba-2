@@ -114,7 +114,7 @@ def test_inventario_contra_sql_directo(dueno, base_demo):
 
 def test_finanzas_grupos(dueno):
     titulos = [g["titulo"] for g in dueno["finanzas"]["grupos"]]
-    assert titulos == ["Resultados del mes", "Cobranzas y crédito", "Pagos a proveedores", "Tesorería",
+    assert titulos == ["Resultados del mes", "Facturación e IVA", "Cobranzas y crédito", "Pagos a proveedores", "Tesorería",
                        "Capital de trabajo y salud financiera", "Impuestos", "Controles y alertas"]
 
 
@@ -225,7 +225,7 @@ def test_indicadores_nuevos_contra_sql_directo(dueno, base_demo):
     k = {**_kpis(dueno["ventas"]), **_kpis(dueno["inventario"])}
     imp = _uno(f"""SELECT SUM(l.impuestos) FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id
                    WHERE v.anulada = 0 AND v.fecha >= '{MES}' AND v.fecha <= '{HOY}'""", base_demo)
-    assert k["Venta con impuestos"]["valor"] == round(k["Venta neta"]["valor"] + imp, 2)
+    assert k["Total con impuestos"]["valor"] == round(k["Venta neta"]["valor"] + imp, 2)
     assert "Merma" in k and "Por vencer en 30 días" in k and "Pedidos completos y a tiempo" in k
 
 
@@ -314,3 +314,46 @@ def test_base_de_version_anterior(tmp_path, monkeypatch):
     monkeypatch.setattr(fuente, "URL_DEMO", f"sqlite:///{ruta}")
     fuente.usar("demo")  # al elegir una fuente también se actualiza
     conector.olvidar_conexiones()
+
+
+def test_desglose_iva_y_facturacion(base_demo_config):
+    """Venta bruta → descuentos → neta sin IVA → IVA por tipo → total, y la facturación del mes con y sin IVA."""
+    from app.analisis import indicadores
+    url = base_demo_config
+    desde, hasta = "2026-08-01", "2026-08-31"
+    d = indicadores.desglose_iva(obtener_usuario("u1"), desde, hasta)
+    base = f"FROM ventas v JOIN ventas_lineas l ON l.venta_id = v.id WHERE v.anulada = 0 AND v.fecha >= '{desde}' AND v.fecha <= '{hasta}'"
+    assert d["neta"] == pytest.approx(_uno(f"SELECT SUM(l.cantidad * l.precio_unitario) {base}", url), abs=0.01)
+    bruta = _uno(f"SELECT SUM(CASE WHEN l.descuento_pct > 0 AND l.descuento_pct < 1 THEN l.cantidad * l.precio_unitario / "
+                 f"(1 - l.descuento_pct) ELSE l.cantidad * l.precio_unitario END) {base}", url)
+    assert d["bruta"] == pytest.approx(bruta, abs=0.01) and d["descuentos"] == pytest.approx(bruta - d["neta"], abs=0.01)
+    assert d["total"] == pytest.approx(d["neta"] + d["impuestos"], abs=0.01)
+    tipos = {t[0]: t for t in d["por_tipo"]}
+    assert set(tipos) == {"IVA 10 %", "IVA 22 %"}
+    iva22 = _uno(f"SELECT SUM(l.impuestos) {base} AND l.tasa_impuesto = 0.22", url)
+    assert tipos["IVA 22 %"][2] == pytest.approx(iva22, abs=0.01)
+    assert tipos["IVA 22 %"][2] == pytest.approx(tipos["IVA 22 %"][1] * 0.22, abs=1)
+    t = tablero.tablero(obtener_usuario("u1"), mes="2026-08", hoy=HOY)
+    assert [k["nombre"] for k in t["ventas"]["kpis"][:4]] == ["Venta bruta", "Venta neta", "IVA de las ventas", "Total con impuestos"]
+    g = _grupo(t["finanzas"], "Facturación e IVA")
+    k = {x["nombre"]: x for x in g["kpis"]}
+    fac = conector.consultar(f"SELECT SUM(importe), SUM(importe_sin_impuestos) FROM cxc WHERE fecha_emision >= '{desde}' "
+                             f"AND fecha_emision <= '{hasta}'", url=url)["filas"][0]
+    assert k["Facturación con IVA"]["valor"] == pytest.approx(fac[0], abs=0.01)
+    assert k["Facturación sin IVA"]["valor"] == pytest.approx(fac[1], abs=0.01)
+    assert k["IVA facturado"]["valor"] == pytest.approx(fac[0] - fac[1], abs=0.01)
+
+
+def test_control_odoo_en_el_tablero(base_demo_config, monkeypatch):
+    from app.erp import fuente
+    from app.integraciones import gestor
+    filas = [{"mes": "2026-08", "equipo": "A", "odoo_sin_impuestos": 100.0, "plataforma_sin_impuestos": 100.0, "odoo_con_impuestos": 122.0,
+              "plataforma_con_impuestos": 122.0, "odoo_lineas": 3, "plataforma_lineas": 3, "coincide": True},
+             {"mes": "2026-08", "equipo": "B", "odoo_sin_impuestos": 50.0, "plataforma_sin_impuestos": 40.0, "odoo_con_impuestos": 61.0,
+              "plataforma_con_impuestos": 48.8, "odoo_lineas": 2, "plataforma_lineas": 1, "coincide": False}]
+    monkeypatch.setattr(fuente, "actual", lambda: "odoo")
+    monkeypatch.setattr(gestor, "_leer_estado", lambda: {"historial": [{"ok": True, "fecha": "2026-09-24T10:00:00",
+                                                                         "control_ventas": {"disponible": True, "zona": "America/Montevideo", "filas": filas}}]})
+    c = tablero.control_odoo(obtener_usuario("u1"), "2026-08")
+    assert (c["odoo_con_impuestos"], c["plataforma_con_impuestos"], c["coincide"]) == (183.0, 170.8, False)
+    assert tablero.control_odoo(obtener_usuario("u2"), "2026-08") is None       # la vendedora ve solo su cartera

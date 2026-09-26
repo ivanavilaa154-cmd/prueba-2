@@ -81,6 +81,8 @@ tablas:
       precio_unitario: "precio neto unitario sin impuestos, después de descuentos"
       costo_unitario: "costo unitario al momento de la venta"
       impuestos: "impuestos de la línea (IVA y otros)"
+      tasa_impuesto: "tasa de IVA de la línea (0,22 básica, 0,10 mínima, 0 exento)"
+      impuesto: "nombre del impuesto de la línea (ej. IVA 22 %)"
       en_promocion: "1 si se vendió en promoción"
   devoluciones:
     descripcion: Notas de crédito y devoluciones de clientes.
@@ -276,7 +278,9 @@ tablas:
       fecha_vencimiento: "vencimiento"
       fecha_cobro: "fecha real de cobro (vacía si está pendiente)"
       moneda: "moneda"
-      importe: "importe total"
+      importe: "importe total con impuestos (las notas de crédito en negativo)"
+      importe_sin_impuestos: "importe sin impuestos (neto gravado + exento)"
+      impuestos: "impuestos del documento (IVA)"
       saldo: "saldo pendiente (0 si se cobró)"
   cobranzas:
     descripcion: Cobranzas recibidas de clientes.
@@ -414,8 +418,11 @@ relaciones:
   - movimientos_bancarios.cuenta_id = cuentas_bancarias.id
 
 definiciones:
-  venta_neta: SUM(ventas_lineas.cantidad * ventas_lineas.precio_unitario) excluyendo ventas.anulada = 1 (sin impuestos)
-  venta_con_impuestos: venta_neta + SUM(ventas_lineas.impuestos)
+  venta_bruta: "SUM(cantidad * precio_unitario / (1 - descuento_pct)): a precio de lista, antes de descuentos, sin IVA"
+  venta_neta: SUM(ventas_lineas.cantidad * ventas_lineas.precio_unitario) excluyendo ventas.anulada = 1 (sin IVA, después de descuentos)
+  venta_con_impuestos: "venta_neta + SUM(ventas_lineas.impuestos): total con IVA, igual a la columna Total de Odoo"
+  iva_por_tipo: "SUM(ventas_lineas.impuestos) agrupado por ventas_lineas.impuesto o tasa_impuesto (IVA 22 %, 10 %, exento)"
+  facturacion: "SUM(cxc.importe) de facturas y notas de débito menos notas de crédito (vienen en negativo) emitidas en el período; sin IVA con importe_sin_impuestos"
   margen_bruto: venta_neta - SUM(cantidad * costo_unitario)
   margen_porcentaje: margen_bruto / venta_neta
   deuda_vencida: SUM(cxc.saldo) donde fecha_vencimiento < hoy y saldo > 0

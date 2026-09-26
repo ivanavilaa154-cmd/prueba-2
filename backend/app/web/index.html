@@ -665,6 +665,16 @@ function pilar(titulo, s, contenido) {
     ? tablaT(p.columnas, p.tipos, p.filas) : `<p class="nota">${esc(p.vacio)}</p>`}</div>`).join("");
   return `<div class="pilar" data-pilar="${id}"><h3>${titulo}${s.nota ? ` <span class="nota">${esc(s.nota)}</span>` : ""}</h3>${tarjetas(s.kpis)}<div class="paneles">${contenido(s)}${extra}</div></div>`;
 }
+function panelControlOdoo(c) {
+  const fila = (n, o, p) => [n, o, p, Math.round((p - o) * 100) / 100];
+  return `<div class="panel ancho"><h4>Control contra Odoo · «Análisis de ventas» del mes ${c.coincide ? `<span class="estado-chip ok">✓ Coincide</span>` : `<span class="estado-chip alerta">Revisar</span>`}</h4>
+    <p class="nota" style="margin:0 0 8px">Mismo filtro que «Órdenes de venta» en Odoo (sin cotizaciones, presupuestos enviados ni anulados), hora de ${esc(c.zona || "")}. Tomado en la sincronización del ${diaMes(c.sincronizado || "")}.
+    En Odoo, la columna «Total» es con impuestos; «Subtotal» o «Importe sin impuestos» es sin IVA.</p>
+    ${tablaT(["", "Odoo", "Plataforma", "Diferencia"], ["t", "$", "$", "$"], [fila("Total con impuestos", c.odoo_con_impuestos, c.plataforma_con_impuestos),
+      fila("Sin impuestos", c.odoo_sin_impuestos, c.plataforma_sin_impuestos)].concat([["Líneas", c.odoo_lineas, c.plataforma_lineas, c.plataforma_lineas - c.odoo_lineas]]))}
+    ${c.equipos.length > 1 ? `<details style="margin-top:6px"><summary>Por equipo de ventas</summary>${tablaT(["Equipo", "Odoo con impuestos", "Plataforma con impuestos", "Coincide"], ["t", "$", "$", "t"],
+      c.equipos.map(e => [e.equipo, e.odoo_con_impuestos, e.plataforma_con_impuestos, e.coincide ? "✓" : "✗ revisar"]))}</details>` : ""}</div>`;
+}
 async function cargarTablero() {
   const u = $("#usuario").value;
   if (!u) return;
@@ -677,6 +687,7 @@ async function cargarTablero() {
     $("#tablero-sub").textContent = `${t.periodo} · ${$("#estado-fuente").textContent} · viendo como ${$("#usuario").selectedOptions[0]?.textContent || u}`;
     let html = "";
     html += pilar("Ventas", t.ventas, s => `
+      ${s.control_odoo ? panelControlOdoo(s.control_odoo) : ""}
       <div class="panel ancho"><h4>Venta neta por mes (12 meses hasta el elegido)</h4>${graficoMensual(s.serie_mensual)}</div>
       ${panelTabla("Clientes que más compraron", ["Cliente", "Venta"], ["t", "$"], s.top_clientes.map(c => [c.cliente, c.venta]), "Sin ventas a clientes en el período.")}
       ${panelTabla("Clientes en riesgo (dejaron de comprar)", ["Cliente", "Días sin comprar", "Compra por mes"], ["t", "n", "$"], s.clientes_en_riesgo.map(c => [c.cliente, c.dias_sin_comprar, c.compra_mensual]), "Ningún cliente habitual dejó de comprar.")}

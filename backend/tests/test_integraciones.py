@@ -382,3 +382,35 @@ def test_control_contra_reporte_de_ventas():
     reporte[0]["price_subtotal"] = 1500.0
     mal = odoo.control_ventas(_cliente(OdooFalso(reporte_ventas=reporte)), t, 12, zona="America/Montevideo", hoy=date(2026, 9, 25))
     assert not mal["coinciden"] and mal["filas"][0]["diferencia"] == -590.0
+
+
+def test_impuestos_y_moneda_como_el_reporte_de_odoo(monkeypatch):
+    """Importes en moneda de la empresa con la cotización del pedido (como sale.report) y el IVA de cada línea con su nombre."""
+    import copy
+    from datetime import date
+    datos = copy.deepcopy(DATOS)
+    datos["sale.order"][0]["currency_rate"] = 0.025                     # pedido en dólares: 1 UYU = 0,025 USD
+    datos["sale.order"][1]["currency_rate"] = 1.0
+    datos["sale.order"][2]["currency_rate"] = 1.0
+    datos["sale.order.line"][0].update({"price_total": 549.0, "tax_id": [91]})
+    datos["sale.order.line"][2].update({"price_total": 40.0, "tax_id": []})
+    datos["pos.order"][0]["currency_rate"] = 1.0
+    datos["pos.order.line"][0].update({"price_subtotal_incl": 506.0, "tax_ids_after_fiscal_position": [92]})
+    datos["account.tax"] = [{"id": 91, "name": "IVA Ventas 22%", "amount": 22.0, "amount_type": "percent"},
+                            {"id": 92, "name": "IVA Ventas 10%", "amount": 10.0, "amount_type": "percent"}]
+    datos["account.move"][0].update({"amount_untaxed_signed": 368.85, "amount_tax_signed": 81.15})
+    monkeypatch.setitem(globals(), "DATOS", datos)
+    e = odoo.Extraccion(_cliente(), hoy=date(2026, 9, 25))
+    t = e.ejecutar()
+    l1 = next(l for l in t["ventas_lineas"] if l["venta_id"] == 1)
+    assert l1["precio_unitario"] * l1["cantidad"] == pytest.approx(450.0 / 0.025)
+    assert l1["impuestos"] == pytest.approx((549.0 - 450.0) / 0.025)
+    assert l1["costo_unitario"] == pytest.approx(37.0 / 0.025)
+    assert (l1["impuesto"], l1["tasa_impuesto"]) == ("IVA Ventas 22%", 0.22)
+    exenta = next(l for l in t["ventas_lineas"] if l["venta_id"] == 2)
+    assert (exenta["impuesto"], exenta["tasa_impuesto"]) == ("Sin impuesto", 0.0)
+    caja = next(l for l in t["ventas_lineas"] if l["venta_id"] == odoo.OFFSET_POS + 5)
+    assert (caja["impuesto"], caja["tasa_impuesto"], caja["impuestos"]) == ("IVA Ventas 10%", 0.1, 46.0)
+    assert next(v for v in t["ventas"] if v["id"] == 1)["moneda"] is None   # ya está en la moneda de la empresa
+    f = next(x for x in t["cxc"] if x["id"] == 400)
+    assert (f["importe"], f["importe_sin_impuestos"], f["impuestos"]) == (450.0, 368.85, 81.15)
