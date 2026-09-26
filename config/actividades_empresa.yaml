@@ -11,6 +11,13 @@ responsables:
   repositor: dueno
   gerente_operaciones: dueno
   gerente_general: dueno
+  vendedor: vendedor
+  administrativo: administracion
+  cobrador: administracion
+  finanzas: administracion
+  logistica: dueno
+  operario_deposito: dueno
+  marketing: gerente_comercial
 
 # Una tarea vencida sube a este rol.
 escala_a: dueno

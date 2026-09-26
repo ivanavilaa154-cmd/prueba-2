@@ -41,6 +41,8 @@ tope configurable de tareas por persona por día (default 15) para no saturar: e
 | [ACT-04](#act-04) | Remarcación y margen según listas de proveedores | producto (y lista de precios / sucursal / canal) | al recibir una lista nueva de proveedor (evento) + diaria para erosión de margen + semanal para listas desactualizadas | comercial | 7 |
 | [ACT-05](#act-05) | Promociones que no rindieron | promoción (con detalle por producto y sucursal) | día 3 de cada promoción activa (control temprano) + al finalizar + 14 días después (efecto posterior) | comercial | 6 |
 | [ACT-06](#act-06) | Vencimientos | lote (producto × depósito × lote) | diaria (06:00) | encargado_sucursal | 5 |
+| [ACT-07](#act-07) | Casos trabados en un proceso | caso de proceso × paso (PRC-xxx, docs/15) | en cada ciclo de tiempo real (default cada 15 min en horario operativo) para procesos con SLA en horas; diaria para procesos en días | el responsable definido en el paso (si_vence.responsable) | 3 |
+| [ACT-08](#act-08) | Objetivo en riesgo | objetivo × período | en cada evaluación de objetivos (ciclo de tiempo real); se notifica solo al cambiar de estado o al empeorar | el responsable del objetivo | 5 |
 
 ---
 
@@ -811,4 +813,202 @@ where l.fecha = :hoy and l.cantidad > 0;
 | `dim_proveedor.acepta_devolucion_vencidos` | opcional |
 | `dim_proveedor.dias_aviso_devolucion` | opcional |
 | `fct_stock_lote.costo_unitario` | opcional |
+
+---
+
+## ACT-07
+### Casos trabados en un proceso
+
+**El caso de negocio:** Un pedido, una factura a cobrar o una orden de compra quedó frenada en un paso (se venció el plazo o no avanza). Cada caso trabado tiene que tener a alguien haciendo algo concreto.
+
+| Atributo | Valor |
+|---|---|
+| Entidad | caso de proceso × paso (PRC-xxx, docs/15) |
+| Frecuencia | en cada ciclo de tiempo real (default cada 15 min en horario operativo) para procesos con SLA en horas; diaria para procesos en días |
+| Responsable principal | el responsable definido en el paso (si_vence.responsable) |
+| Parámetros (por tenant) | `factor_detenido_p90`=2, `ciclo_minutos`=15 |
+| Impacto (para priorizar) | importe del caso (venta del pedido, saldo del documento, importe de la orden) × urgencia por horas vencido. |
+| KPIs relacionados | LOG-14, FIN-10, VEN-21 |
+
+#### Detección
+
+**Universo:** casos abiertos de los procesos activos del tenant (`marts.proc__caso`).
+
+**Condiciones:**
+
+- Paso vencido: un paso aplicable está pendiente y superó su SLA (estado_paso = pendiente_vencido).
+- Caso detenido: no hubo avance en más de 2 × P90 histórico del tiempo del paso actual, aunque el paso no tenga SLA.
+- Paso omitido o fuera de orden: un paso obligatorio no ocurrió y ya ocurrió uno posterior (ej. despachado sin facturar).
+
+**Exclusiones (no se genera tarea):**
+
+- Casos cancelados o anulados.
+- Pasos marcados `no_aplica` por su condición.
+
+**Cálculo de referencia:**
+
+```sql
+-- marts.proc__caso_paso (una fila por caso × paso) → marts.act__casos_trabados
+select proceso, caso_key, paso, estado_paso, vencio_at, horas_vencido, responsable_rol, accion_si_vence, impacto
+from marts.proc__caso_paso
+where estado_paso in ('pendiente_vencido','omitido','fuera_de_orden')
+   or (estado_paso = 'pendiente_en_plazo' and horas_desde_paso_anterior > :factor_detenido_p90 * p90_historico_paso);
+```
+
+#### Casos y acciones (cada detección cae en un caso; cada caso prescribe acciones)
+
+**ACT-07.C1 — Paso vencido**  
+*Cuándo:* estado_paso = pendiente_vencido.  
+*Prioridad:* alta (crítica si el paso define escalamiento y se alcanzó un escalón, o si el caso es de un cliente/proveedor clave)
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Ejecutar la acción definida para ese paso en el proceso (si_vence) — el texto exacto, responsable y plazo se copian del catálogo de procesos a la tarea. | gerente_operaciones | el del paso |
+| 2 | Si el paso tiene escalamiento (ej. cobranza a 15/30/60 días), aplicar el escalón alcanzado. | gerente_operaciones | el del escalón |
+| 3 | Registrar en la tarea la causa del atraso (lista estándar: falta de stock, datos incompletos, cliente/proveedor, capacidad interna, sistema) para el análisis de causas. | gerente_operaciones | al resolver |
+
+*Cierre:* Se cierra automáticamente cuando el evento del paso ocurre.
+
+**ACT-07.C2 — Caso detenido sin plazo definido**  
+*Cuándo:* El caso no avanza hace más de 2 × P90 histórico del paso actual.  
+*Prioridad:* media
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Revisar el caso y registrar el próximo paso con fecha, o cerrarlo/cancelarlo si ya no corresponde. | gerente_operaciones | 48 h |
+
+*Cierre:* Avanza al paso siguiente o se cancela.
+
+**ACT-07.C3 — Paso obligatorio omitido o fuera de orden**  
+*Cuándo:* estado_paso in (omitido, fuera_de_orden).  
+*Prioridad:* alta
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Completar el paso faltante (ej. emitir la factura de un pedido ya despachado) o registrar la excepción justificada. | administrativo | 24 h |
+| 2 | Si se repite más de 5 veces por semana en el mismo paso: revisar el procedimiento con el equipo y dejar registrada la corrección. | gerente_operaciones | 7 días |
+
+*Cierre:* Evento del paso registrado o excepción aprobada.
+
+**Resoluciones posibles:** `paso_completado`, `escalado`, `excepcion_justificada`, `caso_cancelado`, `falso_positivo`  
+**Cuentan como detección confirmada (precisión):** `paso_completado`, `escalado`, `caso_cancelado`
+
+**Ejemplo de tarea:** _PRC-VEN · Pedido 10482 ($ 186.000): despachado ayer pero sin factura (paso P3 omitido). Acción: emitir la factura hoy. Responsable: administración._
+
+**Requisitos de datos canónicos:**
+
+| Columna canónica | Tipo |
+|---|---|
+| `fct_pedido.pedido_at` | obligatoria en variante **PRC-VEN** |
+| `fct_envio.pedido_at` | obligatoria en variante **PRC-LOG** |
+| `fct_envio.despacho_at` | obligatoria en variante **PRC-LOG** |
+| `fct_documento_cxc.fecha_emision` | obligatoria en variante **PRC-COB** |
+| `fct_documento_cxc.fecha_vencimiento` | obligatoria en variante **PRC-COB** |
+| `fct_orden_compra.fecha_emision` | obligatoria en variante **PRC-COM** |
+| `fct_lead.creado_at` | obligatoria en variante **PRC-CRM** |
+| `fct_devolucion.fecha_solicitud` | obligatoria en variante **PRC-DEV** |
+| `fct_evento_proceso.evento_at` | opcional |
+
+---
+
+## ACT-08
+### Objetivo en riesgo
+
+**El caso de negocio:** Un objetivo (diario, semanal o mensual) va por debajo del ritmo necesario. Hay que saber por qué y ejecutar las palancas definidas antes de que termine el período.
+
+| Atributo | Valor |
+|---|---|
+| Entidad | objetivo × período |
+| Frecuencia | en cada evaluación de objetivos (ciclo de tiempo real); se notifica solo al cambiar de estado o al empeorar |
+| Responsable principal | el responsable del objetivo |
+| Parámetros (por tenant) | `minimo_ciclos_no_evaluable`=2, `umbral_cumplido_anticipado`=0.7, `periodos_descalibrado`=3 |
+| Impacto (para priorizar) | brecha proyectada al cierre en unidades de la métrica (en moneda si es monetaria) × peso del objetivo. |
+| KPIs relacionados | — |
+
+#### Detección
+
+**Universo:** objetivos activos con meta en el período vigente (`marts.obj__estado_actual`).
+
+**Condiciones:**
+
+- Cambio de estado a en_riesgo o fuera_de_camino respecto de la evaluación anterior.
+- Objetivo no_evaluable por datos desactualizados durante más de 2 ciclos.
+- Objetivo cumplido antes del 70 % del período (posible meta poco exigente).
+- Objetivo sistemáticamente descalibrado: cumplido > 120 % o < 70 % en 3 períodos seguidos.
+
+**Exclusiones (no se genera tarea):**
+
+- Primer 10 % del período para objetivos acumulables (salvo objetivos diarios pasada la hora pico).
+
+**Cálculo de referencia:**
+
+```sql
+select objetivo_id, periodo_inicio, estado, estado_anterior, ritmo, proyeccion_cierre, prob_cumplimiento, brecha = meta - proyeccion_cierre
+from marts.obj__estado_actual where estado is distinct from estado_anterior or …;
+```
+
+#### Casos y acciones (cada detección cae en un caso; cada caso prescribe acciones)
+
+**ACT-08.C1 — En riesgo (amarillo)**  
+*Cuándo:* estado = en_riesgo.  
+*Prioridad:* media (alta si prob_cumplimiento < 50 % y resta < 30 % del período)
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Leer la explicación automática de la brecha adjunta (qué sucursal, canal, producto o paso explica la diferencia). | gerente_operaciones | 24 h |
+| 2 | Ejecutar las acciones 'si_en_riesgo' de la plantilla del objetivo (se copian a la tarea con su responsable y plazo). | gerente_operaciones | los de la plantilla |
+| 3 | Resolver las tareas abiertas de las actividades-palanca del objetivo (listadas en la tarea, ordenadas por impacto). | gerente_operaciones | 48 h |
+
+*Cierre:* Vuelve a en_camino o termina el período.
+
+**ACT-08.C2 — Fuera de camino (rojo)**  
+*Cuándo:* estado = fuera_de_camino.  
+*Prioridad:* alta (crítica si el objetivo es de empresa y resta < 30 % del período)
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Ejecutar las acciones 'si_fuera_de_camino' de la plantilla y registrar un plan de recuperación con meta intermedia (la plataforma propone el ritmo diario necesario para cerrar la brecha). | gerente_operaciones | 48 h |
+| 2 | Notificar al superior del responsable y agendar seguimiento hasta volver a amarillo. | gerente_general | 72 h |
+
+*Cierre:* Vuelve a en_riesgo/en_camino, o al cierre del período con registro de causa (lista estándar).
+
+**ACT-08.C3 — Objetivo no evaluable**  
+*Cuándo:* estado = no_evaluable por más de 2 ciclos.  
+*Prioridad:* alta
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Revisar la fuente de datos atrasada o con errores (la tarea indica cuál y desde cuándo) y reconectar/reprocesar. | gerente_operaciones | 24 h |
+
+*Cierre:* El objetivo vuelve a evaluarse.
+
+**ACT-08.C4 — Cumplido anticipadamente**  
+*Cuándo:* Meta acumulable alcanzada antes del 70 % del período.  
+*Prioridad:* baja
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Reconocer al equipo y evaluar si conviene subir la meta de los próximos períodos (la plataforma muestra la validación de realismo con la nueva meta). | gerente_general | 7 días |
+
+*Cierre:* Decisión registrada.
+
+**ACT-08.C5 — Meta descalibrada**  
+*Cuándo:* Cumplimiento > 120 % o < 70 % en 3 períodos seguidos.  
+*Prioridad:* media
+
+| # | Acción | Responsable | Plazo |
+|---|---|---|---|
+| 1 | Recalibrar la meta con la sugerencia de la plantilla y volver a validarla (V5 realismo), o justificar por qué se mantiene. | gerente_general | 14 días |
+
+*Cierre:* Meta actualizada o justificación registrada.
+
+**Resoluciones posibles:** `acciones_ejecutadas`, `plan_de_recuperacion_registrado`, `recuperado`, `no_recuperado_con_causa`, `fuente_corregida`, `meta_ajustada`, `se_mantiene_justificado`  
+**Cuentan como detección confirmada (precisión):** `acciones_ejecutadas`, `plan_de_recuperacion_registrado`, `recuperado`, `fuente_corregida`, `meta_ajustada`
+
+**Ejemplo de tarea:** _Venta neta mensual — Sucursal Norte: 58 % de la meta con el 72 % del mes hábil transcurrido (ritmo 0,81, rojo). Proyección: 81 % de la meta. La brecha la explica la categoría Q (−$ 1,2 M) con 9 quiebres ocultos abiertos. Acciones: resolver ACT-01 de la categoría Q hoy; plan de recuperación con ritmo necesario de $ 410.000/día._
+
+**Requisitos de datos canónicos:**
+
+| Columna canónica | Tipo |
+|---|---|
 

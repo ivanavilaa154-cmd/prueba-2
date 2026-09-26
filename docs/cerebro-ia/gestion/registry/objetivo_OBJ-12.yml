@@ -1,0 +1,30 @@
+id: OBJ-12
+nombre: Cartera vencida
+area: finanzas
+metrica: kpi:FIN-10
+parametros:
+  medida: pct_vencido
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- vendedor
+tipo_meta: maximo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: 15 % o P25 histórico (el mejor cuartil de la empresa).
+responsable: finanzas
+palancas:
+- FIN-11
+- FIN-12
+- PRC-COB
+si_en_riesgo:
+- accion: Revisar clientes con documentos a más de 30 días y confirmar que tengan gestión registrada.
+  responsable: cobrador
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Suspender ventas a cuenta corriente a clientes con más de 60 días de atraso y revisar límites de crédito.
+  responsable: gerente_general
+  plazo: 72 h

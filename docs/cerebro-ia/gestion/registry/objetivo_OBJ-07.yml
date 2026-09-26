@@ -1,0 +1,31 @@
+id: OBJ-07
+nombre: Despacho en plazo
+area: logistica
+metrica: kpi:LOG-03
+periodicidades:
+- diario
+- semanal
+- mensual
+alcances:
+- empresa
+- deposito
+- canal
+tipo_meta: minimo
+curva_esperada:
+  diario: no_aplica
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: 95 % (97 % para canales con penalización por demora); o P75 histórico si es mayor.
+responsable: logistica
+palancas:
+- LOG-14
+- LOG-02
+- PRC-LOG
+si_en_riesgo:
+- accion: Priorizar el backlog por fecha límite de despacho y reasignar preparadores a los pedidos por vencer.
+  responsable: logistica
+  plazo: 2 h
+si_fuera_de_camino:
+- accion: Habilitar turno/horas extra o colecta adicional y avisar a clientes con despacho demorado.
+  responsable: gerente_operaciones
+  plazo: mismo día

@@ -20,3 +20,12 @@ def base_demo(tmp_path_factory):
 def base_demo_config(base_demo, monkeypatch):
     monkeypatch.setattr(config, "ERP_URL", base_demo)
     return base_demo
+
+
+@pytest.fixture(autouse=True)
+def bases_propias_aisladas(tmp_path, monkeypatch):
+    """Las tareas y la gestión de las pruebas nunca tocan backend/actividades.db ni backend/gestion.db."""
+    from app.actividades import motor
+    from app.gestion import almacen
+    monkeypatch.setattr(motor, "RUTA", tmp_path / "actividades.db")
+    monkeypatch.setattr(almacen, "RUTA", tmp_path / "gestion.db")

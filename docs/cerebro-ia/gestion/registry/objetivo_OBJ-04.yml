@@ -1,0 +1,33 @@
+id: OBJ-04
+nombre: Margen bruto comercial
+area: ventas
+metrica: kpi:VEN-08
+parametros:
+  medida: margen_bruto_pct
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- categoria
+- canal
+- sucursal
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: Margen objetivo de la política de precios ponderado por el mix de venta de los últimos 3 meses.
+responsable: comercial
+palancas:
+- ACT-04
+- VEN-27
+- VEN-18
+- ACT-05
+si_en_riesgo:
+- accion: Resolver las tareas de remarcación pendientes (ACT-04), empezando por las de mayor impacto.
+  responsable: comercial
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Congelar descuentos no aprobados, revisar promociones activas con margen negativo (ACT-05 C3) y productos bajo costo (ACT-04 C3).
+  responsable: gerente_general
+  plazo: 24 h

@@ -1,0 +1,28 @@
+id: OBJ-23
+nombre: Tiempo de ciclo de venta a entrega
+area: logistica
+metrica: proceso:PRC-VEN.tiempo_ciclo_p90
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- canal
+tipo_meta: maximo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: P90 del último trimestre − 10 %.
+responsable: gerente_operaciones
+palancas:
+- PRC-VEN
+- PRC-LOG
+- LOG-04
+si_en_riesgo:
+- accion: Ver en el tablero de procesos qué paso concentra la demora (mayor aumento de tiempo_paso_p50) y atacar ese paso.
+  responsable: gerente_operaciones
+  plazo: 72 h
+si_fuera_de_camino:
+- accion: Revisión del proceso con los responsables de cada paso; definir cambios y medir 2 semanas.
+  responsable: gerente_general
+  plazo: 7 días

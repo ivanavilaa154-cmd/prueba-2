@@ -1,0 +1,90 @@
+id: PRC-COB
+nombre: Cobranza (de la factura al cobro aplicado)
+area: finanzas
+caso:
+  tabla: fct_documento_cxc
+  clave: documento_cxc_id
+  filtro: estado <> 'anulado' and importe_original > 0
+  fecha_inicio: fct_documento_cxc.fecha_emision
+unidad_tiempo: dias_habiles
+pasos:
+- codigo: P1
+  nombre: Documento emitido
+  evento:
+    columna: fct_documento_cxc.fecha_emision
+  obligatorio: true
+- codigo: P2
+  nombre: Recordatorio previo al vencimiento
+  evento:
+    evento_proceso: recordatorio_cobro_enviado
+  obligatorio: false
+  sla:
+    desde_columna: fct_documento_cxc.fecha_vencimiento
+    dias: -3
+  si_vence:
+    accion: Enviar recordatorio de vencimiento al cliente (plantilla estándar) y registrarlo.
+    responsable: cobrador
+    plazo: mismo día
+- codigo: P3
+  nombre: Gestión de cobranza tras el vencimiento
+  aplica_si: caso.saldo_pendiente > 0 and current_date > caso.fecha_vencimiento
+  evento:
+    evento_proceso: gestion_cobranza_realizada
+  obligatorio: true
+  sla:
+    desde_columna: fct_documento_cxc.fecha_vencimiento
+    dias_habiles: 2
+  si_vence:
+    accion: Contactar al cliente (llamado o mensaje), registrar el resultado y, si hay compromiso, la promesa de pago con fecha e importe.
+    responsable: cobrador
+    plazo: 24 h
+- codigo: P4
+  nombre: Promesa de pago registrada
+  evento:
+    evento_proceso: promesa_pago_registrada
+  obligatorio: false
+  sla:
+    desde: P3
+    dias_habiles: 3
+  si_vence:
+    accion: Volver a contactar y pedir fecha concreta de pago; si no hay respuesta, escalar a finanzas.
+    responsable: cobrador
+    plazo: 48 h
+- codigo: P5
+  nombre: Cobrado
+  evento:
+    columna: fct_documento_cxc.fecha_cancelacion
+  obligatorio: true
+  sla:
+    limite: fct_documento_cxc.fecha_vencimiento
+  si_vence:
+    accion: Seguir la escalera de cobranza (ver escalamiento).
+    responsable: cobrador
+    plazo: según escalamiento
+  escalamiento:
+  - dias_vencido: 15
+    accion: Aviso formal al cliente y a su vendedor; el vendedor contacta a su referente.
+    responsable: vendedor
+    plazo: 48 h
+  - dias_vencido: 30
+    accion: Suspender nuevas ventas a cuenta corriente al cliente hasta regularizar (registrar evento credito_suspendido).
+    responsable: finanzas
+    plazo: 24 h
+  - dias_vencido: 60
+    accion: Proponer plan de pagos o derivar a gestión externa/legal; evaluar previsión por incobrable.
+    responsable: gerente_general
+    plazo: 7 días
+- codigo: P6
+  nombre: Cobro aplicado a la factura
+  evento:
+    columna: fct_aplicacion_cobro.fecha_aplicacion
+    relacion: fct_aplicacion_cobro.documento_cxc_id = caso.documento_cxc_id
+    agregacion: max
+  obligatorio: false
+  sla:
+    desde: P5
+    dias_habiles: 2
+  si_vence:
+    accion: Aplicar el cobro recibido a la factura en el sistema de gestión (cobros sin imputar distorsionan la cuenta corriente).
+    responsable: administrativo
+    plazo: 48 h

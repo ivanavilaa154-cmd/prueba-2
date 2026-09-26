@@ -1,0 +1,25 @@
+id: OBJ-15
+nombre: Caja mínima
+area: finanzas
+metrica: kpi:FIN-07
+periodicidades:
+- diario
+alcances:
+- empresa
+tipo_meta: minimo
+curva_esperada:
+  diario: no_aplica
+meta_sugerida: Pagos promedio de 15 días (configurable).
+responsable: finanzas
+palancas:
+- FIN-16
+- FIN-13
+- OBJ-11
+si_en_riesgo:
+- accion: Revisar la proyección de caja a 30 días y reprogramar pagos no críticos.
+  responsable: finanzas
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: Acelerar cobranza de los mayores saldos vencidos y evaluar financiación de corto plazo.
+  responsable: gerente_general
+  plazo: 48 h

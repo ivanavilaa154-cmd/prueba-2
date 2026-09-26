@@ -1,0 +1,26 @@
+id: OBJ-18
+nombre: Pedidos a proveedores en tiempo
+area: inventario
+metrica: proceso:PRC-COM.P4.cumplimiento_sla_pct
+periodicidades:
+- mensual
+alcances:
+- empresa
+- proveedor
+tipo_meta: minimo
+curva_esperada:
+  mensual: no_aplica
+meta_sugerida: 90 %.
+responsable: comprador
+palancas:
+- INV-16
+- INV-17
+- PRC-COM
+si_en_riesgo:
+- accion: Reclamar las órdenes atrasadas y actualizar las fechas prometidas en el sistema.
+  responsable: comprador
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Aumentar el lead time/stock de seguridad de los proveedores incumplidores y evaluar proveedores alternativos.
+  responsable: comprador
+  plazo: 30 días

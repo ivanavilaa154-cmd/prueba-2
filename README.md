@@ -77,6 +77,45 @@ anterior completo. Los saldos (deuda, caja, stock) son siempre los de hoy.
 Las cuentas están en `backend/app/analisis/tablero.py` (con pruebas contra SQL directo). Lo que falta en los
 datos (caja, cuentas por pagar, lotes, merma) se muestra como "todavía no se puede calcular".
 
+## Actividades (qué hacer hoy)
+
+Reglas fijas (sin IA) que recorren el negocio y generan **tareas con acción, responsable y plazo**: ninguna alerta
+sin acción. Catálogo en `config/actividades.yml` (8 actividades, 39 casos, 86 acciones); lo propio de la empresa
+(a qué rol le llega cada tarea, políticas de precio y producto) en `config/actividades_empresa.yaml`.
+
+| | Actividad | Detecta |
+|---|---|---|
+| ACT-01 | Quiebre oculto | Producto que se vende todos los días y dejó de venderse con stock en sistema; stock fantasma por conteo |
+| ACT-02 | Pedido sugerido | Qué pedirle a cada proveedor (demanda, entrega, stock de seguridad por clase ABC, bultos, mínimo, vencimiento) |
+| ACT-03 | Rotación | Sin movimiento, sobrestock, caída de venta y transferencias entre sucursales |
+| ACT-04 | Remarcación | Listas nuevas del proveedor, margen bajo el mínimo, venta bajo costo, listas inconsistentes |
+| ACT-05 | Promociones | Promos que no despegan, sin stock, que perdieron margen, canibalizaron o rindieron |
+| ACT-06 | Vencimientos | Lotes vencidos, por vencer (con descuento sugerido), transferencias y lotes sin fecha |
+| ACT-07 | Casos trabados | Pasos vencidos de un proceso (ej. cobranza con escalones a 15/30/60 días), detenidos u omitidos |
+| ACT-08 | Objetivo en riesgo | Objetivo en amarillo o rojo, no evaluable, cumplido antes de tiempo o con meta descalibrada |
+
+Pestaña **Actividades**: tareas ordenadas por impacto × urgencia, evidencia en números, acciones con plazo,
+detalle descargable (pedido sugerido, remarcación) y cierre con resolución. Ciclo de vida: nueva → en curso →
+resuelta/descartada; vencida si pasa el plazo (sube al dueño); se cierra sola si la condición desaparece. La
+precisión de cada actividad se mide con las resoluciones. Código: `backend/app/actividades/`.
+
+## Gestión: procesos y objetivos
+
+Pestaña **Gestión** (`backend/app/gestion/`, catálogos en `config/gestion/`):
+
+- **Objetivos:** 24 plantillas (venta, margen, cobranza, cartera vencida, caja, quiebre, días de inventario, tareas en
+  plazo…). Cada objetivo tiene meta sugerida, validación V1-V9 (métrica disponible, sentido, datos completos, suma
+  de la cascada, realismo contra la historia en pesos de hoy, presupuesto, conflictos, controlabilidad, muestra) y
+  cascada automática por semana, día, sucursal o vendedor. Se evalúa cada 15 minutos: valor, esperado a hoy,
+  ritmo, proyección al cierre, probabilidad de cumplir y semáforo. En rojo o amarillo genera una tarea ACT-08 con las
+  acciones de la plantilla y la explicación de la brecha.
+- **Procesos:** cobranza, compra y venta medidos paso a paso con sus plazos (embudo, % en plazo, tiempos, casos
+  trabados). Los pasos que ningún sistema marca (gestión de cobranza, promesa de pago, confirmación del proveedor)
+  se registran con un botón; se guardan en la plataforma, nunca en el ERP. Qué dato mide cada paso:
+  `config/gestion/empresa.yaml`.
+
+Qué se integró de la especificación "Cerebro IA" y qué falta: [`docs/evaluacion-cerebro-ia.md`](docs/evaluacion-cerebro-ia.md).
+
 ## Integraciones: de dónde toma los datos
 
 En la pestaña **Integraciones** del preview local (`uvicorn app.main:app`, http://localhost:8000) se elige
@@ -179,4 +218,7 @@ Usuarios de demo: `u1` dueño, `u2` vendedora (cartera del vendedor 1), `u3` com
 | `backend/app/erp/` | Conector de solo lectura y base demo |
 | `backend/app/chat/` | Motor del chat con herramientas |
 | `backend/app/decisiones/` | Simulador de crédito (tres pruebas) |
+| `backend/app/actividades/` | Motor de actividades (reglas ACT-01 a ACT-08 y tareas) |
+| `backend/app/gestion/` | Procesos, objetivos, métricas y ciclo de reevaluación |
+| `docs/cerebro-ia/` | Especificación completa "Cerebro IA" (KPIs, actividades, procesos y objetivos) |
 | `docs/` | Arquitectura, plan por fases, preguntas de prueba, primer mensaje |

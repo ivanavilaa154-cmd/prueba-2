@@ -1,0 +1,29 @@
+id: OBJ-08
+nombre: Entregas a tiempo (OTD)
+area: logistica
+metrica: kpi:LOG-06
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- transportista
+- zona
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: 92 % o P75 histórico.
+responsable: logistica
+palancas:
+- LOG-17
+- LOG-05
+- LOG-08
+si_en_riesgo:
+- accion: Identificar transportista/zona que explica la caída (scorecard LOG-17) y reclamarle con el listado de envíos atrasados.
+  responsable: logistica
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Redirigir envíos de la zona afectada a un transportista alternativo y ajustar la fecha prometida al cliente para esa zona.
+  responsable: gerente_operaciones
+  plazo: 72 h

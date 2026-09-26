@@ -24,6 +24,9 @@ from .analisis import tablero as tablero_analisis
 from .chat import motor
 from .decisiones import credito
 from .erp import conector, fuente, importar
+from .gestion import objetivos as gestion_objetivos
+from .gestion import procesos as gestion_procesos
+from .gestion import servicio as gestion
 from .integraciones import gestor, odoo
 from .permisos import AccesoDenegado, Usuario, obtener_usuario, preparar_consulta
 
@@ -61,6 +64,11 @@ async def _ciclo_de_vida(_app):
         # En un servidor nuevo (o que se reinició) todavía no hay datos: se sincroniza al arrancar.
         gestor.sincronizar_en_segundo_plano(_usar_odoo)
     gestor.iniciar_programador(lambda entrada: _usar_odoo(entrada) if fuente.actual() in ("demo", "odoo") else None)
+    try:
+        gestion.sembrar_demo()
+    except Exception:
+        pass  # los ejemplos de la demo son opcionales
+    gestion.iniciar_ciclo()
     yield
 
 
@@ -103,6 +111,36 @@ class CambioActividad(BaseModel):
     estado: str                      # en_curso | resuelta | descartada
     resolucion: str | None = None
     comentario: str | None = None
+
+
+class PropuestaObjetivo(BaseModel):
+    usuario_id: str
+    plantilla_id: str
+    alcance_tipo: str | None = None
+    alcance_valor: str | None = None
+    periodicidad: str | None = None
+    meta: float | None = None
+    responsable_rol: str | None = None
+    cascada_tiempo: list[str] = []
+    cascada_alcance: str | None = None
+    justificacion: str | None = None
+
+    def argumentos(self) -> dict:
+        return self.model_dump(exclude={"usuario_id", "justificacion"})
+
+
+class Comentario(BaseModel):
+    usuario_id: str
+    texto: str
+
+
+class EventoProceso(BaseModel):
+    usuario_id: str
+    caso_key: str
+    codigo: str
+    fecha: str | None = None
+    resultado: str | None = None
+    detalle: str | None = None
 
 
 class ConfigOdoo(BaseModel):
@@ -308,6 +346,89 @@ def archivo_actividad(tarea_id: int, usuario_id: str):
         raise HTTPException(status_code=403, detail=str(e))
     return PlainTextResponse("\ufeff" + contenido, media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+def _errores_gestion(funcion):
+    try:
+        return funcion()
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e.args[0]))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/gestion/objetivos")
+def ver_objetivos(usuario_id: str, periodicidad: str | None = None):
+    """Mis objetivos: semáforo, valor, meta, avance, ritmo, proyección y cuándo se actualizaron los datos."""
+    return gestion_objetivos.tablero(_usuario(usuario_id), periodicidad)
+
+
+@app.get("/gestion/objetivos/{objetivo_id}")
+def ver_objetivo(objetivo_id: int, usuario_id: str):
+    return _errores_gestion(lambda: gestion_objetivos.detalle(objetivo_id, _usuario(usuario_id)))
+
+
+@app.get("/gestion/plantillas")
+def ver_plantillas(usuario_id: str):
+    u = _usuario(usuario_id)
+    from .gestion import metricas as gestion_metricas
+    return {"plantillas": [p | {"puede_configurar": gestion_objetivos.puede_configurar(u, p["area"])}
+                           for p in gestion_objetivos.plantillas_disponibles()],
+            "opciones": gestion_metricas.opciones_alcance(), "roles": list(config.roles()["roles"])}
+
+
+@app.post("/gestion/objetivos/proponer")
+def proponer_objetivo(datos: PropuestaObjetivo):
+    """Meta sugerida, validación V1-V9 y cascada. No guarda nada."""
+    _usuario(datos.usuario_id)
+    return _errores_gestion(lambda: gestion_objetivos.proponer(**datos.argumentos()))
+
+
+@app.post("/gestion/objetivos")
+def crear_objetivo(datos: PropuestaObjetivo):
+    """Guarda y activa el objetivo con su cascada (quien guarda lo aprueba)."""
+    resultado = _errores_gestion(lambda: gestion_objetivos.guardar(datos.argumentos(), _usuario(datos.usuario_id), datos.justificacion))
+    _revisar_actividades()
+    return resultado
+
+
+@app.post("/gestion/objetivos/{objetivo_id}/archivar")
+def archivar_objetivo(objetivo_id: int, datos: Comentario):
+    _errores_gestion(lambda: gestion_objetivos.archivar(objetivo_id, _usuario(datos.usuario_id)))
+    return {"ok": True}
+
+
+@app.post("/gestion/objetivos/{objetivo_id}/comentario")
+def comentar_objetivo(objetivo_id: int, datos: Comentario):
+    _errores_gestion(lambda: gestion_objetivos.comentar(objetivo_id, _usuario(datos.usuario_id), datos.texto))
+    return {"ok": True}
+
+
+@app.get("/gestion/procesos")
+def ver_procesos(usuario_id: str, dias: int = 30):
+    """Por proceso: embudo de pasos, tiempos, % en plazo y casos trabados."""
+    return {"procesos": gestion.vista_procesos(_usuario(usuario_id), max(7, min(dias, 365)))}
+
+
+@app.post("/gestion/procesos/{proceso_id}/eventos")
+def registrar_paso(proceso_id: str, datos: EventoProceso):
+    """Registra un paso que ningún sistema marca (ej. gestión de cobranza). Se guarda en la plataforma, nunca en el ERP."""
+    u = _usuario(datos.usuario_id)
+    if not gestion.puede_registrar(u, proceso_id):
+        raise HTTPException(status_code=403, detail="Tu rol no registra pasos de este proceso.")
+    from datetime import date as _date
+    fecha = None
+    if datos.fecha:
+        try:
+            fecha = _date.fromisoformat(datos.fecha)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Fecha inválida (AAAA-MM-DD).")
+    r = _errores_gestion(lambda: gestion_procesos.registrar_evento(proceso_id, datos.caso_key, datos.codigo, u.nombre, fecha,
+                                                                   datos.resultado, datos.detalle))
+    _revisar_actividades()
+    return r
 
 
 @app.get("/plantillas/{tabla}.csv", response_class=PlainTextResponse)

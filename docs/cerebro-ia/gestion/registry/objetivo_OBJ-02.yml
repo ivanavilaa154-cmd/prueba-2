@@ -1,0 +1,33 @@
+id: OBJ-02
+nombre: Cantidad de pedidos / tickets
+area: ventas
+metrica: kpi:VEN-02
+periodicidades:
+- diario
+- semanal
+- mensual
+alcances:
+- empresa
+- sucursal
+- canal
+tipo_meta: minimo
+curva_esperada:
+  diario: intradia_historica
+  semanal: estacionalidad_historica
+  mensual: estacionalidad_historica
+meta_sugerida: Pedidos del mismo período del año anterior × (1 + crecimiento objetivo de tráfico).
+responsable: comercial
+palancas:
+- MKT-10
+- MKT-11
+- VEN-17
+- ACT-05
+si_en_riesgo:
+- accion: Verificar tráfico (sesiones, visitas) y conversión; si cayó el tráfico, revisar inversión y campañas activas; si cayó la conversión,
+    revisar precios y stock de los más vendidos.
+  responsable: marketing
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: Lanzar acción de tráfico (campaña o comunicación a la base de clientes) y revisar cancelaciones del período.
+  responsable: marketing
+  plazo: 48 h

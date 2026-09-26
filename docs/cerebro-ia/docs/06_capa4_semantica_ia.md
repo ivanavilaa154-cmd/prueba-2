@@ -102,6 +102,7 @@ module.exports = {
 | `detalle_actividad` | `actividad_id` | evidencia, acciones con plazos, historial, artefactos (pedido sugerido, remarcación, etiquetas) |
 | `actualizar_actividad` | `actividad_id`, `estado`, `resolucion?`, `comentario?`, `asignado_a?` | única escritura permitida al agente: sobre `ops.actividad`, nunca sobre sistemas del cliente; valida resolución contra la actividad |
 | `resumen_actividades` | `periodo` | abiertas/vencidas por rol y sucursal, impacto resuelto, precisión por actividad |
+| `consultar_objetivos`, `detalle_objetivo`, `proponer_objetivo`, `estado_proceso`, `casos_trabados`, `registrar_evento_proceso` | ver docs/15 §6 | gestión de procesos y objetivos |
 
 ### 3.3 Instrucciones de sistema del agente (plantilla `mcp_server/prompts/sistema.md`)
 1. Todo número sale de una herramienta; si ninguna lo responde, decirlo y, si aplica, qué dato/rol de fuente falta (`estado_datos`).

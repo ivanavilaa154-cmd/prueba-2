@@ -1,0 +1,28 @@
+id: OBJ-06
+nombre: Cumplimiento de cuota por vendedor
+area: ventas
+metrica: kpi:VEN-07
+periodicidades:
+- semanal
+- mensual
+alcances:
+- vendedor
+- equipo
+tipo_meta: minimo
+curva_esperada:
+  semanal: dias_habiles
+  mensual: dias_habiles
+meta_sugerida: Cuota cargada en presupuesto (concepto cuota_vendedor); si no hay, participación histórica del vendedor × objetivo de empresa.
+responsable: vendedor
+palancas:
+- VEN-19
+- VEN-15
+- VEN-25
+si_en_riesgo:
+- accion: Priorizar oportunidades del pipeline con cierre esperado en el período y clientes en riesgo de su cartera.
+  responsable: vendedor
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Sesión 1 a 1 con el líder para plan de cierre de la semana (oportunidades concretas y visitas).
+  responsable: comercial
+  plazo: 72 h

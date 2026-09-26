@@ -32,6 +32,7 @@ class Deteccion:
     evidencia: list = field(default_factory=list)   # [etiqueta, valor, formato]
     notas: list = field(default_factory=list)       # cálculos que completan las acciones (descuento sugerido, destino...)
     detalle: dict | None = None                     # tabla adjunta: {"columnas": [...], "tipos": [...], "filas": [...]}
+    acciones: list | None = None                    # acciones propias del caso (paso vencido, plantilla del objetivo); None = las del catálogo
 
 
 @dataclass
@@ -734,4 +735,151 @@ def _mejor_destino(d: Datos, pid, origen, dias: int):
     return mejor
 
 
-REGLAS = {"ACT-01": act01, "ACT-02": act02, "ACT-03": act03, "ACT-04": act04, "ACT-05": act05, "ACT-06": act06}
+# --- ACT-07 · Casos trabados en un proceso -----------------------------------------------
+
+def _accion(a: dict, responsable: str | None = None) -> dict:
+    return {"accion": a["accion"], "responsable": responsable or a["responsable"], "plazo": a["plazo"]}
+
+
+def act07(d: Datos, historial) -> Resultado:
+    from ..gestion import catalogo as gcat
+    from ..gestion import procesos as gproc
+    res = Resultado()
+    cat = catalogo.caso("ACT-07", "C1")["acciones"]
+    clientes = {i: n for i, n in d.q("SELECT id, COALESCE(nombre_fantasia, razon_social) FROM clientes")}
+    activos = 0
+    for pid, definicion in gcat.procesos().items():
+        p = gproc.Proceso(pid, d.hoy)
+        if not p.activo:
+            continue
+        activos += 1
+        caso_cfg = p.cfg["caso"]
+        corto = definicion["nombre"].split(" (")[0]
+        for c in p.casos:
+            quien = clientes.get(c.datos.get(caso_cfg.get("cliente"))) if caso_cfg.get("cliente") else \
+                d.nombre_proveedor(c.datos.get(caso_cfg.get("proveedor"))) if caso_cfg.get("proveedor") else None
+            importe = float(c.datos.get(caso_cfg.get("saldo")) or c.datos.get(caso_cfg.get("importe")) or 0) \
+                if (caso_cfg.get("saldo") or caso_cfg.get("importe")) else 0.0
+            entidad = {"proceso": pid, "proceso_nombre": definicion["nombre"], "caso_key": c.key, "caso": c.etiqueta, "quien": quien,
+                       "vendedor_id": c.datos.get(caso_cfg.get("vendedor")) if caso_cfg.get("vendedor") else None}
+            clave = f"ACT-07|{pid}|{c.key}"
+            base_ev = [_ev("Inicio", c.inicio.isoformat(), "texto")] + ([_ev("Importe", _r(importe), "moneda")] if importe else [])
+            desc = f"{corto} · {c.etiqueta}" + (f" ({quien})" if quien else "")
+            if c.vencidos and not c.cerrado:
+                pasos = [s_ for s_ in definicion["pasos"] if s_["codigo"] in c.vencidos]
+                ultimo = pasos[-1]
+                info = c.pasos[ultimo["codigo"]]
+                dias = (d.hoy - info["vence"]).days
+                acciones = [_accion(s_["si_vence"]) | {"accion": f"{s_['codigo']} {s_['nombre']}: {s_['si_vence']['accion']}"} for s_ in pasos]
+                if c.escalon:
+                    acciones.append({"accion": f"Escalón de {c.escalon['dias_vencido']} días: {c.escalon['accion']}",
+                                     "responsable": c.escalon["responsable"], "plazo": c.escalon["plazo"]})
+                acciones.append(_accion(cat[2], acciones[0]["responsable"]))
+                res.detecciones.append(Deteccion(
+                    "ACT-07", "C1", clave, f"{desc}: «{ultimo['nombre']}» vencido hace {_n(dias, 'día')}", importe,
+                    prioridad="critica" if c.escalon else None, entidad={**entidad, "paso": ultimo["codigo"]},
+                    evidencia=base_ev + [_ev("Pasos vencidos", ", ".join(f"{s_['codigo']} {s_['nombre']}" for s_ in pasos), "texto"),
+                                         _ev("Venció", info["vence"].isoformat(), "texto"), _ev("Días vencido", dias, "numero")],
+                    notas=[f"Registrá el paso en Gestión → Procesos cuando esté hecho: la tarea se cierra sola."] if info.get("manual") else [],
+                    acciones=acciones))
+                continue
+            if c.detenido and not c.cerrado:
+                paso = next(s_ for s_ in definicion["pasos"] if s_["codigo"] == c.detenido["paso"])
+                res.detecciones.append(Deteccion(
+                    "ACT-07", "C2", clave, f"{desc}: detenido en «{paso['nombre']}» hace {_n(c.detenido['dias'], 'día')}", importe,
+                    entidad={**entidad, "paso": paso["codigo"]},
+                    evidencia=base_ev + [_ev("Días sin avanzar", c.detenido["dias"], "numero"),
+                                         _ev("Lo habitual (P90)", c.detenido["p90"], "días")]))
+                continue
+            malos = [s_ for s_ in definicion["pasos"] if c.pasos[s_["codigo"]]["estado"] in ("omitido", "fuera_de_orden")]
+            reciente = not c.cerrado or (c.fin and c.fin >= d.hoy - timedelta(days=7))
+            if malos and reciente:
+                s0 = malos[0]
+                estado = "omitido" if c.pasos[s0["codigo"]]["estado"] == "omitido" else "fuera de orden"
+                res.detecciones.append(Deteccion(
+                    "ACT-07", "C3", clave, f"{desc}: «{s0['nombre']}» {estado}", importe, entidad={**entidad, "paso": s0["codigo"]},
+                    evidencia=base_ev + [_ev("Paso", f"{s0['codigo']} {s0['nombre']}", "texto"), _ev("Estado", estado, "texto")]))
+    if not activos:
+        res.faltan.append("un proceso activo con sus datos (config/gestion/empresa.yaml)")
+    return res
+
+
+# --- ACT-08 · Objetivo en riesgo --------------------------------------------------------
+
+def act08(d: Datos, historial) -> Resultado:
+    from datetime import datetime, time
+    from ..gestion import catalogo as gcat
+    from ..gestion import metricas as gmet
+    from ..gestion import objetivos as gobj
+    res = Resultado()
+    ahora = datetime.now() if d.hoy == date.today() else datetime.combine(d.hoy, time(15, 0))
+    evaluados = gobj.evaluar_todos(d.hoy, ahora)
+    if not evaluados:
+        res.faltan.append("objetivos activos (se cargan en Gestión → Configurar objetivo)")
+        return res
+    cat = {c["codigo"]: c["acciones"] for c in catalogo.actividad("ACT-08")["casos"]}
+    from . import motor
+    abiertas = motor.listar_todas()
+    for x in evaluados:
+        o, ev = x["objetivo"], x["evaluacion"]
+        padre = gobj.obtener(o["objetivo_padre_id"]) if o.get("objetivo_padre_id") else None
+        if padre and padre["periodicidad"] != o["periodicidad"]:
+            continue   # las metas semanales y diarias de la cascada las cubre el objetivo del mes
+        pl = gcat.plantillas().get(o["plantilla_id"]) or {}
+        m = gmet.metrica(o["metrica"])
+        clave = f"ACT-08|{o['id']}|{ev.get('periodo_inicio')}"
+        alcance = o.get("alcance_nombre") or "Empresa"
+        nombre = f"{o['nombre']} {o['periodicidad']} — {alcance}"
+        entidad = {"objetivo_id": o["id"], "objetivo": o["nombre"], "alcance": alcance, "periodicidad": o["periodicidad"],
+                   "periodo_inicio": ev.get("periodo_inicio"),
+                   "vendedor_id": int(o["alcance_valor"]) if o["alcance_tipo"] == "vendedor" and str(o["alcance_valor"]).isdigit() else None}
+        fr = ev.get("fraccion_periodo")
+        unidad = m.unidad if m else "numero"
+        formato = {"moneda": "moneda", "porcentaje": "pct"}.get(unidad, "numero")
+        ev_txt = [_ev("Valor actual", _r(ev.get("valor_actual"), 4), formato), _ev("Meta", ev.get("meta"), formato),
+                  _ev("Ritmo", _r(ev.get("ritmo"), 3), "numero"), _ev("Proyección al cierre", _r(ev.get("proyeccion_cierre"), 4), formato)]
+        if ev.get("prob_cumplimiento") is not None:
+            ev_txt.append(_ev("Probabilidad de cumplir", ev["prob_cumplimiento"], "pct"))
+        brecha = abs((ev.get("meta") or 0) - (ev.get("proyeccion_cierre") or 0)) if unidad == "moneda" else 0.0
+        palancas = [t for t in abiertas if t["tipo"] in [p for p in pl.get("palancas", []) if p.startswith("ACT-")]][:5]
+        notas = gobj.explicar(o, ev, d.hoy) + [f"Tarea palanca abierta: {t['titulo']}" for t in palancas]
+        estado = ev.get("estado")
+        resta = 1 - (fr if fr is not None else 0.5)
+        if estado in ("en_riesgo", "fuera_de_camino"):
+            caso = "C1" if estado == "en_riesgo" else "C2"
+            plantilla = pl.get("si_en_riesgo" if caso == "C1" else "si_fuera_de_camino", [])
+            if caso == "C1":
+                acciones = [_accion(cat["C1"][0])] + [_accion(a) for a in plantilla] + [_accion(cat["C1"][2])]
+                prioridad = "alta" if (ev.get("prob_cumplimiento") or 1) < 0.5 and resta < 0.3 else None
+            else:
+                acciones = [_accion(a) for a in plantilla] + [_accion(cat["C2"][0]), _accion(cat["C2"][1])]
+                prioridad = "critica" if o["alcance_tipo"] == "empresa" and resta < 0.3 else None
+            res.detecciones.append(Deteccion("ACT-08", caso, clave, f"{'En riesgo' if caso == 'C1' else 'Fuera de camino'}: {nombre}",
+                                             brecha * (o.get("peso") or 1), prioridad=prioridad, entidad=entidad, evidencia=ev_txt,
+                                             notas=notas, acciones=acciones))
+        elif estado == "no_evaluable":
+            ultimas = gobj.ultimas_evaluaciones(o["id"], 3)
+            viejos = [u for u in ultimas if u["estado"] == "no_evaluable" and "desactualizados" in (u["advertencias"] or "")]
+            if len(viejos) >= 3:
+                res.detecciones.append(Deteccion("ACT-08", "C3", clave, f"No se puede evaluar: {nombre}", 0.0, entidad=entidad,
+                                                 evidencia=[_ev("Datos hasta", ev.get("datos_hasta"), "texto")],
+                                                 notas=list(ev.get("advertencias") or [])))
+        elif estado == "cumplido" and m and m.acumulable and fr is not None and fr < 0.7:
+            res.detecciones.append(Deteccion("ACT-08", "C4", clave, f"Cumplido antes de tiempo: {nombre}", 0.0, entidad=entidad,
+                                             evidencia=ev_txt + [_ev("Parte del período transcurrida", fr, "pct")]))
+        if m and m.acumulable and m.historica and o.get("meta_base") and not padre:
+            ini = date.fromisoformat(ev["periodo_inicio"])
+            cumplimientos = []
+            for k in (1, 2, 3):
+                a_ini, a_fin = gobj.anterior(o["periodicidad"], ini, k)
+                v, _n = gmet.valor(o["metrica"], o["alcance_tipo"], o["alcance_valor"], a_ini, a_fin, d.hoy)
+                if v is not None and o["meta_base"]:
+                    cumplimientos.append(v / o["meta_base"])
+            if len(cumplimientos) == 3 and (all(c_ > 1.2 for c_ in cumplimientos) or all(c_ < 0.7 for c_ in cumplimientos)):
+                res.detecciones.append(Deteccion("ACT-08", "C5", f"ACT-08|C5|{o['id']}", f"Meta descalibrada: {nombre}", 0.0, entidad=entidad,
+                                                 evidencia=[_ev(f"Cumplimiento hace {k} períodos", _r(c_, 3), "pct")
+                                                            for k, c_ in enumerate(cumplimientos, start=1)]))
+    return res
+
+
+REGLAS = {"ACT-01": act01, "ACT-02": act02, "ACT-03": act03, "ACT-04": act04, "ACT-05": act05, "ACT-06": act06, "ACT-07": act07, "ACT-08": act08}

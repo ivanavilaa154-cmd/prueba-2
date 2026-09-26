@@ -13,6 +13,10 @@ HERRAMIENTAS (implementación)
 - ver_diccionario: devuelve el detalle de tablas, campos y definiciones.
 - simular_credito: simulador del Centro de Decisiones para financiar clientes a plazo.
 - ver_actividades: tareas pendientes de la persona ("¿qué tengo que hacer hoy?"), con caso, evidencia, acciones, plazo e impacto.
+- consultar_objetivos / detalle_objetivo: objetivos con semáforo, ritmo y proyección ("¿por qué estoy en rojo en ventas?").
+- proponer_objetivo: meta sugerida + validación V1-V9 + cascada; nunca guarda (lo aprueba una persona en Gestión).
+- estado_proceso / casos_trabados: pasos de venta, cobranza y compra, con plazos y casos frenados.
+- registrar_evento_proceso: registra un paso manual (solo si la persona lo pide explícitamente).
 Usalas en lugar de suponer. Si necesitás un número, consultalo.
 
 ==================================================

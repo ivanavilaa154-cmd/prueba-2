@@ -1,0 +1,30 @@
+id: OBJ-03
+nombre: Ticket promedio
+area: ventas
+metrica: kpi:VEN-03
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- sucursal
+- canal
+- vendedor
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: Ticket real promedio de los últimos 3 meses × (1 + objetivo de mejora, default 3 %).
+responsable: comercial
+palancas:
+- VEN-04
+- VEN-18
+- ACT-05
+si_en_riesgo:
+- accion: Revisar descuentos otorgados (VEN-18) y el mix de productos; reforzar venta sugerida/complementaria en caja o en el carrito online.
+  responsable: comercial
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Definir combos o umbrales de envío gratis/beneficio por monto mínimo y medir su efecto en 2 semanas.
+  responsable: comercial
+  plazo: 7 días

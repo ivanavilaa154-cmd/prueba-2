@@ -1,0 +1,80 @@
+id: PRC-CRM
+nombre: Oportunidad comercial (del lead al pedido)
+area: ventas
+caso:
+  tabla: fct_lead
+  clave: lead_id
+  filtro: 'true'
+  fecha_inicio: fct_lead.creado_at
+unidad_tiempo: horas_habiles
+pasos:
+- codigo: P1
+  nombre: Lead recibido
+  evento:
+    columna: fct_lead.creado_at
+  obligatorio: true
+- codigo: P2
+  nombre: Primer contacto
+  evento:
+    columna: fct_lead.primer_contacto_at
+  obligatorio: true
+  sla:
+    desde: P1
+    horas_habiles: 2
+  si_vence:
+    accion: Contactar al lead ahora (la probabilidad de conversión cae rápido con la demora) y registrar el contacto.
+    responsable: vendedor
+    plazo: 1 h hábil
+- codigo: P3
+  nombre: Calificado
+  evento:
+    columna: fct_lead.fecha_calificacion
+  obligatorio: false
+  sla:
+    desde: P2
+    dias_habiles: 5
+  si_vence:
+    accion: Calificar o descartar el lead (con motivo) para no dejarlo abierto.
+    responsable: vendedor
+    plazo: 48 h
+- codigo: P4
+  nombre: Propuesta enviada
+  evento:
+    columna: fct_oportunidad_historial_etapa.entrada_at
+    relacion: fct_oportunidad_historial_etapa.oportunidad_id = caso.oportunidad_id and fct_oportunidad_historial_etapa.etapa = 'propuesta'
+    agregacion: min
+  obligatorio: false
+  sla:
+    desde: P3
+    dias_habiles: 5
+  si_vence:
+    accion: Enviar la propuesta o registrar por qué no corresponde.
+    responsable: vendedor
+    plazo: 48 h
+- codigo: P5
+  nombre: Oportunidad cerrada
+  evento:
+    columna: fct_oportunidad.fecha_cierre
+    relacion: fct_oportunidad.oportunidad_id = caso.oportunidad_id
+    agregacion: max
+  obligatorio: false
+  sla:
+    limite: fct_oportunidad.fecha_cierre_esperada
+  si_vence:
+    accion: Actualizar la fecha de cierre esperada con un próximo paso concreto, o cerrar como perdida con motivo.
+    responsable: vendedor
+    plazo: 48 h
+- codigo: P6
+  nombre: Pedido generado
+  evento:
+    columna: fct_pedido.pedido_at
+    relacion: fct_pedido.pedido_id = (select pedido_id from core.fct_oportunidad o where o.oportunidad_id = caso.oportunidad_id)
+    agregacion: min
+  obligatorio: false
+  sla:
+    desde: P5
+    dias_habiles: 3
+  si_vence:
+    accion: Cargar el pedido de la oportunidad ganada.
+    responsable: vendedor
+    plazo: 24 h

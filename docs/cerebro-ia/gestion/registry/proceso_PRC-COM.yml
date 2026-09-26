@@ -1,0 +1,92 @@
+id: PRC-COM
+nombre: Compra (de la orden al pago)
+area: inventario
+caso:
+  tabla: fct_orden_compra
+  clave: orden_compra_id
+  filtro: estado <> 'borrador'
+  fecha_inicio: fct_orden_compra.fecha_emision
+unidad_tiempo: dias_habiles
+pasos:
+- codigo: P1
+  nombre: Orden emitida
+  evento:
+    columna: fct_orden_compra.fecha_emision
+  obligatorio: true
+- codigo: P2
+  nombre: Orden aprobada
+  evento:
+    columna: fct_orden_compra.fecha_aprobacion
+  obligatorio: false
+  sla:
+    desde: P1
+    dias_habiles: 1
+  si_vence:
+    accion: Aprobar o rechazar la orden de compra pendiente.
+    responsable: gerente_operaciones
+    plazo: mismo día
+- codigo: P3
+  nombre: Confirmada por el proveedor
+  evento:
+    evento_proceso: confirmacion_proveedor
+  obligatorio: false
+  sla:
+    desde: P2
+    dias_habiles: 2
+    alternativa_desde: P1
+  si_vence:
+    accion: Pedir al proveedor confirmación de la orden y fecha de entrega.
+    responsable: comprador
+    plazo: 24 h
+- codigo: P4
+  nombre: Primera recepción
+  evento:
+    columna: fct_recepcion.fecha_recepcion
+    relacion: fct_recepcion.orden_compra_id = caso.orden_compra_id
+    agregacion: min
+  obligatorio: true
+  sla:
+    limite: fct_orden_compra.fecha_entrega_prometida
+  si_vence:
+    accion: Reclamar la entrega al proveedor; si hay productos en quiebre, evaluar compra alternativa (ACT-02 C1).
+    responsable: comprador
+    plazo: 24 h
+- codigo: P5
+  nombre: Recepción completa
+  evento:
+    columna: fct_orden_compra.fecha_recepcion_completa
+  obligatorio: false
+  sla:
+    desde: P4
+    dias_habiles: 5
+  si_vence:
+    accion: 'Definir con el proveedor el saldo pendiente: entrega o cancelación del remanente.'
+    responsable: comprador
+    plazo: 48 h
+- codigo: P6
+  nombre: Factura del proveedor recibida
+  evento:
+    columna: fct_comprobante.fecha_emision
+    relacion: fct_comprobante.orden_compra_id = caso.orden_compra_id and fct_comprobante.circuito = 'compra'
+    agregacion: min
+  obligatorio: true
+  sla:
+    desde: P4
+    dias_habiles: 5
+  si_vence:
+    accion: Solicitar la factura al proveedor y controlarla contra lo recibido (cantidades y precios de lista).
+    responsable: administrativo
+    plazo: 48 h
+- codigo: P7
+  nombre: Pagada
+  evento:
+    columna: fct_documento_cxp.fecha_cancelacion
+    relacion: fct_documento_cxp.comprobante_id in (select comprobante_id from core.fct_comprobante c where c.orden_compra_id = caso.orden_compra_id)
+    agregacion: max
+  obligatorio: true
+  sla:
+    limite: fct_documento_cxp.fecha_vencimiento
+  si_vence:
+    accion: Programar el pago vencido en el próximo lote de pagos o acordar nueva fecha con el proveedor.
+    responsable: finanzas
+    plazo: 48 h

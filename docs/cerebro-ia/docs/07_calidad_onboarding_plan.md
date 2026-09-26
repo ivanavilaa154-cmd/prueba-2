@@ -61,7 +61,8 @@ Flujo en la interfaz de operador + CLI `cerebro`. Cada paso tiene estado en `ops
 10. **Validación de números con el cliente** (criterio de salida): venta del último mes cerrado ±1 % vs su propio reporte; saldos de tesorería = extractos; stock valorizado ±2 %; gasto publicitario = plataforma ±1 %.
 11. **Configuración de KPIs:** umbrales, SLAs, caja mínima, objetivos, presupuesto.
 11b. **Configuración de actividades:** responsables por rol y sucursal (`ops.responsable`), política de precios por categoría (`ops.politica_precio`: margen objetivo y mínimo, redondeo), política de producto (días de retiro antes de vencimiento, cobertura objetivo, nivel de servicio), días de pedido y mínimos de proveedores. Las **listas de precios de proveedores** se conectan como fuentes `file_import` (una por formato de lista; se puede reutilizar como perfil) con rol `precios_compra`.
-12. **Activación** de reportes y alertas.
+12. **Procesos y objetivos:** activar procesos del catálogo y ajustar SLA/responsables; elegir plantillas de objetivos, aceptar o corregir la meta sugerida, validar (V1-V9) y aprobar la cascada.
+13. **Activación** de reportes, alertas, actividades y tablero (usuarios, roles y alcances).
 
 **Perfiles:** si el sistema de un cliente nuevo ya fue mapeado para otro cliente, el operador puede partir del perfil guardado (docs/05 §2) y solo ajustar lo propio. Objetivo de servicio: primer reporte en ≤ 10 días hábiles.
 
@@ -108,6 +109,9 @@ Se configuran por fuente en `source.yml` (`frecuencia`) y por tenant. Defaults s
 ### Fase 2b — Actividades
 - Marts `ven__venta_diaria_sku_punto` y `act__*`, motor de actividades (docs/06 §5), herramientas de actividades del servidor IA, artefactos (pedido sugerido, remarcación, etiquetas, fichas de promoción).
 - **Aceptación:** con las fuentes simuladas, cada caso de cada actividad (31 casos) tiene un escenario de prueba que lo dispara y verifica: caso asignado, acciones, responsable, plazo, cierre automático y deduplicación; y un escenario negativo por cada exclusión.
+
+### Fase 2c — Procesos, objetivos y tablero
+Ver docs/15 §7 (alcance y criterios de aceptación).
 
 ### Fase 3 — Operación a escala
 - Asistente de mapeo con IA, interfaz de onboarding, perfiles reutilizables, `push_agent`, arquetipo `conector_catalogo`.

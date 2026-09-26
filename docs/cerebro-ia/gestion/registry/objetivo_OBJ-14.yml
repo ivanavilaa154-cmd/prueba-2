@@ -1,0 +1,25 @@
+id: OBJ-14
+nombre: Gastos operativos dentro del presupuesto
+area: finanzas
+metrica: kpi:FIN-04
+periodicidades:
+- mensual
+alcances:
+- empresa
+- centro_costo
+tipo_meta: maximo
+curva_esperada:
+  mensual: dias_habiles
+meta_sugerida: Presupuesto de gastos del mes; si no hay, promedio real de 3 meses.
+responsable: finanzas
+palancas:
+- FIN-22
+- FIN-19
+si_en_riesgo:
+- accion: Identificar las cuentas que explican el desvío y congelar gastos no comprometidos de esas cuentas.
+  responsable: finanzas
+  plazo: 72 h
+si_fuera_de_camino:
+- accion: Aprobación previa obligatoria para nuevos gastos del mes y revisión de contratos recurrentes.
+  responsable: gerente_general
+  plazo: 7 días

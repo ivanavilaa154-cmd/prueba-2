@@ -1,0 +1,62 @@
+# Cómo aplica la empresa los procesos (config/gestion/procesos.yml) y los objetivos (config/gestion/objetivos.yml).
+# Los catálogos no se tocan: acá va la configuración propia (qué procesos se usan, con qué datos se mide cada paso,
+# plazos distintos, calendario y horario).
+
+calendario:
+  dias_no_habiles: [domingo]          # para plazos en días/horas hábiles
+  horas_por_dia_habil: 8              # 24 horas hábiles = 3 días hábiles (los datos del sistema vienen por día)
+  horario_operativo: {desde: 8, hasta: 20}
+  zona_horaria: America/Montevideo
+
+# Cada cuánto se reevalúan objetivos y casos trabados (el "ciclo de tiempo real").
+ciclo_minutos: 15
+# Si los datos tienen más de estas horas, los objetivos quedan "no evaluables" (no se muestran números viejos como actuales).
+frescura_max_horas: 30
+# Métricas no acumulables (%, tiempos): casos mínimos para evaluar.
+muestra_minima: 30
+# Crecimiento real e inflación para sugerir metas (inflación mensual: config/empresa.yaml → finanzas.inflacion_mensual).
+crecimiento_real_objetivo: 0.05
+
+# Qué rol de la plataforma recibe las tareas y ve los objetivos de cada área.
+areas_por_rol:
+  gerente_comercial: [ventas, marketing]
+  compras: [inventario, logistica]
+  administracion: [finanzas]
+  vendedor: [ventas]
+
+# Procesos: con qué dato de la plataforma se mide cada paso del catálogo.
+#  columna: fecha en la tabla del caso · relacion: {tabla, columna, clave (columna que apunta al caso), agregacion}
+#  evento_proceso: se registra a mano en el tablero (o desde el chat) · limite / desde_columna: columnas de la tabla del caso
+#  Un paso que no figura acá no se puede medir con los datos actuales (se muestra "sin dato", no como omitido).
+procesos:
+  PRC-VEN:
+    activo: true
+    caso: {tabla: pedidos, clave: id, inicio: fecha_pedido, etiqueta: numero, filtro: "COALESCE(estado, '') NOT IN ('cancelado', 'anulado')",
+           cliente: cliente_id, vendedor: vendedor_id, sucursal: sucursal_id}
+    variante: {columna: condicion_pago_dias, de_tabla: clientes, cuenta_corriente_si_mayor_a: 0}
+    pasos:
+      P1: {columna: fecha_pedido}
+      P6: {columna: fecha_entrega, limite: fecha_entrega_prometida}
+  PRC-COB:
+    activo: true
+    caso: {tabla: cxc, clave: id, inicio: fecha_emision, etiqueta: numero, importe: importe, saldo: saldo,
+           filtro: "COALESCE(tipo, 'factura') = 'factura' AND COALESCE(importe, 0) > 0", cliente: cliente_id, vendedor: vendedor_id}
+    pasos:
+      P1: {columna: fecha_emision}
+      P2: {evento_proceso: recordatorio_cobro_enviado, desde_columna: fecha_vencimiento}
+      P3: {evento_proceso: gestion_cobranza_realizada, desde_columna: fecha_vencimiento,
+           aplica_si: {saldo_mayor_a: 0, vencido: fecha_vencimiento}}
+      P4: {evento_proceso: promesa_pago_registrada}
+      P5: {columna: fecha_cobro, limite: fecha_vencimiento}
+      P6: {relacion: {tabla: cobranzas, columna: fecha, clave: cxc_id, agregacion: max}}
+  PRC-COM:
+    activo: true
+    caso: {tabla: compras, clave: id, inicio: fecha, etiqueta: numero, filtro: "COALESCE(estado, '') NOT IN ('borrador', 'cancelada', 'anulada')",
+           proveedor: proveedor_id, sucursal: sucursal_id}
+    pasos:
+      P1: {columna: fecha}
+      P3: {evento_proceso: confirmacion_proveedor}
+      P4: {columna: fecha_recepcion, limite: fecha_prometida}
+  PRC-DEV: {activo: false, motivo: "Las devoluciones de la plataforma se registran ya resueltas (sin fecha de solicitud, recepción ni reintegro)."}
+  PRC-LOG: {activo: false, motivo: "La plataforma todavía no tiene envíos (despacho, promesa, entrega por envío)."}
+  PRC-CRM: {activo: false, motivo: "La plataforma todavía no tiene leads ni oportunidades (CRM)."}

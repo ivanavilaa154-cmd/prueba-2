@@ -1,0 +1,26 @@
+id: OBJ-21
+nombre: Costo de adquisición (CAC)
+area: marketing
+metrica: kpi:MKT-08
+periodicidades:
+- mensual
+alcances:
+- empresa
+- canal_marketing
+tipo_meta: maximo
+curva_esperada:
+  mensual: no_aplica
+meta_sugerida: LTV 12 m / 3.
+responsable: marketing
+palancas:
+- MKT-05
+- MKT-09
+- OBJ-05
+si_en_riesgo:
+- accion: Revisar campañas de adquisición con CPA creciente y ajustar segmentación/puja.
+  responsable: marketing
+  plazo: 72 h
+si_fuera_de_camino:
+- accion: Reducir inversión de adquisición hasta recuperar eficiencia y reforzar canales propios (email, orgánico).
+  responsable: marketing
+  plazo: 7 días

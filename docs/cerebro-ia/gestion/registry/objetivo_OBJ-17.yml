@@ -1,0 +1,26 @@
+id: OBJ-17
+nombre: Días de inventario
+area: inventario
+metrica: kpi:INV-04
+periodicidades:
+- mensual
+alcances:
+- empresa
+- categoria
+tipo_meta: maximo
+curva_esperada:
+  mensual: no_aplica
+meta_sugerida: Objetivo de cobertura por categoría de la política de producto ponderado por mix.
+responsable: comprador
+palancas:
+- ACT-03
+- INV-09
+- INV-10
+si_en_riesgo:
+- accion: Reducir compras de productos en sobrestock (ACT-03 C2) en los próximos pedidos.
+  responsable: comprador
+  plazo: próximo pedido
+si_fuera_de_camino:
+- accion: Plan de liquidación de inmovilizado (ACT-03 C1) y revisión de mínimos de compra con proveedores.
+  responsable: comercial
+  plazo: 14 días

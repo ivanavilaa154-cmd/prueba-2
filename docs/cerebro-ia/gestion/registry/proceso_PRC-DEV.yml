@@ -1,0 +1,53 @@
+id: PRC-DEV
+nombre: Devolución (de la solicitud al reintegro)
+area: ventas
+caso:
+  tabla: fct_devolucion
+  clave: devolucion_id
+  filtro: estado <> 'rechazada'
+  fecha_inicio: fct_devolucion.fecha_solicitud
+unidad_tiempo: dias_habiles
+pasos:
+- codigo: P1
+  nombre: Devolución solicitada
+  evento:
+    columna: fct_devolucion.fecha_solicitud
+  obligatorio: true
+- codigo: P2
+  nombre: Producto recibido
+  evento:
+    columna: fct_devolucion.fecha_recepcion
+  obligatorio: true
+  sla:
+    desde: P1
+    dias_habiles: 7
+  si_vence:
+    accion: Verificar el envío de retorno con el cliente/transportista y enviarle instrucciones si no lo despachó.
+    responsable: logistica
+    plazo: 48 h
+- codigo: P3
+  nombre: Reintegro o cambio realizado
+  evento:
+    columna: fct_devolucion.fecha_reintegro
+  obligatorio: true
+  sla:
+    desde: P2
+    dias_habiles: 3
+  si_vence:
+    accion: Realizar el reintegro o el cambio y avisar al cliente.
+    responsable: administrativo
+    plazo: 24 h
+- codigo: P4
+  nombre: Nota de crédito emitida
+  evento:
+    columna: fct_comprobante.fecha_emision
+    relacion: fct_comprobante.comprobante_id = caso.comprobante_id and fct_comprobante.clase = 'nota_credito'
+    agregacion: min
+  obligatorio: false
+  sla:
+    desde: P2
+    dias_habiles: 3
+  si_vence:
+    accion: Emitir la nota de crédito correspondiente a la devolución.
+    responsable: administrativo
+    plazo: 48 h

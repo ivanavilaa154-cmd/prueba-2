@@ -1,0 +1,29 @@
+id: OBJ-11
+nombre: Cobranza del período
+area: finanzas
+metrica: kpi:FIN-15
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- vendedor
+- cobrador
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: Efectividad de cobranza (CEI) 90 % o P75 histórico.
+responsable: cobrador
+palancas:
+- FIN-10
+- FIN-11
+- PRC-COB
+si_en_riesgo:
+- accion: Trabajar el listado de documentos vencidos por importe (PRC-COB P3) y registrar promesas de pago.
+  responsable: cobrador
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Aplicar la escalera de cobranza (aviso formal, suspensión de crédito a 30 días) a los 10 mayores deudores.
+  responsable: finanzas
+  plazo: 72 h

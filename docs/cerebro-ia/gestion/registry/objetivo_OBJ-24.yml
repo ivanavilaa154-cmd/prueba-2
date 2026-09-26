@@ -1,0 +1,33 @@
+id: OBJ-24
+nombre: Tareas resueltas en plazo
+area: gestion
+metrica: actividad:todas.tareas_resueltas_en_plazo_pct
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- sucursal
+- persona
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: 85 %.
+responsable: gerente_operaciones
+palancas:
+- ACT-01
+- ACT-02
+- ACT-03
+- ACT-04
+- ACT-05
+- ACT-06
+- ACT-07
+si_en_riesgo:
+- accion: Revisar tareas vencidas por responsable y reasignar las de mayor impacto.
+  responsable: gerente_operaciones
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Revisar la carga de tareas por persona (tope diario) y la precisión de las actividades; ajustar parámetros si hay muchas falsas alarmas.
+  responsable: gerente_general
+  plazo: 7 días

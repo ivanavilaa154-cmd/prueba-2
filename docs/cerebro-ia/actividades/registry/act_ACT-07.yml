@@ -1,0 +1,109 @@
+id: ACT-07
+nombre: Casos trabados en un proceso
+caso_de_negocio: Un pedido, una factura a cobrar o una orden de compra quedó frenada en un paso (se venció el plazo o no avanza). Cada caso trabado
+  tiene que tener a alguien haciendo algo concreto.
+entidad: caso de proceso × paso (PRC-xxx, docs/15)
+frecuencia: en cada ciclo de tiempo real (default cada 15 min en horario operativo) para procesos con SLA en horas; diaria para procesos en días
+responsable_principal: el responsable definido en el paso (si_vence.responsable)
+deteccion:
+  universo: casos abiertos de los procesos activos del tenant (`marts.proc__caso`).
+  condiciones:
+  - 'Paso vencido: un paso aplicable está pendiente y superó su SLA (estado_paso = pendiente_vencido).'
+  - 'Caso detenido: no hubo avance en más de 2 × P90 histórico del tiempo del paso actual, aunque el paso no tenga SLA.'
+  - 'Paso omitido o fuera de orden: un paso obligatorio no ocurrió y ya ocurrió uno posterior (ej. despachado sin facturar).'
+  exclusiones:
+  - Casos cancelados o anulados.
+  - Pasos marcados `no_aplica` por su condición.
+parametros:
+  factor_detenido_p90: 2
+  ciclo_minutos: 15
+calculo: "-- marts.proc__caso_paso (una fila por caso × paso) → marts.act__casos_trabados\nselect proceso, caso_key, paso, estado_paso, vencio_at,\
+  \ horas_vencido, responsable_rol, accion_si_vence, impacto\nfrom marts.proc__caso_paso\nwhere estado_paso in ('pendiente_vencido','omitido','fuera_de_orden')\n\
+  \   or (estado_paso = 'pendiente_en_plazo' and horas_desde_paso_anterior > :factor_detenido_p90 * p90_historico_paso);\n"
+impacto: importe del caso (venta del pedido, saldo del documento, importe de la orden) × urgencia por horas vencido.
+casos:
+- codigo: C1
+  nombre: Paso vencido
+  condicion: estado_paso = pendiente_vencido.
+  prioridad: alta (crítica si el paso define escalamiento y se alcanzó un escalón, o si el caso es de un cliente/proveedor clave)
+  acciones:
+  - orden: 1
+    accion: Ejecutar la acción definida para ese paso en el proceso (si_vence) — el texto exacto, responsable y plazo se copian del catálogo de
+      procesos a la tarea.
+    responsable: gerente_operaciones
+    plazo: el del paso
+  - orden: 2
+    accion: Si el paso tiene escalamiento (ej. cobranza a 15/30/60 días), aplicar el escalón alcanzado.
+    responsable: gerente_operaciones
+    plazo: el del escalón
+  - orden: 3
+    accion: 'Registrar en la tarea la causa del atraso (lista estándar: falta de stock, datos incompletos, cliente/proveedor, capacidad interna,
+      sistema) para el análisis de causas.'
+    responsable: gerente_operaciones
+    plazo: al resolver
+  cierre: Se cierra automáticamente cuando el evento del paso ocurre.
+- codigo: C2
+  nombre: Caso detenido sin plazo definido
+  condicion: El caso no avanza hace más de 2 × P90 histórico del paso actual.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Revisar el caso y registrar el próximo paso con fecha, o cerrarlo/cancelarlo si ya no corresponde.
+    responsable: gerente_operaciones
+    plazo: 48 h
+  cierre: Avanza al paso siguiente o se cancela.
+- codigo: C3
+  nombre: Paso obligatorio omitido o fuera de orden
+  condicion: estado_paso in (omitido, fuera_de_orden).
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Completar el paso faltante (ej. emitir la factura de un pedido ya despachado) o registrar la excepción justificada.
+    responsable: administrativo
+    plazo: 24 h
+  - orden: 2
+    accion: 'Si se repite más de 5 veces por semana en el mismo paso: revisar el procedimiento con el equipo y dejar registrada la corrección.'
+    responsable: gerente_operaciones
+    plazo: 7 días
+  cierre: Evento del paso registrado o excepción aprobada.
+resoluciones:
+- paso_completado
+- escalado
+- excepcion_justificada
+- caso_cancelado
+- falso_positivo
+resolucion_confirmada:
+- paso_completado
+- escalado
+- caso_cancelado
+ejemplo: 'PRC-VEN · Pedido 10482 ($ 186.000): despachado ayer pero sin factura (paso P3 omitido). Acción: emitir la factura hoy. Responsable:
+  administración.'
+requisitos:
+  obligatorias: []
+  alternativas:
+  - nombre: PRC-VEN
+    obligatorias:
+    - fct_pedido.pedido_at
+  - nombre: PRC-LOG
+    obligatorias:
+    - fct_envio.pedido_at
+    - fct_envio.despacho_at
+  - nombre: PRC-COB
+    obligatorias:
+    - fct_documento_cxc.fecha_emision
+    - fct_documento_cxc.fecha_vencimiento
+  - nombre: PRC-COM
+    obligatorias:
+    - fct_orden_compra.fecha_emision
+  - nombre: PRC-CRM
+    obligatorias:
+    - fct_lead.creado_at
+  - nombre: PRC-DEV
+    obligatorias:
+    - fct_devolucion.fecha_solicitud
+  opcionales:
+  - fct_evento_proceso.evento_at
+kpis_relacionados:
+- LOG-14
+- FIN-10
+- VEN-21

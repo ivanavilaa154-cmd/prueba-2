@@ -1,0 +1,108 @@
+id: PRC-VEN
+nombre: Ciclo de venta (del pedido al cobro)
+area: ventas
+caso:
+  tabla: fct_pedido
+  clave: pedido_id
+  filtro: pedido_valido
+  fecha_inicio: fct_pedido.pedido_at
+unidad_tiempo: horas_habiles
+variantes:
+- nombre: prepago
+  condicion: caso.estado_pago is not null and dim_cliente.condicion_pago_dias = 0
+  descripcion: Se paga antes de preparar (online, contado).
+- nombre: cuenta_corriente
+  condicion: dim_cliente.condicion_pago_dias > 0
+  descripcion: Se entrega y se cobra después (empresas, mayoristas).
+pasos:
+- codigo: P1
+  nombre: Pedido registrado
+  evento:
+    columna: fct_pedido.pedido_at
+  obligatorio: true
+- codigo: P2
+  nombre: Pago confirmado
+  aplica_si: variante = 'prepago'
+  evento:
+    columna: fct_pedido.confirmado_at
+  obligatorio: true
+  sla:
+    desde: P1
+    horas: 48
+  si_vence:
+    accion: Contactar al cliente para completar el pago; si no paga en 72 h, cancelar el pedido y liberar el stock reservado.
+    responsable: vendedor
+    plazo: 24 h
+- codigo: P3
+  nombre: Facturado
+  evento:
+    columna: fct_comprobante.fecha_emision
+    relacion: fct_comprobante.pedido_id = caso.pedido_id and fct_comprobante.circuito = 'venta' and fct_comprobante.clase in ('factura','ticket')
+    agregacion: min
+  obligatorio: true
+  sla:
+    desde: P2
+    horas_habiles: 24
+    alternativa_desde: P1
+  si_vence:
+    accion: Emitir la factura del pedido (verificar datos fiscales del cliente si la emisión falló).
+    responsable: administrativo
+    plazo: mismo día
+- codigo: P4
+  nombre: Preparado
+  evento:
+    columna: fct_envio.listo_despacho_at
+    relacion: fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion
+    agregacion: min
+  obligatorio: false
+  sla:
+    desde: P2
+    horas_habiles: 24
+    alternativa_desde: P1
+  si_vence:
+    accion: Preparar el pedido; si falta un producto, avisar al vendedor para ofrecer reemplazo o entrega parcial.
+    responsable: operario_deposito
+    plazo: 4 h hábiles
+- codigo: P5
+  nombre: Despachado
+  evento:
+    columna: fct_envio.despacho_at
+    relacion: fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion
+    agregacion: min
+  obligatorio: true
+  sla:
+    limite: fct_envio.fecha_limite_despacho
+    alternativa:
+      desde: P4
+      horas_habiles: 8
+  si_vence:
+    accion: Despachar o coordinar el retiro con el transportista hoy; si no es posible, informar al cliente la nueva fecha.
+    responsable: logistica
+    plazo: mismo día
+- codigo: P6
+  nombre: Entregado
+  evento:
+    columna: fct_envio.entrega_at
+    relacion: fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion
+    agregacion: max
+  obligatorio: true
+  sla:
+    limite: fct_envio.fecha_promesa
+  si_vence:
+    accion: Reclamar al transportista el estado del envío y avisar al cliente con una fecha nueva de entrega.
+    responsable: logistica
+    plazo: 24 h
+- codigo: P7
+  nombre: Cobrado
+  aplica_si: variante = 'cuenta_corriente'
+  evento:
+    columna: fct_documento_cxc.fecha_cancelacion
+    relacion: fct_documento_cxc.comprobante_id in (select comprobante_id from core.fct_comprobante c where c.pedido_id = caso.pedido_id)
+    agregacion: max
+  obligatorio: true
+  sla:
+    limite: fct_documento_cxc.fecha_vencimiento
+  si_vence:
+    accion: Iniciar la gestión de cobranza del documento (proceso PRC-COB).
+    responsable: cobrador
+    plazo: 24 h

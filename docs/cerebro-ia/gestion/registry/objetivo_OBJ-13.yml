@@ -1,0 +1,27 @@
+id: OBJ-13
+nombre: Documentos gestionados a tiempo
+area: finanzas
+metrica: proceso:PRC-COB.P3.cumplimiento_sla_pct
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- cobrador
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: 95 %.
+responsable: cobrador
+palancas:
+- PRC-COB
+- ACT-07
+si_en_riesgo:
+- accion: Resolver las tareas de gestión de cobranza vencidas (ACT-07 sobre PRC-COB).
+  responsable: cobrador
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: Reasignar cartera entre cobradores o reforzar horas de gestión.
+  responsable: finanzas
+  plazo: 72 h

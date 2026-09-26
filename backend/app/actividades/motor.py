@@ -63,11 +63,13 @@ def _fuente() -> str:
     return fuente.actual()
 
 
-def _acciones(act_id: str, caso: str, desde: date) -> list[dict]:
-    return [{"orden": a.get("orden", i + 1), "accion": a["accion"], "responsable": a["responsable"],
+def _acciones(act_id: str, caso: str, desde: date, propias: list | None = None) -> list[dict]:
+    """Las acciones del caso del catálogo, o las propias de la detección (paso vencido, plantilla del objetivo)."""
+    lista = propias or catalogo.caso(act_id, caso)["acciones"]
+    return [{"orden": i + 1, "accion": a["accion"], "responsable": a["responsable"],
              "rol_plataforma": catalogo.rol_plataforma(a["responsable"]), "plazo": a["plazo"],
              "vence": catalogo.vence_accion(a["plazo"], desde)}
-            for i, a in enumerate(catalogo.caso(act_id, caso)["acciones"])]
+            for i, a in enumerate(lista)]
 
 
 def _limite(acciones: list[dict]) -> str | None:
@@ -87,7 +89,7 @@ def _historial(con, fte: str):
 
 
 def _crear(con, fte: str, det: Deteccion, ahora: datetime, hoy: date, origen: str = "regla") -> int:
-    acciones = _acciones(det.actividad, det.caso, hoy)
+    acciones = _acciones(det.actividad, det.caso, hoy, det.acciones)
     prioridad = _prioridad(det)
     rol = acciones[0]["responsable"]
     cur = con.execute(
@@ -213,7 +215,15 @@ def _marcar_notificables(con, fte: str) -> None:
 def _visible(t: dict, usuario: Usuario) -> bool:
     if usuario.rol == "dueno":
         return True
+    if usuario.vendedor_id is not None:   # un vendedor solo ve tareas de su cartera
+        return t["entidad"].get("vendedor_id") is not None and str(t["entidad"]["vendedor_id"]) == str(usuario.vendedor_id) \
+            and any(a.get("rol_plataforma") == usuario.rol for a in t["acciones"])
     return t["rol_plataforma"] == usuario.rol or any(a.get("rol_plataforma") == usuario.rol for a in t["acciones"])
+
+
+def listar_todas(estado: str = "abiertas") -> list[dict]:
+    """Todas las tareas (uso interno del sistema, sin filtro de rol)."""
+    return listar(Usuario(id="sistema", nombre="Sistema", rol="dueno"), estado)
 
 
 def ultima_ejecucion(fte: str | None = None) -> dict | None:
@@ -370,3 +380,19 @@ def resumen(usuario: Usuario) -> dict:
             "impacto": round(sum(t["impacto_estimado"] or 0 for t in abiertas), 2),
         },
     }
+
+
+def en_plazo(desde: date, hasta: date) -> tuple[float | None, int]:
+    """Tareas cerradas a mano en el período dentro de su plazo / (cerradas + las que vencieron en el período sin resolver)."""
+    con = _conectar()
+    try:
+        filas = con.execute("SELECT estado, resuelta_at, fecha_limite FROM actividad WHERE fuente=? AND ("
+                            "(estado IN ('resuelta','descartada') AND substr(resuelta_at, 1, 10) BETWEEN ? AND ?) OR "
+                            "(estado = 'vencida' AND fecha_limite BETWEEN ? AND ?))",
+                            (_fuente(), desde.isoformat(), hasta.isoformat(), desde.isoformat(), hasta.isoformat())).fetchall()
+    finally:
+        con.close()
+    if not filas:
+        return None, 0
+    ok = sum(1 for e, r, lim in filas if e != "vencida" and (not lim or r[:10] <= lim))
+    return round(ok / len(filas), 4), len(filas)

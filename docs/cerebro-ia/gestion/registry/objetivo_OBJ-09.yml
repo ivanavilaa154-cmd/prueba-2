@@ -1,0 +1,27 @@
+id: OBJ-09
+nombre: Backlog atrasado en cero
+area: logistica
+metrica: kpi:LOG-14
+parametros:
+  medida: backlog_atrasado
+periodicidades:
+- diario
+alcances:
+- empresa
+- deposito
+tipo_meta: maximo
+curva_esperada:
+  diario: no_aplica
+meta_sugerida: 0 pedidos atrasados al cierre del día.
+responsable: logistica
+palancas:
+- LOG-03
+- PRC-LOG
+si_en_riesgo:
+- accion: Despachar primero los pedidos atrasados y los que vencen hoy.
+  responsable: operario_deposito
+  plazo: 2 h
+si_fuera_de_camino:
+- accion: 'Escalar: recursos extra hoy y comunicación proactiva a clientes afectados.'
+  responsable: gerente_operaciones
+  plazo: mismo día

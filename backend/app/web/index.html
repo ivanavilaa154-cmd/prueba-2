@@ -190,6 +190,40 @@ ul { margin: 6px 0; padding-left: 20px; }
 .cerrada-linea { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--borde); font-size: 13.5px; }
 .cerrada-linea .nota { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 520px) { .tarea { padding: 12px; } .resolver button { flex: 1 1 auto; } }
+.gs-vistas { margin: 4px 0 14px; }
+.objs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 12px; }
+.obj { background: var(--panel); border: 1px solid var(--borde); border-left: 4px solid var(--borde); border-radius: 10px; padding: 12px 14px;
+  display: grid; gap: 6px; text-align: left; font: inherit; color: var(--texto); cursor: pointer; min-width: 0; }
+.obj:hover { border-color: var(--acento); }
+.obj.fuera_de_camino { border-left-color: var(--error); } .obj.en_riesgo { border-left-color: var(--alerta); }
+.obj.en_camino, .obj.cumplido { border-left-color: var(--ok); }
+.obj .cab { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.obj .tit { font-weight: 650; font-size: 14.5px; }
+.obj .alc { font-size: 12.5px; color: var(--suave); }
+.obj .val { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.obj .meta-t { font-size: 13px; color: var(--suave); }
+.barra-av { height: 7px; background: var(--codigo); border-radius: 999px; overflow: hidden; }
+.barra-av span { display: block; height: 100%; background: var(--acento); border-radius: 999px; }
+.obj.fuera_de_camino .barra-av span { background: var(--error); } .obj.en_riesgo .barra-av span { background: var(--alerta); }
+.obj.en_camino .barra-av span, .obj.cumplido .barra-av span { background: var(--ok); }
+.obj .datos { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.semaforo { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 1px 9px; white-space: nowrap; background: var(--codigo); color: var(--suave); }
+.semaforo.fuera_de_camino { background: var(--error-fondo); color: var(--error); } .semaforo.en_riesgo { background: var(--alerta-fondo); color: var(--alerta); }
+.semaforo.en_camino, .semaforo.cumplido { background: var(--ok-fondo); color: var(--ok); }
+.area-t { font-size: 15px; margin: 18px 0 8px; }
+.detalle-obj { margin-top: 16px; }
+.curva .real { fill: none; stroke: var(--acento); stroke-width: 2.5; }
+.curva .esp { fill: none; stroke: var(--suave); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.leyenda { display: flex; gap: 14px; font-size: 12.5px; color: var(--suave); margin-top: 4px; }
+.leyenda i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 4px; background: var(--acento); }
+.leyenda i.esp { background: none; border-top: 2px dashed var(--suave); height: 0; }
+.proc { margin-bottom: 16px; }
+.validaciones { display: grid; gap: 4px; margin: 8px 0; font-size: 13.5px; }
+.validaciones div { display: grid; grid-template-columns: 22px 1fr; gap: 6px; }
+.validaciones .bloquea { color: var(--error); } .validaciones .advierte { color: var(--alerta); } .validaciones .ok { color: var(--ok); }
+.form-obj { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 10px; }
+.form-obj label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--suave); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; }
 </style>
 </head>
 <body>
@@ -205,6 +239,7 @@ ul { margin: 6px 0; padding-left: 20px; }
 <nav>
   <button data-pestana="tablero" class="activa">Tablero</button>
   <button data-pestana="actividades">Actividades <span id="act-badge" class="cuenta" hidden></span></button>
+  <button data-pestana="gestion">Gestión</button>
   <button data-pestana="datos">Integraciones</button>
   <button data-pestana="consultas">Consultas y permisos</button>
   <button data-pestana="chat">Chat</button>
@@ -252,6 +287,43 @@ ul { margin: 6px 0; padding-left: 20px; }
     <h2>Cómo aprende cada actividad</h2>
     <p>Precisión = tareas cerradas con una resolución que confirma la detección, sobre el total cerrado a mano (últimas 4 semanas). Si baja de 60 % conviene endurecer los parámetros; si pasa de 90 % con pocas detecciones, se pueden relajar (config/actividades_empresa.yaml).</p>
     <div id="act-precision"></div>
+  </div>
+</section>
+
+<section id="gestion">
+  <div class="act-cab">
+    <div>
+      <h2 class="tablero-titulo">Gestión</h2>
+      <p class="nota" id="gs-sub" style="margin:2px 0 0">Objetivos, procesos y su seguimiento.</p>
+    </div>
+    <div class="ver gs-vistas" role="group" aria-label="Vista">
+      <button class="chip-ver activa" data-gs="objetivos">Objetivos</button><button class="chip-ver" data-gs="procesos">Procesos</button><button class="chip-ver" data-gs="configurar">Configurar objetivo</button>
+    </div>
+  </div>
+  <div id="gs-objetivos">
+    <div class="act-filtros">
+      <div class="ver" role="group" aria-label="Período" id="gs-periodos">
+        <button class="chip-ver activa" data-per="">Todos</button><button class="chip-ver" data-per="diario">Día</button><button class="chip-ver" data-per="semanal">Semana</button><button class="chip-ver" data-per="mensual">Mes</button>
+      </div>
+    </div>
+    <div id="gs-resumen"></div>
+    <div id="gs-lista"></div>
+    <div id="gs-detalle" class="detalle-obj"></div>
+  </div>
+  <div id="gs-procesos" hidden>
+    <div class="act-filtros"><label class="periodo">Período
+      <select id="gs-dias"><option value="7">Últimos 7 días</option><option value="30" selected>Últimos 30 días</option><option value="90">Últimos 90 días</option></select></label></div>
+    <div id="gs-procesos-lista"></div>
+  </div>
+  <div id="gs-configurar" hidden>
+    <div class="tarjeta">
+      <h2>Configurar un objetivo</h2>
+      <p>Elegí una plantilla, el alcance y el período. La plataforma sugiere la meta, la valida (V1 a V9) y arma la cascada por semana, día, sucursal o vendedor. Nada se activa hasta que lo guardás.</p>
+      <div class="form-obj" id="gs-form"></div>
+      <div class="checks" id="gs-cascada" style="margin-top:10px"></div>
+      <div class="fila" style="margin-top:12px"><button class="sec" id="gs-revisar">Revisar</button><button class="primario" id="gs-guardar" disabled>Guardar y activar</button></div>
+      <div id="gs-propuesta"></div>
+    </div>
   </div>
 </section>
 
@@ -448,6 +520,7 @@ async function cargarUsuarios() {
   if (lista.some(u => u.id === previo)) $("#usuario").value = previo;
   cargarTablero();
   cargarActividades();
+  cargarObjetivos();
 }
 $("#usuario").onchange = () => { historial = []; $("#mensajes").innerHTML = ""; };
 
@@ -522,7 +595,7 @@ function valorKpi(k) {
   if (k.valor === null || k.valor === undefined) return "—";
   if (k.formato === "moneda") return "$ " + MONEDA.format(k.valor);
   if (k.formato === "porcentaje") return (k.valor * 100).toFixed(1).replace(".", ",") + " %";
-  if (k.formato === "dias") return fmt.format(k.valor) + " días";
+  if (k.formato === "dias") return fmt.format(k.valor) + (k.valor === 1 ? " día" : " días");
   if (k.formato === "veces") return fmt.format(k.valor) + " veces";
   return fmt.format(k.valor);
 }
@@ -1032,6 +1105,223 @@ $("#act-lista").onclick = async e => {
   catch (err) { b.disabled = false; tarea.querySelector(".resolver").insertAdjacentHTML("beforeend", aviso("error", err.message)); }
 };
 $("#usuario").addEventListener("change", () => cargarActividades());
+
+// Gestión: objetivos, procesos y configuración
+const EST_OBJ = {fuera_de_camino: "● Fuera de camino", en_riesgo: "▲ En riesgo", en_camino: "✓ En camino", cumplido: "✓ Cumplido", no_evaluable: "No evaluable", sin_meta: "Sin meta"};
+const PERIODO = {diario: "del día", semanal: "de la semana", mensual: "del mes", trimestral: "del trimestre", anual: "del año"};
+const AREA = {ventas: "Ventas", finanzas: "Finanzas", inventario: "Inventario", logistica: "Logística", marketing: "Marketing", gestion: "Gestión"};
+let gsPer = "", gsDatos = null, gsPlantillas = null;
+function porUnidad(v, u) {
+  if (v === null || v === undefined) return "—";
+  if (u === "moneda") return plata(v);
+  if (u === "porcentaje") return pct(v);
+  if (u === "dias") return fmt.format(v) + (v === 1 ? " día" : " días");
+  return fmt.format(v);
+}
+function haceCuanto(iso) {
+  if (!iso) return "—";
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  if (min < 48 * 60) return `hace ${Math.round(min / 60)} h`;
+  return `hace ${Math.round(min / 1440)} días`;
+}
+function tarjetaObj(x) {
+  const o = x.objetivo, e = x.evaluacion, u = x.unidad, av = e.avance_pct === null || e.avance_pct === undefined ? 0 : Math.max(0, Math.min(1, e.avance_pct));
+  return `<button class="obj ${e.estado}" data-obj="${o.id}">
+    <span class="cab"><span class="tit">${esc(o.nombre)}</span><span class="semaforo ${e.estado}">${EST_OBJ[e.estado] || e.estado}</span></span>
+    <span class="alc">${esc(o.alcance_nombre || "Empresa")} · meta ${esc(PERIODO[o.periodicidad] || o.periodicidad)}${o.tipo_meta === "maximo" ? " (máximo)" : ""}</span>
+    <span class="val">${porUnidad(e.valor_actual, u)}</span>
+    <span class="meta-t">Meta ${porUnidad(e.meta, u)}${e.valor_esperado !== null && e.valor_esperado !== undefined ? ` · esperado a hoy ${porUnidad(e.valor_esperado, u)}` : ""}</span>
+    <span class="barra-av" aria-hidden="true"><span style="width:${(av * 100).toFixed(1)}%"></span></span>
+    <span class="datos">${e.ritmo !== null && e.ritmo !== undefined ? `<span>Ritmo ${fmt.format(e.ritmo)}</span>` : ""}
+      ${e.proyeccion_cierre !== null && e.proyeccion_cierre !== undefined && e.valor_esperado !== null ? `<span>Proyección ${porUnidad(e.proyeccion_cierre, u)}</span>` : ""}
+      ${e.prob_cumplimiento !== null && e.prob_cumplimiento !== undefined ? `<span>Prob. ${pct(e.prob_cumplimiento)}</span>` : ""}
+      ${e.ritmo_necesario ? `<span>Necesita ${porUnidad(e.ritmo_necesario, u)}/día</span>` : ""}</span>
+    ${(e.advertencias || []).length ? `<span class="nota" style="font-size:12px">${esc(e.advertencias[0])}</span>` : ""}
+  </button>`;
+}
+function pintarObjetivos() {
+  const d = gsDatos; if (!d) return;
+  $("#gs-sub").textContent = `Datos actualizados ${haceCuanto(d.datos_actualizados_at)} · evaluado ${haceCuanto(d.evaluado_at)}. Se reevalúa solo cada 15 minutos.`;
+  const cuenta = k => d.objetivos.filter(x => x.evaluacion.estado === k).length;
+  $("#gs-resumen").innerHTML = tarjetas([
+    {nombre: "Puntaje global", valor: d.puntaje, formato: "porcentaje", nota: "ponderado por el peso de cada objetivo"},
+    {nombre: "Fuera de camino", valor: cuenta("fuera_de_camino"), formato: "numero", estado: cuenta("fuera_de_camino") ? "critico" : null},
+    {nombre: "En riesgo", valor: cuenta("en_riesgo"), formato: "numero", estado: cuenta("en_riesgo") ? "alerta" : null},
+    {nombre: "En camino o cumplidos", valor: cuenta("en_camino") + cuenta("cumplido"), formato: "numero"}]);
+  if (!d.objetivos.length) { $("#gs-lista").innerHTML = aviso("alerta", "No hay objetivos para vos en este período. Se cargan en «Configurar objetivo»."); return; }
+  const areas = [...new Set(d.objetivos.map(x => x.objetivo.area))];
+  $("#gs-lista").innerHTML = areas.map(a => `<h3 class="area-t">${esc(AREA[a] || a)}</h3><div class="objs">${d.objetivos.filter(x => x.objetivo.area === a).map(tarjetaObj).join("")}</div>`).join("");
+}
+async function cargarObjetivos() {
+  const u = $("#usuario").value; if (!u) return;
+  try { gsDatos = await api(`/gestion/objetivos?usuario_id=${encodeURIComponent(u)}${gsPer ? "&periodicidad=" + gsPer : ""}`); pintarObjetivos(); }
+  catch (e) { $("#gs-lista").innerHTML = aviso("error", "No se pudieron cargar los objetivos: " + e.message); }
+}
+function graficoCurva(puntos, u) {
+  if (!puntos.length) return "";
+  const W = 640, H = 200, izq = 70, abajo = 22, arriba = 8, max = Math.max(...puntos.map(p => Math.max(p.esperado, p.real || 0))) || 1;
+  const x = i => izq + (W - izq - 8) * i / Math.max(1, puntos.length - 1), y = v => arriba + (H - arriba - abajo) * (1 - v / max);
+  const linea = (campo) => puntos.map((p, i) => p[campo] === null ? null : `${x(i)},${y(p[campo])}`).filter(Boolean).join(" ");
+  const ejes = [0, 0.5, 1].map(f => `<line class="grilla" x1="${izq}" x2="${W - 4}" y1="${y(max * f)}" y2="${y(max * f)}"/><text class="eje" x="${izq - 6}" y="${y(max * f) + 4}" text-anchor="end">${u === "moneda" ? corto(max * f) : fmt.format(Math.round(max * f))}</text>`).join("");
+  const dias = [0, Math.floor((puntos.length - 1) / 2), puntos.length - 1].map(i => `<text class="eje" x="${x(i)}" y="${H - 5}" text-anchor="middle">${diaMes(puntos[i].fecha)}</text>`).join("");
+  return `<svg class="grafico curva" viewBox="0 0 ${W} ${H}" role="img" aria-label="Acumulado real contra esperado">${ejes}${dias}
+    <polyline class="esp" points="${linea("esperado")}"/><polyline class="real" points="${linea("real")}"/></svg>
+    <div class="leyenda"><span><i></i>Real acumulado</span><span><i class="esp"></i>Esperado para cumplir la meta</span></div>`;
+}
+async function verObjetivo(id) {
+  const u = $("#usuario").value;
+  try {
+    const d = await api(`/gestion/objetivos/${id}?usuario_id=${encodeURIComponent(u)}`), o = d.objetivo, e = d.evaluacion, un = d.unidad;
+    const acciones = (lista) => `<ol class="acciones-t">${lista.map(a => `<li>${esc(a.accion)}<span class="quien">${esc(ACT_ROL[a.responsable] || a.responsable)} · ${esc(a.plazo)}</span></li>`).join("")}</ol>`;
+    $("#gs-detalle").innerHTML = `<div class="tarjeta">
+      <div class="titulo-panel"><h2>${esc(o.nombre)} · ${esc(o.alcance_nombre || "Empresa")}</h2><span class="semaforo ${e.estado}">${EST_OBJ[e.estado] || e.estado}</span></div>
+      <p>Meta ${esc(PERIODO[o.periodicidad])} (${diaMes(e.periodo_inicio)} al ${diaMes(e.periodo_fin)}): <b>${porUnidad(e.meta, un)}</b> · actual <b>${porUnidad(e.valor_actual, un)}</b>${e.proyeccion_cierre !== null ? ` · proyección ${porUnidad(e.proyeccion_cierre, un)}` : ""}.</p>
+      ${graficoCurva(d.curva, un)}
+      ${d.explicacion.length ? `<h4 style="margin:12px 0 4px">Qué explica la diferencia</h4><ul>${d.explicacion.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+      ${d.hijos.length ? `<h4 style="margin:12px 0 4px">Cascada</h4>${tablaT(["Objetivo", "Período", "Meta", "Actual", "Estado"], ["t", "t", "t", "t", "t"],
+          d.hijos.map(h => [h.objetivo.alcance_nombre || "Empresa", PERIODO[h.objetivo.periodicidad], porUnidad(h.evaluacion.meta, un), porUnidad(h.evaluacion.valor_actual, un), EST_OBJ[h.evaluacion.estado] || h.evaluacion.estado]))}` : ""}
+      ${d.tareas_palanca.length ? `<h4 style="margin:12px 0 4px">Tareas abiertas que empujan este objetivo</h4><ul>${d.tareas_palanca.map(t => `<li>${esc(t.titulo)}</li>`).join("")}</ul>` : ""}
+      <div class="paneles"><div class="panel"><h4>Si está en riesgo</h4>${acciones(d.acciones.en_riesgo)}</div><div class="panel"><h4>Si está fuera de camino</h4>${acciones(d.acciones.fuera_de_camino)}</div></div>
+      ${d.historia.length ? `<h4 style="margin:12px 0 4px">Períodos anteriores</h4>${tablaT(["Desde", "Hasta", "Valor"], ["t", "t", "t"], d.historia.map(h => [diaMes(h.inicio), diaMes(h.fin), porUnidad(h.valor, un)]))}` : ""}
+      <h4 style="margin:12px 0 4px">Plan de recuperación y comentarios</h4>
+      ${d.comentarios.map(c => `<p class="nota" style="margin:2px 0">${esc(c.usuario)} · ${diaMes(c.creado_at)}: ${esc(c.texto)}</p>`).join("")}
+      <div class="fila"><input id="gs-comentario" style="flex:1 1 240px" placeholder="Qué se va a hacer para recuperarlo…"><button class="sec" id="gs-comentar" data-id="${o.id}">Guardar comentario</button>
+        <button class="sec" id="gs-archivar" data-id="${o.id}">Archivar objetivo</button></div>
+      ${d.validacion.length ? `<details style="margin-top:8px"><summary>Validación al crearlo</summary><div class="validaciones">${d.validacion.map(v => `<div class="${v.severidad}"><span>${v.severidad === "ok" ? "✓" : v.severidad === "bloquea" ? "✗" : "!"}</span><span>${esc(v.regla)}: ${esc(v.mensaje)}</span></div>`).join("")}</div></details>` : ""}
+    </div>`;
+    $("#gs-detalle").scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (err) { $("#gs-detalle").innerHTML = aviso("error", err.message); }
+}
+$("#gs-lista").onclick = e => { const b = e.target.closest("[data-obj]"); if (b) verObjetivo(b.dataset.obj); };
+$("#gs-detalle").onclick = async e => {
+  const u = $("#usuario").value;
+  if (e.target.id === "gs-comentar" && $("#gs-comentario").value.trim()) {
+    try { await postJSON(`/gestion/objetivos/${e.target.dataset.id}/comentario`, {usuario_id: u, texto: $("#gs-comentario").value}); verObjetivo(e.target.dataset.id); }
+    catch (err) { e.target.insertAdjacentHTML("afterend", aviso("error", err.message)); }
+  }
+  if (e.target.id === "gs-archivar" && confirm("¿Archivar este objetivo y su cascada?")) {
+    try { await postJSON(`/gestion/objetivos/${e.target.dataset.id}/archivar`, {usuario_id: u, texto: ""}); $("#gs-detalle").innerHTML = ""; cargarObjetivos(); }
+    catch (err) { e.target.insertAdjacentHTML("afterend", aviso("error", err.message)); }
+  }
+};
+$("#gs-periodos").onclick = e => { const b = e.target.closest("[data-per]"); if (!b) return; gsPer = b.dataset.per;
+  document.querySelectorAll("[data-per]").forEach(x => x.classList.toggle("activa", x === b)); $("#gs-detalle").innerHTML = ""; cargarObjetivos(); };
+document.querySelectorAll("[data-gs]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-gs]").forEach(x => x.classList.toggle("activa", x === b));
+  ["objetivos", "procesos", "configurar"].forEach(v => $("#gs-" + v).hidden = v !== b.dataset.gs);
+  if (b.dataset.gs === "procesos") cargarProcesos();
+  if (b.dataset.gs === "configurar") cargarPlantillas();
+});
+// Procesos
+const EST_PASO = [["completado", "En plazo"], ["completado_fuera_de_sla", "Fuera de plazo"], ["pendiente_en_plazo", "Pendientes"], ["pendiente_vencido", "Vencidos"], ["omitido", "Omitidos"]];
+async function cargarProcesos() {
+  const u = $("#usuario").value; if (!u) return;
+  try {
+    const d = await api(`/gestion/procesos?usuario_id=${encodeURIComponent(u)}&dias=${$("#gs-dias").value}`);
+    $("#gs-procesos-lista").innerHTML = d.procesos.length ? d.procesos.map(p => {
+      if (!p.activo) return `<div class="tarjeta proc"><div class="titulo-panel"><h2>${esc(p.nombre)}</h2><span class="estado-chip">No se mide</span></div><p>${esc(p.motivo || "")}</p></div>`;
+      const m = p.metricas;
+      const filas = p.pasos.map(s => [`${s.codigo} ${s.nombre}${s.obligatorio ? "" : " (opcional)"}${s.manual ? " · se registra a mano" : ""}${s.medible || s.manual ? "" : " · sin dato en la integración"}`,
+        ...EST_PASO.map(([k]) => s.medible || s.manual ? s.estados[k] : null),
+        s.cumplimiento_sla_pct, s.tiempo_paso_p50]);
+      const trab = p.trabados.map(c => `<div class="cerrada-linea"><span><b>${esc(c.caso)}</b> · desde ${diaMes(c.inicio)}${c.pasos_vencidos.length ? " · vencido: " + c.pasos_vencidos.map(v => `${esc(v.nombre)} (${v.dias} d)`).join(", ") : ""}${c.detenido ? ` · detenido ${c.detenido.dias} días` : ""}</span>
+        <span>${c.pendientes_manuales.map(cod => { const mm = p.manuales.find(x => x.paso === cod); return `<button class="sec" data-registrar="${esc(p.id)}" data-caso="${esc(c.caso_key)}" data-codigo="${esc(mm.codigo)}">Registrar: ${esc(mm.nombre)}</button>`; }).join(" ")}</span>
+        ${c.escalon ? `<p class="nota">Escalón de ${c.escalon.dias_vencido} días: ${esc(c.escalon.accion)}</p>` : ""}</div>`).join("");
+      return `<div class="tarjeta proc"><div class="titulo-panel"><h2>${esc(p.nombre)}</h2><span class="estado-chip ${p.total_trabados ? "alerta" : "ok"}">${p.total_trabados} trabados</span></div>
+        ${tarjetas([{nombre: "Iniciados", valor: m.casos_iniciados, formato: "numero"}, {nombre: "Completados", valor: m.casos_completados, formato: "numero"},
+          {nombre: "En curso", valor: m.casos_en_curso, formato: "numero"}, {nombre: "Pasos en plazo", valor: m.cumplimiento_sla_pct, formato: "porcentaje"},
+          {nombre: "Ciclo (mediana / P90)", valor: m.tiempo_ciclo_p50, formato: "dias", nota: m.tiempo_ciclo_p90 !== null ? `P90: ${fmt.format(m.tiempo_ciclo_p90)} días` : ""},
+          {nombre: "Conformidad", valor: m.conformidad_pct, formato: "porcentaje", nota: "sin pasos omitidos ni fuera de orden"}])}
+        <div style="margin-top:10px">${tablaT(["Paso", ...EST_PASO.map(x => x[1]), "% en plazo", "Días (mediana)"], ["t", "n", "n", "n", "n", "n", "%", "n"], filas)}</div>
+        ${trab ? `<details style="margin-top:10px" ${p.total_trabados <= 8 ? "open" : ""}><summary>Casos trabados (${p.total_trabados})</summary>${trab}</details>` : ""}</div>`;
+    }).join("") : aviso("alerta", "Tu rol no sigue procesos.");
+  } catch (e) { $("#gs-procesos-lista").innerHTML = aviso("error", "No se pudieron cargar los procesos: " + e.message); }
+}
+$("#gs-dias").onchange = cargarProcesos;
+$("#gs-procesos-lista").onclick = async e => {
+  const b = e.target.closest("[data-registrar]"); if (!b) return;
+  b.disabled = true;
+  try { await postJSON(`/gestion/procesos/${b.dataset.registrar}/eventos`, {usuario_id: $("#usuario").value, caso_key: b.dataset.caso, codigo: b.dataset.codigo});
+        b.textContent = "✓ Registrado"; setTimeout(cargarProcesos, 800); }
+  catch (err) { b.disabled = false; b.insertAdjacentHTML("afterend", aviso("error", err.message)); }
+};
+// Configurar objetivo
+async function cargarPlantillas() {
+  const u = $("#usuario").value; if (!u) return;
+  try {
+    gsPlantillas = await api(`/gestion/plantillas?usuario_id=${encodeURIComponent(u)}`);
+    const opts = gsPlantillas.plantillas.map(p => `<option value="${p.id}" ${p.disponible && p.puede_configurar ? "" : "disabled"}>${esc(AREA[p.area] || p.area)} · ${esc(p.nombre)}${p.disponible ? (p.puede_configurar ? "" : " (otra área)") : " — sin datos"}</option>`).join("");
+    $("#gs-form").innerHTML = `<label>Plantilla<select id="gs-plantilla">${opts}</select></label>
+      <label>Período<select id="gs-periodicidad"></select></label>
+      <label>Alcance<select id="gs-alcance-tipo"></select></label>
+      <label>Cuál<select id="gs-alcance-valor"></select></label>
+      <label>Meta (vacía = la sugerida)<input id="gs-meta" type="number" step="any" inputmode="decimal"></label>
+      <label>Responsable<select id="gs-responsable">${gsPlantillas.roles.map(r => `<option value="${r}">${esc(r.replace("_", " "))}</option>`).join("")}</select></label>`;
+    const primera = gsPlantillas.plantillas.find(p => p.disponible && p.puede_configurar);
+    if (primera) $("#gs-plantilla").value = primera.id;
+    $("#gs-plantilla").onchange = () => { $("#gs-meta").value = ""; ajustarForm(); };
+    $("#gs-alcance-tipo").onchange = ajustarValores; $("#gs-periodicidad").onchange = ajustarCascada;
+    ajustarForm();
+    const noDisp = gsPlantillas.plantillas.filter(p => !p.disponible);
+    $("#gs-propuesta").innerHTML = noDisp.length ? `<details style="margin-top:12px"><summary>${noDisp.length} plantillas todavía no se pueden usar con tus datos</summary><ul>${noDisp.map(p => `<li>${esc(p.id)} ${esc(p.nombre)}: ${esc(p.motivo)}</li>`).join("")}</ul></details>` : "";
+  } catch (e) { $("#gs-form").innerHTML = aviso("error", e.message); }
+}
+function plantillaElegida() { return gsPlantillas.plantillas.find(p => p.id === $("#gs-plantilla").value); }
+function ajustarForm() {
+  const p = plantillaElegida(); if (!p) return;
+  $("#gs-periodicidad").innerHTML = p.periodicidades.map(x => `<option value="${x}">${x}</option>`).join("");
+  $("#gs-periodicidad").value = p.periodicidades.includes("mensual") ? "mensual" : p.periodicidades[p.periodicidades.length - 1];
+  $("#gs-alcance-tipo").innerHTML = p.alcances_validos.map(a => `<option value="${a}">${a}</option>`).join("");
+  const rol = {comercial: "gerente_comercial", comprador: "compras", cobrador: "administracion", finanzas: "administracion", vendedor: "vendedor", administrativo: "administracion"}[p.responsable] || "dueno";
+  $("#gs-responsable").value = rol;
+  ajustarValores(); ajustarCascada(); $("#gs-guardar").disabled = true;
+}
+function ajustarValores() {
+  const t = $("#gs-alcance-tipo").value, lista = t === "empresa" ? [] : (gsPlantillas.opciones[t] || []);
+  $("#gs-alcance-valor").innerHTML = t === "empresa" ? `<option value="">Toda la empresa</option>` : lista.map(o => `<option value="${esc(o.valor)}">${esc(o.nombre)}</option>`).join("");
+  $("#gs-alcance-valor").disabled = t === "empresa"; ajustarCascada();
+}
+function ajustarCascada() {
+  const per = $("#gs-periodicidad").value, p = plantillaElegida(), orden = ["diario", "semanal", "mensual", "trimestral", "anual"];
+  const tiempos = ["semanal", "diario"].filter(x => orden.indexOf(x) < orden.indexOf(per));
+  const alcances = $("#gs-alcance-tipo").value === "empresa" ? ["sucursal", "vendedor"].filter(a => p.alcances_validos.includes(a)) : [];
+  $("#gs-cascada").innerHTML = (tiempos.length || alcances.length) ? `<span>Cascada automática:</span>` +
+    tiempos.map(t => `<label><input type="checkbox" data-casc-t="${t}" checked> metas ${t === "semanal" ? "semanales" : "diarias"}</label>`).join("") +
+    alcances.map(a => `<label><input type="radio" name="casc-a" value="${a}"> por ${a}</label>`).join("") + (alcances.length ? `<label><input type="radio" name="casc-a" value="" checked> sin reparto</label>` : "") : "";
+}
+function cuerpoObjetivo() {
+  const m = $("#gs-meta").value;
+  return {usuario_id: $("#usuario").value, plantilla_id: $("#gs-plantilla").value, periodicidad: $("#gs-periodicidad").value,
+    alcance_tipo: $("#gs-alcance-tipo").value, alcance_valor: $("#gs-alcance-valor").value || null, meta: m === "" ? null : Number(m),
+    responsable_rol: $("#gs-responsable").value, cascada_tiempo: [...document.querySelectorAll("[data-casc-t]:checked")].map(x => x.dataset.cascT),
+    cascada_alcance: (document.querySelector("[name=casc-a]:checked") || {}).value || null};
+}
+let gsUltima = null;
+$("#gs-revisar").onclick = async () => {
+  try {
+    const p = gsUltima = await postJSON("/gestion/objetivos/proponer", cuerpoObjetivo()), un = p.metrica ? p.metrica.unidad : null;
+    if ($("#gs-meta").value === "" && p.meta !== null) $("#gs-meta").placeholder = String(p.meta);
+    const casc = p.cascada.tiempo.map(t => `<details><summary>Metas ${t.periodicidad === "semanal" ? "semanales" : "diarias"} (${t.periodos.length})</summary>${tablaT(["Desde", "Hasta", "Meta"], ["t", "t", "t"], t.periodos.map(x => [diaMes(x.inicio), diaMes(x.fin), porUnidad(x.meta, un)]))}</details>`).join("") +
+      (p.cascada.alcance.length ? `<h4 style="margin:10px 0 4px">Reparto por ${esc(p.cascada.alcance[0].tipo)} (participación de los últimos 3 meses)</h4>${tablaT(["", "Participación", "Meta"], ["t", "%", "t"], p.cascada.alcance.map(a => [a.nombre, a.participacion, porUnidad(a.meta, un)]))}` : "");
+    $("#gs-propuesta").innerHTML = `<h4 style="margin:14px 0 4px">${esc(p.plantilla.nombre)} · meta ${porUnidad(p.meta, un)} ${esc(PERIODO[p.periodicidad])}</h4>
+      <p class="nota" style="margin:0">Meta sugerida: ${porUnidad(p.sugerida.meta, un)} — ${esc(p.sugerida.explicacion)}</p>
+      <div class="validaciones">${p.validacion.map(v => `<div class="${v.severidad}"><span>${v.severidad === "ok" ? "✓" : v.severidad === "bloquea" ? "✗" : "!"}</span><span><b>${esc(v.regla)}</b>: ${esc(v.mensaje)}</span></div>`).join("")}</div>
+      ${casc}
+      ${p.requiere_justificacion ? `<label class="periodo" style="margin-top:8px">Justificación (obligatoria para activar)<textarea id="gs-justificacion" rows="2" style="font-family:inherit"></textarea></label>` : ""}`;
+    $("#gs-guardar").disabled = p.bloquea;
+  } catch (e) { $("#gs-propuesta").innerHTML = aviso("error", e.message); }
+};
+$("#gs-guardar").onclick = async () => {
+  try {
+    const r = await postJSON("/gestion/objetivos", {...cuerpoObjetivo(), justificacion: ($("#gs-justificacion") || {}).value || null});
+    $("#gs-propuesta").innerHTML = aviso("ok", `Objetivo activado${r.hijos.length ? ` con ${r.hijos.length} metas en cascada` : ""}. Ya se está siguiendo en «Objetivos».`);
+    $("#gs-guardar").disabled = true; cargarObjetivos();
+  } catch (e) { $("#gs-propuesta").insertAdjacentHTML("beforeend", aviso("error", e.message)); }
+};
+$("#usuario").addEventListener("change", () => { $("#gs-detalle").innerHTML = ""; cargarObjetivos(); if (!$("#gs-procesos").hidden) cargarProcesos(); if (!$("#gs-configurar").hidden) cargarPlantillas(); });
+setInterval(() => { if ($("#gestion").classList.contains("activa") && !$("#gs-objetivos").hidden) cargarObjetivos(); }, 60000);
 
 // Inicio
 (async () => {

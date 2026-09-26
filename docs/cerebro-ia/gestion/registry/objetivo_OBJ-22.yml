@@ -1,0 +1,27 @@
+id: OBJ-22
+nombre: Pedidos facturados en plazo
+area: ventas
+metrica: proceso:PRC-VEN.P3.cumplimiento_sla_pct
+periodicidades:
+- diario
+- semanal
+alcances:
+- empresa
+- sucursal
+tipo_meta: minimo
+curva_esperada:
+  diario: no_aplica
+  semanal: no_aplica
+meta_sugerida: 98 %.
+responsable: administrativo
+palancas:
+- PRC-VEN
+- ACT-07
+si_en_riesgo:
+- accion: Emitir las facturas pendientes vencidas (listado de ACT-07 sobre PRC-VEN P3).
+  responsable: administrativo
+  plazo: mismo día
+si_fuera_de_camino:
+- accion: Revisar la causa (errores de datos fiscales, integración caída) con el operador de la plataforma y el sistema de facturación.
+  responsable: finanzas
+  plazo: 24 h

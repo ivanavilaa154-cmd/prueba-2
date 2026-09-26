@@ -644,6 +644,23 @@ Reglas:
 - **Lotes sin foto:** si la fuente no expone stock por lote pero sí recepciones con `fecha_vencimiento`, `fct_stock_lote` se estima consumiendo el stock por FEFO (primero vence, primero sale) hasta cuadrar con `fct_stock_diario`; `metodo='estimado_fefo'`.
 - **Costo de reposición vigente:** `dim_producto.costo_estandar` se actualiza con el `costo_neto` de la lista vigente del proveedor principal cuando existe.
 
+### 4.6b Eventos de proceso (pasos que ningún sistema registra)
+
+```sql
+create table core.fct_evento_proceso (   -- pasos de procesos que no surgen de otra tabla (gestión de cobranza, confirmaciones, controles)
+  evento_proceso_id text primary key,
+  proceso text not null,               -- PRC-xxx (docs/15)
+  caso_key text not null,              -- ID canónico del caso (pedido_id, documento_cxc_id, orden_compra_id, …)
+  codigo_evento text not null,         -- dominio evento_proceso
+  evento_at timestamptz not null,
+  actor text,                          -- usuario o rol que lo registró (hash si es persona)
+  resultado text, detalle jsonb,       -- ej. {"promesa_fecha": "…", "importe": …}
+  origen text                          -- 'mapping' (vino de un sistema) | 'tablero' (registrado a mano en la herramienta) | 'agente'
+);
+```
+
+Estos eventos se cargan como cualquier fuente (un `mapping.yml` hacia esta tabla, ej. desde un CRM o una planilla) **o** se registran desde el tablero de gestión (botón "registrar paso"), de modo que el proceso estándar se puede medir aunque el cliente no tenga un sistema para ese paso.
+
 ### 4.7 Actividades (instancias)
 
 ```sql

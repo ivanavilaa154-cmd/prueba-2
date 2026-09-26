@@ -1,0 +1,29 @@
+id: OBJ-20
+nombre: Eficiencia de marketing (MER)
+area: marketing
+metrica: kpi:MKT-07
+parametros:
+  medida: mer
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+tipo_meta: minimo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: P50 de los últimos 6 meses o el mínimo que garantiza contribución positiva (1 / (margen de contribución % − costos variables)).
+responsable: marketing
+palancas:
+- MKT-06
+- MKT-19
+- MKT-20
+si_en_riesgo:
+- accion: Pausar o reducir campañas con ROAS real por debajo del mínimo y anuncios fatigados (MKT-20).
+  responsable: marketing
+  plazo: 48 h
+si_fuera_de_camino:
+- accion: Reasignar presupuesto al canal con mejor ROAS real y revisar la oferta/landing de las campañas principales.
+  responsable: marketing
+  plazo: 72 h

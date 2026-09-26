@@ -254,6 +254,184 @@ def main():
         (areg / f"act_{a['id']}.yml").write_text(yaml.safe_dump(a, allow_unicode=True, sort_keys=False, width=140))
     n_casos = sum(len(a["casos"]) for a in act_doc["actividades"]); n_acc = sum(len(c["acciones"]) for a in act_doc["actividades"] for c in a["casos"])
 
+    # ---------- gestión: procesos y objetivos (docs/15)
+    g_proc = yaml.safe_load((ROOT / "gestion" / "src" / "procesos.yml").read_text())
+    g_obj = yaml.safe_load((ROOT / "gestion" / "src" / "objetivos.yml").read_text())
+    dominio = collections.defaultdict(set)
+    for linea in (ROOT / "seeds" / "ref_valores_canonicos.csv").read_text().splitlines()[1:]:
+        partes = linea.split(",")
+        dominio[partes[0]].add(partes[1])
+    errores_g = []
+    metricas_proc = {m["codigo"]: m for m in g_proc["metricas_estandar"]}
+    procesos = {p["id"]: p for p in g_proc["procesos"]}
+
+    def chk_accion(ctx, acc):
+        for campo in ["accion", "responsable", "plazo"]:
+            if not acc.get(campo):
+                errores_g.append(f"{ctx}: acción sin '{campo}'")
+        if acc.get("responsable") and acc["responsable"] not in dominio["rol_responsable"]:
+            errores_g.append(f"{ctx}: responsable '{acc['responsable']}' fuera del dominio rol_responsable")
+
+    for pid, pr in procesos.items():
+        caso = pr["caso"]
+        if not existe(f"{caso['tabla']}.{caso['clave']}"):
+            errores_g.append(f"{pid}: clave de caso inexistente {caso['tabla']}.{caso['clave']}")
+        if not existe(caso["fecha_inicio"]):
+            errores_g.append(f"{pid}: fecha_inicio inexistente {caso['fecha_inicio']}")
+        vistos = []
+        for paso in pr["pasos"]:
+            ctx = f"{pid}.{paso['codigo']}"
+            ev = paso["evento"]
+            if "columna" in ev and not existe(ev["columna"]):
+                errores_g.append(f"{ctx}: columna de evento inexistente {ev['columna']}")
+            if "evento_proceso" in ev and ev["evento_proceso"] not in dominio["evento_proceso"]:
+                errores_g.append(f"{ctx}: evento_proceso '{ev['evento_proceso']}' fuera del dominio")
+            sla = paso.get("sla")
+            if sla:
+                for k in ("desde", "alternativa_desde"):
+                    if k in sla and sla[k] not in vistos:
+                        errores_g.append(f"{ctx}: SLA '{k}' apunta a un paso no previo: {sla[k]}")
+                for k in ("limite", "desde_columna"):
+                    if k in sla and not existe(sla[k]):
+                        errores_g.append(f"{ctx}: SLA '{k}' columna inexistente {sla[k]}")
+                if not paso.get("si_vence"):
+                    errores_g.append(f"{ctx}: paso con SLA SIN ACCIÓN (si_vence)")
+                else:
+                    chk_accion(ctx, paso["si_vence"])
+                for e in paso.get("escalamiento", []):
+                    chk_accion(f"{ctx} escalamiento {e.get('dias_vencido')}d", e)
+            vistos.append(paso["codigo"])
+
+    refs_validas = set(todos) | act_ids | set(procesos) | {o["id"] for o in g_obj["plantillas"]}
+    metricas_act = {"tareas_resueltas_en_plazo_pct": "mayor_mejor", "tareas_vencidas": "menor_mejor", "impacto_resuelto": "mayor_mejor"}
+    for o in g_obj["plantillas"]:
+        oid = o["id"]
+        tipo, _, ref = o["metrica"].partition(":")
+        direccion = None
+        if tipo == "kpi":
+            if ref not in todos:
+                errores_g.append(f"{oid}: KPI inexistente {ref}")
+            else:
+                direccion = todos[ref]["direccion"]
+        elif tipo == "proceso":
+            partes = ref.split(".")
+            if partes[0] not in procesos:
+                errores_g.append(f"{oid}: proceso inexistente {partes[0]}")
+            elif len(partes) == 3 and partes[1] not in {x["codigo"] for x in procesos[partes[0]]["pasos"]}:
+                errores_g.append(f"{oid}: paso inexistente {ref}")
+            if partes[-1] not in metricas_proc:
+                errores_g.append(f"{oid}: métrica de proceso inexistente {partes[-1]}")
+            else:
+                direccion = metricas_proc[partes[-1]]["direccion"]
+        elif tipo == "actividad":
+            a_ref, _, met = ref.partition(".")
+            if a_ref != "todas" and a_ref not in act_ids:
+                errores_g.append(f"{oid}: actividad inexistente {a_ref}")
+            if met not in metricas_act:
+                errores_g.append(f"{oid}: métrica de actividad inexistente {met}")
+            direccion = metricas_act.get(met)
+        else:
+            errores_g.append(f"{oid}: tipo de métrica desconocido '{tipo}'")
+        if o["tipo_meta"] not in dominio["tipo_meta"]:
+            errores_g.append(f"{oid}: tipo_meta inválido")
+        # V2 coherencia de sentido (en KPIs con varias medidas, se valida si la dirección es simple)
+        if direccion in ("mayor_mejor", "menor_mejor"):
+            if (direccion == "mayor_mejor" and o["tipo_meta"] == "maximo") or (direccion == "menor_mejor" and o["tipo_meta"] == "minimo"):
+                if not o.get("parametros", {}).get("medida"):
+                    errores_g.append(f"{oid}: tipo_meta '{o['tipo_meta']}' contradice la dirección '{direccion}' de la métrica (V2)")
+        for per in o["periodicidades"]:
+            if per not in dominio["periodicidad"]:
+                errores_g.append(f"{oid}: periodicidad inválida {per}")
+        for per, curva in o["curva_esperada"].items():
+            if per not in o["periodicidades"] or curva not in dominio["curva_esperada"]:
+                errores_g.append(f"{oid}: curva_esperada inválida {per}:{curva}")
+        if o["responsable"] not in dominio["rol_responsable"]:
+            errores_g.append(f"{oid}: responsable fuera del dominio")
+        for est in ("si_en_riesgo", "si_fuera_de_camino"):
+            if not o.get(est):
+                errores_g.append(f"{oid}: objetivo SIN ACCIÓN para '{est}'")
+            for acc in o.get(est, []):
+                chk_accion(f"{oid}.{est}", acc)
+        for pal in o.get("palancas", []):
+            if pal not in refs_validas:
+                errores_g.append(f"{oid}: palanca inexistente {pal}")
+    if errores_g:
+        print("ERRORES (gestión):\n  " + "\n  ".join(errores_g))
+        sys.exit(1)
+
+    def fmt_evento(ev):
+        if "evento_proceso" in ev:
+            return f"evento de proceso `{ev['evento_proceso']}`"
+        t = f"`{ev['columna']}`"
+        if ev.get("agregacion"):
+            t += f" ({ev['agregacion']})"
+        if ev.get("relacion"):
+            t += f" — vínculo: `{ev['relacion']}`"
+        return t
+
+    def fmt_sla(sla):
+        if not sla:
+            return "—"
+        partes = []
+        for k, v in sla.items():
+            if isinstance(v, dict):
+                v = fmt_sla(v)
+            partes.append(f"{k}: {v}")
+        return ", ".join(partes)
+
+    out = ["# 15 — Gestión: procesos, objetivos y seguimiento en tiempo real", "",
+           "> Generado por `tools/build_kpis.py` desde `gestion/src/`. No editar a mano.", "",
+           "## 1. " + g_proc["titulo"], "", g_proc["intro"].strip(), "",
+           "| Métrica | Descripción | Unidad | Dirección |", "|---|---|---|---|"]
+    out += [f"| `{m['codigo']}` | {esc(m['descripcion'])} | {m['unidad']} | {m['direccion']} |" for m in g_proc["metricas_estandar"]]
+    out += ["", "**Formato de eventos y SLA:**", "", "```yaml", g_proc["formatos"]["evento"].rstrip(), "", g_proc["formatos"]["sla"].rstrip(), "```", "",
+            "**Configuración por empresa** (`ops`):", "", "```sql",
+            "create table ops.proceso_config (tenant_id uuid, proceso text, activo boolean, variante_default text, unidad_tiempo text, primary key (tenant_id, proceso));",
+            "create table ops.proceso_paso_config (tenant_id uuid, proceso text, paso text, activo boolean, obligatorio boolean, sla jsonb,",
+            "  responsable_rol text, accion_si_vence text, escalamiento jsonb, primary key (tenant_id, proceso, paso));   -- overrides del catálogo",
+            "```", "", "| ID | Proceso | Área | Caso | Pasos |", "|---|---|---|---|---|"]
+    out += [f"| [{p['id']}](#{p['id'].lower()}) | {p['nombre']} | {p['area']} | `{p['caso']['tabla']}` | {len(p['pasos'])} |" for p in g_proc["procesos"]]
+    out.append("")
+    for p in g_proc["procesos"]:
+        out += ["---", "", f"### {p['id']}", f"#### {p['nombre']}", "",
+                f"**Caso:** una fila de `{p['caso']['tabla']}` (clave `{p['caso']['clave']}`, filtro `{p['caso']['filtro']}`). **Unidad de tiempo:** {p['unidad_tiempo']}.", ""]
+        if p.get("variantes"):
+            out += ["**Variantes:** " + "; ".join(f"`{v['nombre']}` ({v['descripcion']} Condición: `{v['condicion']}`)" for v in p["variantes"]), ""]
+        out += ["| Paso | Nombre | Evento que lo marca | Oblig. | Aplica si | Plazo (SLA) | Si se vence: acción | Responsable | Plazo de la acción |", "|---|---|---|---|---|---|---|---|---|"]
+        for x in p["pasos"]:
+            sv = x.get("si_vence") or {}
+            out.append(f"| {x['codigo']} | {x['nombre']} | {esc(fmt_evento(x['evento']))} | {'sí' if x.get('obligatorio') else 'no'} | {esc(x.get('aplica_si', '—'))} | {esc(fmt_sla(x.get('sla')))} | {esc(sv.get('accion', '—'))} | {sv.get('responsable', '—')} | {esc(sv.get('plazo', '—'))} |")
+        for x in p["pasos"]:
+            if x.get("escalamiento"):
+                out += ["", f"**Escalamiento de {x['codigo']} ({x['nombre']}):**", "", "| Días vencido | Acción | Responsable | Plazo |", "|---|---|---|---|"]
+                out += [f"| {e['dias_vencido']} | {esc(e['accion'])} | {e['responsable']} | {esc(e['plazo'])} |" for e in x["escalamiento"]]
+        out.append("")
+    out += ["## 2. " + g_obj["titulo"], "", g_obj["intro"].strip(), "", "### Plantillas estándar de objetivos", "",
+            "| ID | Objetivo | Área | Métrica | Períodos | Meta | Responsable |", "|---|---|---|---|---|---|---|"]
+    out += [f"| [{o['id']}](#{o['id'].lower()}) | {o['nombre']} | {o['area']} | `{o['metrica']}` | {', '.join(o['periodicidades'])} | {o['tipo_meta']} | {o['responsable']} |" for o in g_obj["plantillas"]]
+    out.append("")
+    for o in g_obj["plantillas"]:
+        out += ["---", "", f"### {o['id']}", f"#### {o['nombre']}", "",
+                "| Atributo | Valor |", "|---|---|", f"| Métrica | `{o['metrica']}`" + (f" ({lista(o.get('parametros'))})" if o.get("parametros") else "") + " |",
+                f"| Períodos | {', '.join(o['periodicidades'])} |", f"| Alcances | {', '.join(o['alcances'])} |", f"| Tipo de meta | {o['tipo_meta']} |",
+                f"| Curva esperada | {lista(o['curva_esperada'])} |", f"| Meta sugerida | {esc(o['meta_sugerida'])} |", f"| Responsable | {o['responsable']} |",
+                f"| Palancas | {', '.join(o.get('palancas', []))} |", "",
+                "| Estado | # | Acción | Responsable | Plazo |", "|---|---|---|---|---|"]
+        for est, etiqueta in (("si_en_riesgo", "🟡 en riesgo"), ("si_fuera_de_camino", "🔴 fuera de camino")):
+            out += [f"| {etiqueta} | {i} | {esc(a['accion'])} | {a['responsable']} | {esc(a['plazo'])} |" for i, a in enumerate(o[est], 1)]
+        out.append("")
+    out.append("")
+    out.append((ROOT / "gestion" / "src" / "tiempo_real_y_tablero.md").read_text())
+    (ROOT / "docs" / "15_gestion_procesos_objetivos.md").write_text("\n".join(out) + "\n")
+    greg = ROOT / "gestion" / "registry"; greg.mkdir(parents=True, exist_ok=True)
+    for f in greg.glob("*.yml"):
+        f.unlink()
+    for p in g_proc["procesos"]:
+        (greg / f"proceso_{p['id']}.yml").write_text(yaml.safe_dump(p, allow_unicode=True, sort_keys=False, width=140))
+    for o in g_obj["plantillas"]:
+        (greg / f"objetivo_{o['id']}.yml").write_text(yaml.safe_dump(o, allow_unicode=True, sort_keys=False, width=140))
+    n_pasos = sum(len(p["pasos"]) for p in g_proc["procesos"])
+
     # ---------- registry + catálogo
     reg = ROOT / "kpis" / "registry"
     reg.mkdir(parents=True, exist_ok=True)
@@ -271,6 +449,7 @@ def main():
     print(f"OK: {len(todos)} KPIs · {len(uso)} columnas canónicas referenciadas · {sum(len(v) for v in cols.values())} columnas en el modelo")
     for area, (num, data) in por_area.items():
         print(f"  {area}: {len(data['kpis'])}")
+    print(f"OK: {len(g_proc['procesos'])} procesos · {n_pasos} pasos · {len(g_obj['plantillas'])} plantillas de objetivos (todas con acciones)")
     print(f"OK: {len(act_doc['actividades'])} actividades · {n_casos} casos · {n_acc} acciones (todas con responsable y plazo)")
 
 

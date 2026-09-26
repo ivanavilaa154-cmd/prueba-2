@@ -1,0 +1,26 @@
+id: OBJ-10
+nombre: Costo logístico sobre venta
+area: logistica
+metrica: kpi:LOG-12
+periodicidades:
+- mensual
+alcances:
+- empresa
+- canal
+tipo_meta: maximo
+curva_esperada:
+  mensual: no_aplica
+meta_sugerida: Promedio real de los últimos 3 meses − 0,5 pp.
+responsable: logistica
+palancas:
+- LOG-11
+- LOG-13
+- LOG-17
+si_en_riesgo:
+- accion: Revisar envíos con subsidio alto (LOG-13) y zonas con costo por envío fuera de rango.
+  responsable: logistica
+  plazo: 7 días
+si_fuera_de_camino:
+- accion: Renegociar tarifas o cambiar mix de transportistas por zona; revisar el umbral de envío gratis.
+  responsable: gerente_operaciones
+  plazo: 30 días

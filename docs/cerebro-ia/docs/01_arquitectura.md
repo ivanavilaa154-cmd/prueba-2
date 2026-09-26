@@ -40,7 +40,8 @@ El código de la plataforma solo sabe:
 └───────────────┬───────────────┘
 ┌───────────────▼───────────────┐
 │ CAPA 4 — SEMÁNTICA + IA        │  KPIs definidos una vez sobre el canónico · servidor de herramientas
-│ docs/06 + docs/08-14           │  para el agente · reportes · alertas · ACTIVIDADES (docs/14).
+│ docs/06 + docs/08-15           │  para el agente · reportes · alertas · ACTIVIDADES (docs/14)
+│                                │  · PROCESOS, OBJETIVOS y TABLERO en tiempo real (docs/15).
 └───────────────────────────────┘
 ```
 

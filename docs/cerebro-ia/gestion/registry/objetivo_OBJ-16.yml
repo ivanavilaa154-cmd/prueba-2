@@ -1,0 +1,31 @@
+id: OBJ-16
+nombre: Quiebre de stock
+area: inventario
+metrica: kpi:INV-06
+parametros:
+  medida: tasa_quiebre_ponderada
+periodicidades:
+- diario
+- semanal
+alcances:
+- empresa
+- sucursal
+- categoria
+tipo_meta: maximo
+curva_esperada:
+  diario: no_aplica
+  semanal: no_aplica
+meta_sugerida: 3 % ponderado por venta (1 % para clase A).
+responsable: comprador
+palancas:
+- ACT-02
+- ACT-01
+- INV-15
+si_en_riesgo:
+- accion: Emitir hoy los pedidos urgentes de ACT-02 C1 y resolver quiebres ocultos (ACT-01).
+  responsable: comprador
+  plazo: mismo día
+si_fuera_de_camino:
+- accion: Revisar proveedores con peor cumplimiento (INV-16) y activar transferencias entre sucursales.
+  responsable: gerente_operaciones
+  plazo: 48 h

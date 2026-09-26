@@ -1,0 +1,32 @@
+id: OBJ-05
+nombre: Clientes nuevos
+area: ventas
+metrica: kpi:VEN-11
+parametros:
+  medida: nuevos
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- canal
+- vendedor
+tipo_meta: minimo
+curva_esperada:
+  semanal: dias_habiles
+  mensual: dias_habiles
+meta_sugerida: Promedio de los últimos 6 meses del mismo mes × (1 + crecimiento objetivo).
+responsable: comercial
+palancas:
+- MKT-08
+- MKT-15
+- MKT-16
+- PRC-CRM
+si_en_riesgo:
+- accion: Revisar leads sin contactar y el tiempo al primer contacto (PRC-CRM P2); asignar los pendientes.
+  responsable: vendedor
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: Reforzar campañas de adquisición en el canal con menor CAC y revisar la oferta para primera compra.
+  responsable: marketing
+  plazo: 72 h

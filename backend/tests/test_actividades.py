@@ -42,9 +42,9 @@ def _uno(sql, url):
 
 def test_catalogo_completo():
     acts = catalogo.actividades()
-    assert list(acts) == ["ACT-01", "ACT-02", "ACT-03", "ACT-04", "ACT-05", "ACT-06"]
-    assert sum(len(a["casos"]) for a in acts.values()) == 31
-    assert sum(len(c["acciones"]) for a in acts.values() for c in a["casos"]) == 72
+    assert list(acts) == [f"ACT-0{i}" for i in range(1, 9)]
+    assert sum(len(a["casos"]) for a in acts.values()) == 39
+    assert sum(len(c["acciones"]) for a in acts.values() for c in a["casos"]) == 86
     assert set(acts) == set(reglas.REGLAS)
 
 
@@ -252,7 +252,8 @@ def test_permisos_por_rol(base_tareas):
     motor.ejecutar(HOY, AHORA)
     todas = motor.listar(obtener_usuario("u1"))
     compras = motor.listar(obtener_usuario("u3"))
-    assert not motor.listar(obtener_usuario("u2"))                       # la vendedora no recibe estas tareas
+    laura = motor.listar(obtener_usuario("u2"))                           # la vendedora: solo tareas de su cartera
+    assert all(t["entidad"].get("vendedor_id") == 1 for t in laura)
     assert compras and len(compras) < len(todas)
     assert all(t["rol_plataforma"] == "compras" or any(a["rol_plataforma"] == "compras" for a in t["acciones"]) for t in compras)
     ajena = next(t for t in todas if t["tipo"] == "ACT-04" and t["caso"] == "C3")   # solo comercial
@@ -280,7 +281,7 @@ def test_api(base_tareas):
     r = c.get("/actividades", params={"usuario_id": "u3"})
     assert r.status_code == 200
     d = r.json()
-    assert d["totales"]["abiertas"] == len(d["abiertas"]) > 0 and len(d["catalogo"]) == 6
+    assert d["totales"]["abiertas"] == len(d["abiertas"]) > 0 and len(d["catalogo"]) == 8
     pedido = next(t for t in d["abiertas"] if t["tipo"] == "ACT-02" and t["detalle"])
     csv = c.get(f"/actividades/{pedido['id']}/archivo.csv", params={"usuario_id": "u3"})
     assert csv.status_code == 200 and csv.text.lstrip("﻿").startswith("Producto;Clase;Stock")
@@ -300,7 +301,8 @@ def test_herramienta_del_chat(base_tareas):
     motor.ejecutar(HOY, AHORA)
     salida = json.loads(herramientas.ejecutar("ver_actividades", {}, obtener_usuario("u3")))
     assert salida and all({"titulo", "acciones", "evidencia"} <= set(t) for t in salida)
-    assert json.loads(herramientas.ejecutar("ver_actividades", {}, obtener_usuario("u2"))) == []
+    ids_laura = {t["id"] for t in motor.listar(obtener_usuario("u2"))}
+    assert {t["id"] for t in json.loads(herramientas.ejecutar("ver_actividades", {}, obtener_usuario("u2")))} == ids_laura
 
 
 def test_catalogo_kpis(base_demo_config):

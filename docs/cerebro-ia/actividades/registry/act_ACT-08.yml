@@ -1,0 +1,112 @@
+id: ACT-08
+nombre: Objetivo en riesgo
+caso_de_negocio: Un objetivo (diario, semanal o mensual) va por debajo del ritmo necesario. Hay que saber por qué y ejecutar las palancas definidas
+  antes de que termine el período.
+entidad: objetivo × período
+frecuencia: en cada evaluación de objetivos (ciclo de tiempo real); se notifica solo al cambiar de estado o al empeorar
+responsable_principal: el responsable del objetivo
+deteccion:
+  universo: objetivos activos con meta en el período vigente (`marts.obj__estado_actual`).
+  condiciones:
+  - Cambio de estado a en_riesgo o fuera_de_camino respecto de la evaluación anterior.
+  - Objetivo no_evaluable por datos desactualizados durante más de 2 ciclos.
+  - Objetivo cumplido antes del 70 % del período (posible meta poco exigente).
+  - 'Objetivo sistemáticamente descalibrado: cumplido > 120 % o < 70 % en 3 períodos seguidos.'
+  exclusiones:
+  - Primer 10 % del período para objetivos acumulables (salvo objetivos diarios pasada la hora pico).
+parametros:
+  minimo_ciclos_no_evaluable: 2
+  umbral_cumplido_anticipado: 0.7
+  periodos_descalibrado: 3
+calculo: 'select objetivo_id, periodo_inicio, estado, estado_anterior, ritmo, proyeccion_cierre, prob_cumplimiento, brecha = meta - proyeccion_cierre
+
+  from marts.obj__estado_actual where estado is distinct from estado_anterior or …;
+
+  '
+impacto: brecha proyectada al cierre en unidades de la métrica (en moneda si es monetaria) × peso del objetivo.
+casos:
+- codigo: C1
+  nombre: En riesgo (amarillo)
+  condicion: estado = en_riesgo.
+  prioridad: media (alta si prob_cumplimiento < 50 % y resta < 30 % del período)
+  acciones:
+  - orden: 1
+    accion: Leer la explicación automática de la brecha adjunta (qué sucursal, canal, producto o paso explica la diferencia).
+    responsable: gerente_operaciones
+    plazo: 24 h
+  - orden: 2
+    accion: Ejecutar las acciones 'si_en_riesgo' de la plantilla del objetivo (se copian a la tarea con su responsable y plazo).
+    responsable: gerente_operaciones
+    plazo: los de la plantilla
+  - orden: 3
+    accion: Resolver las tareas abiertas de las actividades-palanca del objetivo (listadas en la tarea, ordenadas por impacto).
+    responsable: gerente_operaciones
+    plazo: 48 h
+  cierre: Vuelve a en_camino o termina el período.
+- codigo: C2
+  nombre: Fuera de camino (rojo)
+  condicion: estado = fuera_de_camino.
+  prioridad: alta (crítica si el objetivo es de empresa y resta < 30 % del período)
+  acciones:
+  - orden: 1
+    accion: Ejecutar las acciones 'si_fuera_de_camino' de la plantilla y registrar un plan de recuperación con meta intermedia (la plataforma
+      propone el ritmo diario necesario para cerrar la brecha).
+    responsable: gerente_operaciones
+    plazo: 48 h
+  - orden: 2
+    accion: Notificar al superior del responsable y agendar seguimiento hasta volver a amarillo.
+    responsable: gerente_general
+    plazo: 72 h
+  cierre: Vuelve a en_riesgo/en_camino, o al cierre del período con registro de causa (lista estándar).
+- codigo: C3
+  nombre: Objetivo no evaluable
+  condicion: estado = no_evaluable por más de 2 ciclos.
+  prioridad: alta
+  acciones:
+  - orden: 1
+    accion: Revisar la fuente de datos atrasada o con errores (la tarea indica cuál y desde cuándo) y reconectar/reprocesar.
+    responsable: gerente_operaciones
+    plazo: 24 h
+  cierre: El objetivo vuelve a evaluarse.
+- codigo: C4
+  nombre: Cumplido anticipadamente
+  condicion: Meta acumulable alcanzada antes del 70 % del período.
+  prioridad: baja
+  acciones:
+  - orden: 1
+    accion: Reconocer al equipo y evaluar si conviene subir la meta de los próximos períodos (la plataforma muestra la validación de realismo
+      con la nueva meta).
+    responsable: gerente_general
+    plazo: 7 días
+  cierre: Decisión registrada.
+- codigo: C5
+  nombre: Meta descalibrada
+  condicion: Cumplimiento > 120 % o < 70 % en 3 períodos seguidos.
+  prioridad: media
+  acciones:
+  - orden: 1
+    accion: Recalibrar la meta con la sugerencia de la plantilla y volver a validarla (V5 realismo), o justificar por qué se mantiene.
+    responsable: gerente_general
+    plazo: 14 días
+  cierre: Meta actualizada o justificación registrada.
+resoluciones:
+- acciones_ejecutadas
+- plan_de_recuperacion_registrado
+- recuperado
+- no_recuperado_con_causa
+- fuente_corregida
+- meta_ajustada
+- se_mantiene_justificado
+resolucion_confirmada:
+- acciones_ejecutadas
+- plan_de_recuperacion_registrado
+- recuperado
+- fuente_corregida
+- meta_ajustada
+ejemplo: 'Venta neta mensual — Sucursal Norte: 58 % de la meta con el 72 % del mes hábil transcurrido (ritmo 0,81, rojo). Proyección: 81 % de
+  la meta. La brecha la explica la categoría Q (−$ 1,2 M) con 9 quiebres ocultos abiertos. Acciones: resolver ACT-01 de la categoría Q hoy; plan
+  de recuperación con ritmo necesario de $ 410.000/día.'
+requisitos:
+  obligatorias: []
+  derivados_de: objetivos activos del tenant (cada objetivo valida su métrica con V1)
+kpis_relacionados: []

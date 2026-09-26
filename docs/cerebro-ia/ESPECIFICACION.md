@@ -4,7 +4,7 @@
 
 ## 1. Qué construimos
 
-Una plataforma SaaS multi-cliente que conecta **cualquier sistema** de una empresa, traduce sus datos a un **modelo canónico único**, calcula **KPIs estandarizados** de Finanzas, Ventas, Inventario, Logística y Marketing, genera **actividades** (tareas concretas con acción, responsable y plazo) y lo expone todo a un **agente de IA** que produce reportes, alertas y respuestas.
+Una plataforma SaaS multi-cliente que conecta **cualquier sistema** de una empresa, traduce sus datos a un **modelo canónico único**, calcula **KPIs estandarizados** de Finanzas, Ventas, Inventario, Logística y Marketing, genera **actividades** (tareas concretas con acción, responsable y plazo), mide **procesos estándar** paso a paso, evalúa **objetivos** diarios/semanales/mensuales en tiempo real en un **tablero de gestión**, y lo expone todo a un **agente de IA** que produce reportes, alertas y respuestas.
 
 **Principio rector — agnosticismo total:**
 - El código de la plataforma **no menciona ningún sistema, proveedor, marketplace, banco, organismo ni país**. Ni en código, ni en tablas, ni en seeds, ni en KPIs, ni en tests (los tests usan fuentes simuladas con nombres neutros).
@@ -25,11 +25,12 @@ Una plataforma SaaS multi-cliente que conecta **cualquier sistema** de una empre
 | Transversal | `docs/07` | Calidad, onboarding sin código, SLAs, plan por fases, fuentes simuladas |
 | KPIs | `docs/08`–`12` | 111 KPIs (FIN 22 · VEN 27 · INV 21 · LOG 19 · MKT 22) con requisitos de datos canónicos |
 | Matriz | `docs/13` | Columna canónica → KPIs que habilita |
-| **Actividades** | `docs/14` | 6 actividades según el caso (quiebre oculto, pedido sugerido, rotación/sin movimiento, remarcación, promociones, vencimientos): 31 casos, 72 acciones. **Ninguna alerta sin acción** |
+| **Actividades** | `docs/14` | 8 actividades según el caso (quiebre oculto, pedido sugerido, rotación/sin movimiento, remarcación, promociones, vencimientos, casos trabados en procesos, objetivos en riesgo): 39 casos, 86 acciones. **Ninguna alerta sin acción** |
+| **Gestión** | `docs/15` | 6 procesos estándar (venta, logística, cobranza, compra, oportunidad, devolución; 36 pasos con SLA y acción si se vence) · 24 plantillas de objetivos con validación V1-V9, cascada automática, ritmo y proyección · ciclo de tiempo real (≤ 5-15 min) · tablero web de gestión |
 
 ## 3. Stack de la plataforma (herramientas propias)
 
-Python 3.12 (conectores, compilador de mapeos, servidor IA con FastMCP) · Dagster (orquestación) · PostgreSQL 16 (almacén, migrable) · dbt-core + dbt-utils + dbt-expectations + elementary · Cube (capa semántica) · gestor de secretos · docker-compose (`make up`).
+Python 3.12 (conectores, compilador de mapeos, servidor IA con FastMCP, motor de objetivos) · React/Next.js (tablero de gestión) · Dagster (orquestación) · PostgreSQL 16 (almacén, migrable) · dbt-core + dbt-utils + dbt-expectations + elementary · Cube (capa semántica) · gestor de secretos · docker-compose (`make up`).
 
 ## 4. Estructura del repo
 
@@ -60,8 +61,11 @@ cerebro-ia/
 ├── kpis/registry/                     # generado
 ├── actividades/src/actividades.yml    # FUENTE DE VERDAD de actividades (casos → acciones)
 ├── actividades/registry/              # generado
+├── gestion/src/                       # FUENTE DE VERDAD: procesos.yml, objetivos.yml, tiempo_real_y_tablero.md
+├── gestion/registry/                  # generado
+├── app/                               # tablero de gestión web (docs/15 §5)
 ├── mcp_server/                        # herramientas del agente, prompts, reportes, alertas
-├── tools/build_kpis.py                # valida KPIs y actividades contra docs/04 y genera docs/08-14 + registries
+├── tools/build_kpis.py                # valida KPIs, actividades, procesos y objetivos contra docs/04 y genera docs/08-15 + registries
 └── tests/                             # fuentes simuladas (sim_api, sim_sql, sim_archivos) + e2e
 ```
 
@@ -75,7 +79,7 @@ cerebro-ia/
 - Nada de SQL escrito a mano por fuente: staging siempre generado por el compilador.
 - Multi-tenant en tres barreras (RLS, capa semántica, token del servidor IA). Un bug de aislamiento es crítico.
 - Datos personales hasheados en `core`; la IA nunca los recibe.
-- **Ninguna alerta sin acción:** toda actividad asigna cada detección a un caso con acciones prescriptas (responsable, plazo, criterio de cierre). El build falla si un caso no tiene acción. La detección es determinística; el modelo de lenguaje solo redacta.
+- **Ninguna alerta sin acción:** toda actividad asigna cada detección a un caso con acciones prescriptas (responsable, plazo, criterio de cierre). El build falla si un caso no tiene acción. Lo mismo para procesos (todo paso con SLA tiene `si_vence`) y objetivos (toda plantilla tiene acciones para 'en riesgo' y 'fuera de camino'). La detección y la evaluación son determinísticas; el modelo de lenguaje solo redacta.
 
 ## 6. Qué NO hacer
 
@@ -89,6 +93,6 @@ cerebro-ia/
 ## 7. Orden de trabajo
 
 Seguir las fases de `docs/07 §6` y no avanzar sin cumplir los criterios de aceptación:
-0. Fundaciones → 1. Motor genérico de ingesta y mapeo (validado con 3 fuentes simuladas distintas sin código específico) → 2. KPIs + semántica + IA → 2b. Actividades → 3. Operación a escala.
+0. Fundaciones → 1. Motor genérico de ingesta y mapeo (validado con 3 fuentes simuladas distintas sin código específico) → 2. KPIs + semántica + IA → 2b. Actividades → 2c. Procesos, objetivos y tablero (docs/15 §7) → 3. Operación a escala.
 
-Primera sesión: leer docs 01 → 02 → 03 → 04 → 05 → 06 → 07; correr `python3 tools/build_kpis.py` (debe decir `OK: 111 KPIs` y `OK: 6 actividades · 31 casos · 72 acciones`); ejecutar Fase 0.
+Primera sesión: leer docs 01 → 02 → 03 → 04 → 05 → 06 → 07; correr `python3 tools/build_kpis.py` (debe decir `OK: 111 KPIs`, `OK: 6 procesos · 36 pasos · 24 plantillas…` y `OK: 8 actividades · 39 casos · 86 acciones`); ejecutar Fase 0.

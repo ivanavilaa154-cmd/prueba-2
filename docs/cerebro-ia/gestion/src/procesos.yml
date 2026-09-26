@@ -1,0 +1,306 @@
+titulo: Procesos estándar
+intro: |
+  Un **proceso** es la secuencia de pasos que la empresa tiene que cumplir para cada caso (cada pedido, cada factura a cobrar, cada orden de compra).
+  La plataforma trae un **catálogo estándar**; en el onboarding cada empresa activa los procesos que usa, apaga pasos que no aplican, ajusta plazos (SLA)
+  y define responsables (`ops.proceso_config`). La definición del proceso **no cambia entre empresas**: solo su configuración.
+
+  Cada paso se mide con un **evento** que ya existe en el modelo canónico (una fecha/hora de una tabla) o, si ningún sistema lo registra,
+  con un evento de proceso (`core.fct_evento_proceso`) que se puede cargar desde cualquier fuente o registrar a mano en el tablero.
+
+  **Regla: ningún paso sin acción.** Cada paso con plazo define qué hacer si se vence (`si_vence`: acción, responsable, plazo). Los pasos vencidos
+  generan tareas de la actividad ACT-07 con esa acción. El build falla si un paso con SLA no tiene `si_vence`.
+
+  **Estado de cada paso por caso** (dominio `estado_paso`): `completado`, `completado_fuera_de_sla`, `pendiente_en_plazo`, `pendiente_vencido`,
+  `omitido` (obligatorio que no ocurrió pero ocurrió uno posterior), `no_aplica` (condición `aplica_si` falsa), `fuera_de_orden`.
+
+  **Métricas estándar de proceso** (se calculan igual para todos los procesos y todos los pasos; se usan en objetivos como `PRC-XXX.<metrica>` o `PRC-XXX.<paso>.<metrica>`):
+
+formatos:
+  evento: |
+    evento:
+      columna: <tabla.columna canónica con la fecha/hora del paso>
+      relacion: <cómo se vincula con el caso, SQL sobre alias 'caso'>   # omitir si la columna es de la tabla del caso
+      agregacion: min | max                                            # si hay varias filas (ej. primera recepción)
+      filtro: <condición opcional>
+    # o bien
+    evento: {evento_proceso: <código del dominio evento_proceso>}
+  sla: |
+    sla: {desde: <paso previo>, horas_habiles: N}      # o dias_habiles / horas / dias
+    sla: {limite: <tabla.columna con fecha límite>}     # la fecha comprometida está en los datos
+    sla: {desde_columna: <tabla.columna>, dias: N}      # relativo a una fecha que no es un paso
+
+metricas_estandar:
+  - {codigo: casos_iniciados, descripcion: Casos que empezaron el proceso en el período, unidad: cantidad, direccion: neutral}
+  - {codigo: casos_completados, descripcion: Casos que llegaron al último paso aplicable en el período, unidad: cantidad, direccion: mayor_mejor}
+  - {codigo: casos_en_curso, descripcion: Casos abiertos ahora (WIP), unidad: cantidad, direccion: neutral}
+  - {codigo: casos_trabados, descripcion: Casos abiertos con un paso vencido o sin avanzar más de 2× el P90 histórico del paso, unidad: cantidad, direccion: menor_mejor}
+  - {codigo: tiempo_ciclo_p50, descripcion: Mediana del tiempo de inicio a fin (horas o días hábiles según el proceso), unidad: tiempo, direccion: menor_mejor}
+  - {codigo: tiempo_ciclo_p90, descripcion: Percentil 90 del tiempo de inicio a fin, unidad: tiempo, direccion: menor_mejor}
+  - {codigo: tiempo_paso_p50, descripcion: "Mediana del tiempo desde el paso anterior (solo con prefijo de paso: PRC-XXX.P3.tiempo_paso_p50)", unidad: tiempo, direccion: menor_mejor}
+  - {codigo: cumplimiento_sla_pct, descripcion: "% de pasos con SLA completados dentro del plazo (global o por paso)", unidad: porcentaje, direccion: mayor_mejor}
+  - {codigo: conformidad_pct, descripcion: "% de casos completados sin pasos obligatorios omitidos ni fuera de orden", unidad: porcentaje, direccion: mayor_mejor}
+  - {codigo: casos_vencidos_abiertos, descripcion: Casos con al menos un paso pendiente_vencido ahora, unidad: cantidad, direccion: menor_mejor}
+
+procesos:
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-VEN
+  nombre: Ciclo de venta (del pedido al cobro)
+  area: ventas
+  caso: {tabla: fct_pedido, clave: pedido_id, filtro: "pedido_valido", fecha_inicio: fct_pedido.pedido_at}
+  unidad_tiempo: horas_habiles
+  variantes:
+    - {nombre: prepago, condicion: "caso.estado_pago is not null and dim_cliente.condicion_pago_dias = 0", descripcion: "Se paga antes de preparar (online, contado)."}
+    - {nombre: cuenta_corriente, condicion: "dim_cliente.condicion_pago_dias > 0", descripcion: "Se entrega y se cobra después (empresas, mayoristas)."}
+  pasos:
+    - codigo: P1
+      nombre: Pedido registrado
+      evento: {columna: fct_pedido.pedido_at}
+      obligatorio: true
+    - codigo: P2
+      nombre: Pago confirmado
+      aplica_si: variante = 'prepago'
+      evento: {columna: fct_pedido.confirmado_at}
+      obligatorio: true
+      sla: {desde: P1, horas: 48}
+      si_vence: {accion: "Contactar al cliente para completar el pago; si no paga en 72 h, cancelar el pedido y liberar el stock reservado.", responsable: vendedor, plazo: "24 h"}
+    - codigo: P3
+      nombre: Facturado
+      evento: {columna: fct_comprobante.fecha_emision, relacion: "fct_comprobante.pedido_id = caso.pedido_id and fct_comprobante.circuito = 'venta' and fct_comprobante.clase in ('factura','ticket')", agregacion: min}
+      obligatorio: true
+      sla: {desde: P2, horas_habiles: 24, alternativa_desde: P1}
+      si_vence: {accion: "Emitir la factura del pedido (verificar datos fiscales del cliente si la emisión falló).", responsable: administrativo, plazo: "mismo día"}
+    - codigo: P4
+      nombre: Preparado
+      evento: {columna: fct_envio.listo_despacho_at, relacion: "fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion", agregacion: min}
+      obligatorio: false
+      sla: {desde: P2, horas_habiles: 24, alternativa_desde: P1}
+      si_vence: {accion: "Preparar el pedido; si falta un producto, avisar al vendedor para ofrecer reemplazo o entrega parcial.", responsable: operario_deposito, plazo: "4 h hábiles"}
+    - codigo: P5
+      nombre: Despachado
+      evento: {columna: fct_envio.despacho_at, relacion: "fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion", agregacion: min}
+      obligatorio: true
+      sla: {limite: fct_envio.fecha_limite_despacho, alternativa: {desde: P4, horas_habiles: 8}}
+      si_vence: {accion: "Despachar o coordinar el retiro con el transportista hoy; si no es posible, informar al cliente la nueva fecha.", responsable: logistica, plazo: "mismo día"}
+    - codigo: P6
+      nombre: Entregado
+      evento: {columna: fct_envio.entrega_at, relacion: "fct_envio.pedido_id = caso.pedido_id and not fct_envio.es_devolucion", agregacion: max}
+      obligatorio: true
+      sla: {limite: fct_envio.fecha_promesa}
+      si_vence: {accion: "Reclamar al transportista el estado del envío y avisar al cliente con una fecha nueva de entrega.", responsable: logistica, plazo: "24 h"}
+    - codigo: P7
+      nombre: Cobrado
+      aplica_si: variante = 'cuenta_corriente'
+      evento: {columna: fct_documento_cxc.fecha_cancelacion, relacion: "fct_documento_cxc.comprobante_id in (select comprobante_id from core.fct_comprobante c where c.pedido_id = caso.pedido_id)", agregacion: max}
+      obligatorio: true
+      sla: {limite: fct_documento_cxc.fecha_vencimiento}
+      si_vence: {accion: "Iniciar la gestión de cobranza del documento (proceso PRC-COB).", responsable: cobrador, plazo: "24 h"}
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-LOG
+  nombre: Cumplimiento del pedido (logística)
+  area: logistica
+  caso: {tabla: fct_envio, clave: envio_id, filtro: "not es_devolucion and es_controlable", fecha_inicio: fct_envio.pedido_at}
+  unidad_tiempo: horas_habiles
+  pasos:
+    - codigo: P1
+      nombre: Pedido liberado para preparar
+      evento: {columna: fct_envio.pedido_at}
+      obligatorio: true
+    - codigo: P2
+      nombre: Inicio de preparación
+      evento: {columna: fct_preparacion.inicio_at, relacion: "fct_preparacion.pedido_id = caso.pedido_id", agregacion: min}
+      obligatorio: false
+      sla: {desde: P1, horas_habiles: 8}
+      si_vence: {accion: "Asignar el pedido a un preparador y priorizarlo en la lista de picking.", responsable: operario_deposito, plazo: "2 h hábiles"}
+    - codigo: P3
+      nombre: Listo para despachar
+      evento: {columna: fct_envio.listo_despacho_at}
+      obligatorio: true
+      sla: {desde: P1, horas_habiles: 16}
+      si_vence: {accion: "Terminar el embalaje y etiquetado; si hay faltantes, registrar el motivo y avisar al vendedor.", responsable: operario_deposito, plazo: "4 h hábiles"}
+    - codigo: P4
+      nombre: Despachado
+      evento: {columna: fct_envio.despacho_at}
+      obligatorio: true
+      sla: {limite: fct_envio.fecha_limite_despacho, alternativa: {desde: P3, horas_habiles: 8}}
+      si_vence: {accion: "Coordinar retiro urgente o entrega con flota propia; registrar el motivo de la demora.", responsable: logistica, plazo: "mismo día"}
+    - codigo: P5
+      nombre: Primer intento de entrega
+      evento: {columna: fct_envio.primer_intento_at}
+      obligatorio: false
+      sla: {limite: fct_envio.fecha_promesa}
+      si_vence: {accion: "Consultar al transportista por el envío sin novedades y escalar el reclamo.", responsable: logistica, plazo: "24 h"}
+    - codigo: P6
+      nombre: Entregado
+      evento: {columna: fct_envio.entrega_at}
+      obligatorio: true
+      sla: {limite: fct_envio.fecha_promesa}
+      si_vence: {accion: "Avisar al cliente con fecha nueva y, si corresponde, ofrecer compensación según política; registrar reclamo al transportista.", responsable: logistica, plazo: "24 h"}
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-COB
+  nombre: Cobranza (de la factura al cobro aplicado)
+  area: finanzas
+  caso: {tabla: fct_documento_cxc, clave: documento_cxc_id, filtro: "estado <> 'anulado' and importe_original > 0", fecha_inicio: fct_documento_cxc.fecha_emision}
+  unidad_tiempo: dias_habiles
+  pasos:
+    - codigo: P1
+      nombre: Documento emitido
+      evento: {columna: fct_documento_cxc.fecha_emision}
+      obligatorio: true
+    - codigo: P2
+      nombre: Recordatorio previo al vencimiento
+      evento: {evento_proceso: recordatorio_cobro_enviado}
+      obligatorio: false
+      sla: {desde_columna: fct_documento_cxc.fecha_vencimiento, dias: -3}
+      si_vence: {accion: "Enviar recordatorio de vencimiento al cliente (plantilla estándar) y registrarlo.", responsable: cobrador, plazo: "mismo día"}
+    - codigo: P3
+      nombre: Gestión de cobranza tras el vencimiento
+      aplica_si: "caso.saldo_pendiente > 0 and current_date > caso.fecha_vencimiento"
+      evento: {evento_proceso: gestion_cobranza_realizada}
+      obligatorio: true
+      sla: {desde_columna: fct_documento_cxc.fecha_vencimiento, dias_habiles: 2}
+      si_vence: {accion: "Contactar al cliente (llamado o mensaje), registrar el resultado y, si hay compromiso, la promesa de pago con fecha e importe.", responsable: cobrador, plazo: "24 h"}
+    - codigo: P4
+      nombre: Promesa de pago registrada
+      evento: {evento_proceso: promesa_pago_registrada}
+      obligatorio: false
+      sla: {desde: P3, dias_habiles: 3}
+      si_vence: {accion: "Volver a contactar y pedir fecha concreta de pago; si no hay respuesta, escalar a finanzas.", responsable: cobrador, plazo: "48 h"}
+    - codigo: P5
+      nombre: Cobrado
+      evento: {columna: fct_documento_cxc.fecha_cancelacion}
+      obligatorio: true
+      sla: {limite: fct_documento_cxc.fecha_vencimiento}
+      si_vence: {accion: "Seguir la escalera de cobranza (ver escalamiento).", responsable: cobrador, plazo: "según escalamiento"}
+      escalamiento:
+        - {dias_vencido: 15, accion: "Aviso formal al cliente y a su vendedor; el vendedor contacta a su referente.", responsable: vendedor, plazo: "48 h"}
+        - {dias_vencido: 30, accion: "Suspender nuevas ventas a cuenta corriente al cliente hasta regularizar (registrar evento credito_suspendido).", responsable: finanzas, plazo: "24 h"}
+        - {dias_vencido: 60, accion: "Proponer plan de pagos o derivar a gestión externa/legal; evaluar previsión por incobrable.", responsable: gerente_general, plazo: "7 días"}
+    - codigo: P6
+      nombre: Cobro aplicado a la factura
+      evento: {columna: fct_aplicacion_cobro.fecha_aplicacion, relacion: "fct_aplicacion_cobro.documento_cxc_id = caso.documento_cxc_id", agregacion: max}
+      obligatorio: false
+      sla: {desde: P5, dias_habiles: 2}
+      si_vence: {accion: "Aplicar el cobro recibido a la factura en el sistema de gestión (cobros sin imputar distorsionan la cuenta corriente).", responsable: administrativo, plazo: "48 h"}
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-COM
+  nombre: Compra (de la orden al pago)
+  area: inventario
+  caso: {tabla: fct_orden_compra, clave: orden_compra_id, filtro: "estado <> 'borrador'", fecha_inicio: fct_orden_compra.fecha_emision}
+  unidad_tiempo: dias_habiles
+  pasos:
+    - codigo: P1
+      nombre: Orden emitida
+      evento: {columna: fct_orden_compra.fecha_emision}
+      obligatorio: true
+    - codigo: P2
+      nombre: Orden aprobada
+      evento: {columna: fct_orden_compra.fecha_aprobacion}
+      obligatorio: false
+      sla: {desde: P1, dias_habiles: 1}
+      si_vence: {accion: "Aprobar o rechazar la orden de compra pendiente.", responsable: gerente_operaciones, plazo: "mismo día"}
+    - codigo: P3
+      nombre: Confirmada por el proveedor
+      evento: {evento_proceso: confirmacion_proveedor}
+      obligatorio: false
+      sla: {desde: P2, dias_habiles: 2, alternativa_desde: P1}
+      si_vence: {accion: "Pedir al proveedor confirmación de la orden y fecha de entrega.", responsable: comprador, plazo: "24 h"}
+    - codigo: P4
+      nombre: Primera recepción
+      evento: {columna: fct_recepcion.fecha_recepcion, relacion: "fct_recepcion.orden_compra_id = caso.orden_compra_id", agregacion: min}
+      obligatorio: true
+      sla: {limite: fct_orden_compra.fecha_entrega_prometida}
+      si_vence: {accion: "Reclamar la entrega al proveedor; si hay productos en quiebre, evaluar compra alternativa (ACT-02 C1).", responsable: comprador, plazo: "24 h"}
+    - codigo: P5
+      nombre: Recepción completa
+      evento: {columna: fct_orden_compra.fecha_recepcion_completa}
+      obligatorio: false
+      sla: {desde: P4, dias_habiles: 5}
+      si_vence: {accion: "Definir con el proveedor el saldo pendiente: entrega o cancelación del remanente.", responsable: comprador, plazo: "48 h"}
+    - codigo: P6
+      nombre: Factura del proveedor recibida
+      evento: {columna: fct_comprobante.fecha_emision, relacion: "fct_comprobante.orden_compra_id = caso.orden_compra_id and fct_comprobante.circuito = 'compra'", agregacion: min}
+      obligatorio: true
+      sla: {desde: P4, dias_habiles: 5}
+      si_vence: {accion: "Solicitar la factura al proveedor y controlarla contra lo recibido (cantidades y precios de lista).", responsable: administrativo, plazo: "48 h"}
+    - codigo: P7
+      nombre: Pagada
+      evento: {columna: fct_documento_cxp.fecha_cancelacion, relacion: "fct_documento_cxp.comprobante_id in (select comprobante_id from core.fct_comprobante c where c.orden_compra_id = caso.orden_compra_id)", agregacion: max}
+      obligatorio: true
+      sla: {limite: fct_documento_cxp.fecha_vencimiento}
+      si_vence: {accion: "Programar el pago vencido en el próximo lote de pagos o acordar nueva fecha con el proveedor.", responsable: finanzas, plazo: "48 h"}
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-CRM
+  nombre: Oportunidad comercial (del lead al pedido)
+  area: ventas
+  caso: {tabla: fct_lead, clave: lead_id, filtro: "true", fecha_inicio: fct_lead.creado_at}
+  unidad_tiempo: horas_habiles
+  pasos:
+    - codigo: P1
+      nombre: Lead recibido
+      evento: {columna: fct_lead.creado_at}
+      obligatorio: true
+    - codigo: P2
+      nombre: Primer contacto
+      evento: {columna: fct_lead.primer_contacto_at}
+      obligatorio: true
+      sla: {desde: P1, horas_habiles: 2}
+      si_vence: {accion: "Contactar al lead ahora (la probabilidad de conversión cae rápido con la demora) y registrar el contacto.", responsable: vendedor, plazo: "1 h hábil"}
+    - codigo: P3
+      nombre: Calificado
+      evento: {columna: fct_lead.fecha_calificacion}
+      obligatorio: false
+      sla: {desde: P2, dias_habiles: 5}
+      si_vence: {accion: "Calificar o descartar el lead (con motivo) para no dejarlo abierto.", responsable: vendedor, plazo: "48 h"}
+    - codigo: P4
+      nombre: Propuesta enviada
+      evento: {columna: fct_oportunidad_historial_etapa.entrada_at, relacion: "fct_oportunidad_historial_etapa.oportunidad_id = caso.oportunidad_id and fct_oportunidad_historial_etapa.etapa = 'propuesta'", agregacion: min}
+      obligatorio: false
+      sla: {desde: P3, dias_habiles: 5}
+      si_vence: {accion: "Enviar la propuesta o registrar por qué no corresponde.", responsable: vendedor, plazo: "48 h"}
+    - codigo: P5
+      nombre: Oportunidad cerrada
+      evento: {columna: fct_oportunidad.fecha_cierre, relacion: "fct_oportunidad.oportunidad_id = caso.oportunidad_id", agregacion: max}
+      obligatorio: false
+      sla: {limite: fct_oportunidad.fecha_cierre_esperada}
+      si_vence: {accion: "Actualizar la fecha de cierre esperada con un próximo paso concreto, o cerrar como perdida con motivo.", responsable: vendedor, plazo: "48 h"}
+    - codigo: P6
+      nombre: Pedido generado
+      evento: {columna: fct_pedido.pedido_at, relacion: "fct_pedido.pedido_id = (select pedido_id from core.fct_oportunidad o where o.oportunidad_id = caso.oportunidad_id)", agregacion: min}
+      obligatorio: false
+      sla: {desde: P5, dias_habiles: 3}
+      si_vence: {accion: "Cargar el pedido de la oportunidad ganada.", responsable: vendedor, plazo: "24 h"}
+
+# ------------------------------------------------------------------------------------------
+- id: PRC-DEV
+  nombre: Devolución (de la solicitud al reintegro)
+  area: ventas
+  caso: {tabla: fct_devolucion, clave: devolucion_id, filtro: "estado <> 'rechazada'", fecha_inicio: fct_devolucion.fecha_solicitud}
+  unidad_tiempo: dias_habiles
+  pasos:
+    - codigo: P1
+      nombre: Devolución solicitada
+      evento: {columna: fct_devolucion.fecha_solicitud}
+      obligatorio: true
+    - codigo: P2
+      nombre: Producto recibido
+      evento: {columna: fct_devolucion.fecha_recepcion}
+      obligatorio: true
+      sla: {desde: P1, dias_habiles: 7}
+      si_vence: {accion: "Verificar el envío de retorno con el cliente/transportista y enviarle instrucciones si no lo despachó.", responsable: logistica, plazo: "48 h"}
+    - codigo: P3
+      nombre: Reintegro o cambio realizado
+      evento: {columna: fct_devolucion.fecha_reintegro}
+      obligatorio: true
+      sla: {desde: P2, dias_habiles: 3}
+      si_vence: {accion: "Realizar el reintegro o el cambio y avisar al cliente.", responsable: administrativo, plazo: "24 h"}
+    - codigo: P4
+      nombre: Nota de crédito emitida
+      evento: {columna: fct_comprobante.fecha_emision, relacion: "fct_comprobante.comprobante_id = caso.comprobante_id and fct_comprobante.clase = 'nota_credito'", agregacion: min}
+      obligatorio: false
+      sla: {desde: P2, dias_habiles: 3}
+      si_vence: {accion: "Emitir la nota de crédito correspondiente a la devolución.", responsable: administrativo, plazo: "48 h"}

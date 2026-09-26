@@ -1,0 +1,77 @@
+id: PRC-LOG
+nombre: Cumplimiento del pedido (logística)
+area: logistica
+caso:
+  tabla: fct_envio
+  clave: envio_id
+  filtro: not es_devolucion and es_controlable
+  fecha_inicio: fct_envio.pedido_at
+unidad_tiempo: horas_habiles
+pasos:
+- codigo: P1
+  nombre: Pedido liberado para preparar
+  evento:
+    columna: fct_envio.pedido_at
+  obligatorio: true
+- codigo: P2
+  nombre: Inicio de preparación
+  evento:
+    columna: fct_preparacion.inicio_at
+    relacion: fct_preparacion.pedido_id = caso.pedido_id
+    agregacion: min
+  obligatorio: false
+  sla:
+    desde: P1
+    horas_habiles: 8
+  si_vence:
+    accion: Asignar el pedido a un preparador y priorizarlo en la lista de picking.
+    responsable: operario_deposito
+    plazo: 2 h hábiles
+- codigo: P3
+  nombre: Listo para despachar
+  evento:
+    columna: fct_envio.listo_despacho_at
+  obligatorio: true
+  sla:
+    desde: P1
+    horas_habiles: 16
+  si_vence:
+    accion: Terminar el embalaje y etiquetado; si hay faltantes, registrar el motivo y avisar al vendedor.
+    responsable: operario_deposito
+    plazo: 4 h hábiles
+- codigo: P4
+  nombre: Despachado
+  evento:
+    columna: fct_envio.despacho_at
+  obligatorio: true
+  sla:
+    limite: fct_envio.fecha_limite_despacho
+    alternativa:
+      desde: P3
+      horas_habiles: 8
+  si_vence:
+    accion: Coordinar retiro urgente o entrega con flota propia; registrar el motivo de la demora.
+    responsable: logistica
+    plazo: mismo día
+- codigo: P5
+  nombre: Primer intento de entrega
+  evento:
+    columna: fct_envio.primer_intento_at
+  obligatorio: false
+  sla:
+    limite: fct_envio.fecha_promesa
+  si_vence:
+    accion: Consultar al transportista por el envío sin novedades y escalar el reclamo.
+    responsable: logistica
+    plazo: 24 h
+- codigo: P6
+  nombre: Entregado
+  evento:
+    columna: fct_envio.entrega_at
+  obligatorio: true
+  sla:
+    limite: fct_envio.fecha_promesa
+  si_vence:
+    accion: Avisar al cliente con fecha nueva y, si corresponde, ofrecer compensación según política; registrar reclamo al transportista.
+    responsable: logistica
+    plazo: 24 h

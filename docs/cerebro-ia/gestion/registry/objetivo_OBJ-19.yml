@@ -1,0 +1,28 @@
+id: OBJ-19
+nombre: Mercadería vencida o en riesgo
+area: inventario
+metrica: kpi:INV-20
+periodicidades:
+- semanal
+- mensual
+alcances:
+- empresa
+- sucursal
+- categoria
+tipo_meta: maximo
+curva_esperada:
+  semanal: no_aplica
+  mensual: no_aplica
+meta_sugerida: ≤ 0,5 % del valor del inventario.
+responsable: encargado_sucursal
+palancas:
+- ACT-06
+- ACT-02
+si_en_riesgo:
+- accion: Ejecutar las tareas de vencimiento próximas (ACT-06 C2) hoy.
+  responsable: encargado_sucursal
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: Aplicar el tope por vida útil a todos los perecederos del pedido sugerido y revisar lotes que llegan con poca vida.
+  responsable: comprador
+  plazo: 7 días

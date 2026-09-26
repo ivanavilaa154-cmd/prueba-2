@@ -1,0 +1,487 @@
+titulo: Objetivos — definición, validación, cascada y seguimiento en tiempo real
+intro: |
+  Un **objetivo** es una meta numérica sobre una métrica, para un alcance (empresa, área, sucursal, canal, equipo, vendedor, persona)
+  y un período (diario, semanal, mensual, trimestral, anual), con un responsable.
+  La plataforma trae **plantillas estándar** (abajo). Cada empresa elige cuáles usa, les pone valor y responsable; la definición es la misma para todas.
+
+  **Métricas que puede usar un objetivo** (siempre medidas por la plataforma, nunca cargadas a mano):
+  - `kpi: <ID>` — cualquier KPI disponible del registry (docs/08-12).
+  - `proceso: PRC-XXX.<metrica>` o `PRC-XXX.<paso>.<metrica>` — métricas estándar de proceso (docs/15 §1).
+  - `actividad: ACT-XX.<metrica>` o `actividad: todas.<metrica>` — `tareas_resueltas_en_plazo_pct`, `tareas_vencidas`, `impacto_resuelto`.
+
+  ### Modelo de datos (esquema `ops`)
+  ```sql
+  create table ops.objetivo (
+    objetivo_id uuid primary key, tenant_id uuid not null, plantilla_id text,     -- OBJ-xx o null si es personalizado
+    nombre text, metrica text not null,                 -- 'kpi:VEN-01' | 'proceso:PRC-LOG.P4.cumplimiento_sla_pct' | 'actividad:ACT-01.tareas_resueltas_en_plazo_pct'
+    parametros jsonb,                                   -- parámetros del KPI (moneda, ajuste, base, …)
+    alcance_tipo text, alcance_valor text,              -- 'empresa' | 'area' | 'sucursal' | 'canal' | 'equipo' | 'vendedor' | 'persona' | 'categoria'
+    periodicidad text not null,                         -- dominio periodicidad
+    tipo_meta text not null,                            -- dominio tipo_meta: minimo (≥) | maximo (≤) | rango | exacto
+    curva_esperada text not null,                       -- dominio curva_esperada
+    umbral_en_riesgo numeric default 0.95,              -- ritmo por debajo del cual pasa a amarillo
+    umbral_fuera_de_camino numeric default 0.85,        -- ritmo por debajo del cual pasa a rojo
+    peso numeric default 1,                             -- para puntaje de tableros
+    responsable_rol text, responsable_usuario text,
+    objetivo_padre_id uuid,                             -- cascada (mensual → semanal → diario; empresa → sucursal → vendedor)
+    metodo_reparto text,                                -- 'dias_habiles' | 'estacionalidad_historica' | 'participacion_historica' | 'manual' | 'igual'
+    vigente_desde date, vigente_hasta date, estado text,   -- 'borrador' | 'validado' | 'activo' | 'archivado'
+    creado_por text, aprobado_por text
+  );
+  create table ops.objetivo_meta (                      -- una fila por instancia de período (ej. semana 38, 2026-09-21)
+    objetivo_id uuid, periodo_inicio date, periodo_fin date,
+    meta numeric, meta_min numeric, meta_max numeric,   -- min/max para 'rango'
+    origen text,                                        -- 'manual' | 'cascada' | 'sugerida_aceptada'
+    primary key (objetivo_id, periodo_inicio)
+  );
+  create table ops.objetivo_evaluacion (                -- historial de evaluaciones (cada corrida) → permite ver la evolución intradía
+    objetivo_id uuid, periodo_inicio date, evaluado_at timestamptz,
+    valor_actual numeric, valor_esperado_a_la_fecha numeric, avance_pct numeric, ritmo numeric,
+    proyeccion_cierre numeric, prob_cumplimiento numeric, estado text,   -- dominio estado_objetivo
+    datos_actualizados_at timestamptz, advertencias jsonb,
+    primary key (objetivo_id, periodo_inicio, evaluado_at)
+  );
+  create table ops.objetivo_validacion (objetivo_id uuid, regla text, severidad text, mensaje text, datos jsonb, creado_at timestamptz);
+  ```
+  `marts.obj__estado_actual` = última evaluación por objetivo y período vigente (lo que muestra el tablero).
+
+  ### Evaluación (cada corrida del ciclo de tiempo real, docs/15 §4)
+  Sea `M` la meta del período, `A` el valor actual acumulado al momento `t`, `c(t)` la **curva esperada** acumulada (fracción de la meta que "debería" estar lograda en `t`):
+  - `lineal`: c(t) = tiempo transcurrido / duración del período.
+  - `dias_habiles`: c(t) = días hábiles transcurridos (+ fracción del día según horario operativo) / días hábiles del período.
+  - `estacionalidad_historica`: c(t) = participación acumulada histórica (últimas 8 semanas / 12 meses) por día de semana y día del mes, excluyendo fechas marcadas como evento.
+  - `intradia_historica` (objetivos diarios): c(t) = participación acumulada histórica por hora del mismo día de semana.
+  - `no_aplica`: para métricas no acumulables (ratios, snapshots, tiempos): se compara el valor actual contra la meta directamente.
+
+  Para métricas **acumulables** (aditivas: venta, pedidos, cobrado, casos completados):
+  - `esperado = M × c(t)` · `avance = A / M` · `ritmo = A / esperado`
+  - `proyeccion_cierre = A / c(t)` (con c(t) ≥ 0,15; antes se usa `A + M × (1 − c(t)) × ritmo_acotado`, ritmo acotado a [0,5; 1,5])
+  - `prob_cumplimiento` = P(proyección ≥ M) con la dispersión histórica del error de proyección para ese avance de período (tabla empírica por tenant y métrica; default normal con CV 10 %).
+  Para métricas **no acumulables** (%, tiempos, stocks): `ritmo = valor / meta` si tipo_meta = minimo; `meta / valor` si maximo; se exige muestra mínima (ej. ≥ 30 casos) para evaluar; si no, `no_evaluable`.
+  **Estado:** `cumplido` (período cerrado y meta alcanzada, o meta acumulable ya superada) · `en_camino` (ritmo ≥ umbral_en_riesgo) · `en_riesgo` (entre umbrales) ·
+  `fuera_de_camino` (ritmo < umbral_fuera_de_camino) · `no_evaluable` (datos de la métrica más viejos que su SLA de frescura, o muestra insuficiente) · `sin_meta`.
+  Primer 10 % del período: los objetivos acumulables no pasan a rojo (poca información), salvo objetivos diarios después de la hora de mayor venta.
+
+  ### Cascada (una vez definido el objetivo mensual, el resto se genera solo)
+  - **En el tiempo:** mensual → semanal → diario, repartiendo la meta con `metodo_reparto` (por defecto `estacionalidad_historica` si hay ≥ 8 semanas de datos, si no `dias_habiles`). Si un día queda por debajo o por encima, la **meta de los días restantes se recalcula** (modo `recuperar`: lo que falta se reparte en lo que queda; modo `fijo`: no se recalcula) — configurable.
+  - **En el alcance:** empresa → sucursales / canales / vendedores según `participacion_historica` (últimos 3 meses) o manual; la suma de los hijos debe igualar al padre en métricas aditivas (regla V4).
+  - Métricas no aditivas (margen %, OTD) se heredan con la misma meta (o se ajustan manualmente) y el padre se evalúa con su propio valor, no con el promedio de los hijos.
+
+  ### Validación de objetivos (al crear o editar; estado `borrador` → `validado`)
+  | Regla | Qué verifica | Severidad |
+  |---|---|---|
+  | V1 Métrica disponible | la métrica existe y está `disponible`/`degradado` para el tenant (`ops.kpi_capacidad`) | bloquea |
+  | V2 Coherencia de sentido | tipo_meta coherente con la dirección de la métrica (no poner "mínimo" a un tiempo de entrega) | bloquea |
+  | V3 Datos completos | período, alcance válido, responsable y meta presentes; rango con min < max | bloquea |
+  | V4 Suma de la cascada | hijos aditivos suman al padre (±0,5 %); períodos cortos suman al largo | bloquea |
+  | V5 Realismo | meta vs distribución histórica del mismo período (12-24 meses, en términos reales si es monetaria): > P95 histórico o crecimiento real requerido > 30 % → "muy exigente"; < P25 → "poco exigente" | advierte (requiere justificación para activar) |
+  | V6 Contra presupuesto | si hay presupuesto cargado para la misma métrica y período, diferencia > 5 % | advierte |
+  | V7 Conflictos | objetivos que tiran en sentidos opuestos para el mismo alcance (ej. subir margen % y subir descuento %; bajar stock y subir fill rate al máximo) | advierte |
+  | V8 Controlabilidad | el responsable tiene alcance sobre lo que se mide (un vendedor no puede tener objetivo de empresa) | advierte |
+  | V9 Muestra suficiente | métricas no aditivas con volumen esperado bajo para el período (ej. OTD diario con < 30 envíos) → sugerir período más largo | advierte |
+  Para cada objetivo nuevo, la plataforma **sugiere la meta** con el método de la plantilla (`meta_sugerida`) y muestra la validación antes de guardarlo.
+
+  ### Regla: ningún objetivo en rojo sin acción
+  Cada plantilla define `si_en_riesgo` y `si_fuera_de_camino` con acciones (responsable y plazo) y `palancas` (KPIs y actividades que empujan la métrica).
+  Al cambiar de estado se genera una tarea ACT-08 con esas acciones + la explicación automática de la variación (`explicar_variacion`) + las tareas abiertas de las actividades-palanca.
+  El build falla si una plantilla no tiene acciones para ambos estados.
+
+plantillas:
+
+# ---- VENTAS --------------------------------------------------------------------------------
+- id: OBJ-01
+  nombre: Venta neta
+  area: ventas
+  metrica: "kpi:VEN-01"
+  periodicidades: [diario, semanal, mensual]
+  alcances: [empresa, sucursal, canal, vendedor, categoria]
+  tipo_meta: minimo
+  curva_esperada: {diario: intradia_historica, semanal: estacionalidad_historica, mensual: estacionalidad_historica}
+  meta_sugerida: "Venta del mismo período del año anterior en términos reales × (1 + crecimiento real objetivo del tenant, default 5 %), llevada a nominal con la inflación esperada; alternativa: presupuesto cargado."
+  responsable: comercial
+  palancas: [VEN-24, VEN-15, INV-06, ACT-01, ACT-02, MKT-07]
+  si_en_riesgo:
+    - {accion: "Revisar la explicación automática de la brecha (canal, sucursal, categoría con mayor caída) y confirmar si es precio, tráfico o falta de stock.", responsable: comercial, plazo: "24 h"}
+    - {accion: "Resolver primero las tareas abiertas de quiebre oculto y reposición urgente de productos clase A (ACT-01, ACT-02 C1).", responsable: encargado_sucursal, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Armar plan de recuperación: contactar clientes recurrentes en riesgo (VEN-15), activar una promoción táctica con margen positivo (ver histórico ACT-05) y reforzar la inversión en el canal con mejor ROAS real.", responsable: comercial, plazo: "48 h"}
+    - {accion: "Reunión de seguimiento con responsables de sucursal/canal y revisión diaria hasta volver a amarillo.", responsable: gerente_general, plazo: "72 h"}
+
+- id: OBJ-02
+  nombre: Cantidad de pedidos / tickets
+  area: ventas
+  metrica: "kpi:VEN-02"
+  periodicidades: [diario, semanal, mensual]
+  alcances: [empresa, sucursal, canal]
+  tipo_meta: minimo
+  curva_esperada: {diario: intradia_historica, semanal: estacionalidad_historica, mensual: estacionalidad_historica}
+  meta_sugerida: "Pedidos del mismo período del año anterior × (1 + crecimiento objetivo de tráfico)."
+  responsable: comercial
+  palancas: [MKT-10, MKT-11, VEN-17, ACT-05]
+  si_en_riesgo:
+    - {accion: "Verificar tráfico (sesiones, visitas) y conversión; si cayó el tráfico, revisar inversión y campañas activas; si cayó la conversión, revisar precios y stock de los más vendidos.", responsable: marketing, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Lanzar acción de tráfico (campaña o comunicación a la base de clientes) y revisar cancelaciones del período.", responsable: marketing, plazo: "48 h"}
+
+- id: OBJ-03
+  nombre: Ticket promedio
+  area: ventas
+  metrica: "kpi:VEN-03"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, sucursal, canal, vendedor]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "Ticket real promedio de los últimos 3 meses × (1 + objetivo de mejora, default 3 %)."
+  responsable: comercial
+  palancas: [VEN-04, VEN-18, ACT-05]
+  si_en_riesgo:
+    - {accion: "Revisar descuentos otorgados (VEN-18) y el mix de productos; reforzar venta sugerida/complementaria en caja o en el carrito online.", responsable: comercial, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Definir combos o umbrales de envío gratis/beneficio por monto mínimo y medir su efecto en 2 semanas.", responsable: comercial, plazo: "7 días"}
+
+- id: OBJ-04
+  nombre: Margen bruto comercial
+  area: ventas
+  metrica: "kpi:VEN-08"
+  parametros: {medida: margen_bruto_pct}
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, categoria, canal, sucursal]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "Margen objetivo de la política de precios ponderado por el mix de venta de los últimos 3 meses."
+  responsable: comercial
+  palancas: [ACT-04, VEN-27, VEN-18, ACT-05]
+  si_en_riesgo:
+    - {accion: "Resolver las tareas de remarcación pendientes (ACT-04), empezando por las de mayor impacto.", responsable: comercial, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Congelar descuentos no aprobados, revisar promociones activas con margen negativo (ACT-05 C3) y productos bajo costo (ACT-04 C3).", responsable: gerente_general, plazo: "24 h"}
+
+- id: OBJ-05
+  nombre: Clientes nuevos
+  area: ventas
+  metrica: "kpi:VEN-11"
+  parametros: {medida: nuevos}
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, canal, vendedor]
+  tipo_meta: minimo
+  curva_esperada: {semanal: dias_habiles, mensual: dias_habiles}
+  meta_sugerida: "Promedio de los últimos 6 meses del mismo mes × (1 + crecimiento objetivo)."
+  responsable: comercial
+  palancas: [MKT-08, MKT-15, MKT-16, PRC-CRM]
+  si_en_riesgo:
+    - {accion: "Revisar leads sin contactar y el tiempo al primer contacto (PRC-CRM P2); asignar los pendientes.", responsable: vendedor, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Reforzar campañas de adquisición en el canal con menor CAC y revisar la oferta para primera compra.", responsable: marketing, plazo: "72 h"}
+
+- id: OBJ-06
+  nombre: Cumplimiento de cuota por vendedor
+  area: ventas
+  metrica: "kpi:VEN-07"
+  periodicidades: [semanal, mensual]
+  alcances: [vendedor, equipo]
+  tipo_meta: minimo
+  curva_esperada: {semanal: dias_habiles, mensual: dias_habiles}
+  meta_sugerida: "Cuota cargada en presupuesto (concepto cuota_vendedor); si no hay, participación histórica del vendedor × objetivo de empresa."
+  responsable: vendedor
+  palancas: [VEN-19, VEN-15, VEN-25]
+  si_en_riesgo:
+    - {accion: "Priorizar oportunidades del pipeline con cierre esperado en el período y clientes en riesgo de su cartera.", responsable: vendedor, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Sesión 1 a 1 con el líder para plan de cierre de la semana (oportunidades concretas y visitas).", responsable: comercial, plazo: "72 h"}
+
+# ---- LOGÍSTICA -----------------------------------------------------------------------------
+- id: OBJ-07
+  nombre: Despacho en plazo
+  area: logistica
+  metrica: "kpi:LOG-03"
+  periodicidades: [diario, semanal, mensual]
+  alcances: [empresa, deposito, canal]
+  tipo_meta: minimo
+  curva_esperada: {diario: no_aplica, semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "95 % (97 % para canales con penalización por demora); o P75 histórico si es mayor."
+  responsable: logistica
+  palancas: [LOG-14, LOG-02, PRC-LOG]
+  si_en_riesgo:
+    - {accion: "Priorizar el backlog por fecha límite de despacho y reasignar preparadores a los pedidos por vencer.", responsable: logistica, plazo: "2 h"}
+  si_fuera_de_camino:
+    - {accion: "Habilitar turno/horas extra o colecta adicional y avisar a clientes con despacho demorado.", responsable: gerente_operaciones, plazo: "mismo día"}
+
+- id: OBJ-08
+  nombre: Entregas a tiempo (OTD)
+  area: logistica
+  metrica: "kpi:LOG-06"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, transportista, zona]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "92 % o P75 histórico."
+  responsable: logistica
+  palancas: [LOG-17, LOG-05, LOG-08]
+  si_en_riesgo:
+    - {accion: "Identificar transportista/zona que explica la caída (scorecard LOG-17) y reclamarle con el listado de envíos atrasados.", responsable: logistica, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Redirigir envíos de la zona afectada a un transportista alternativo y ajustar la fecha prometida al cliente para esa zona.", responsable: gerente_operaciones, plazo: "72 h"}
+
+- id: OBJ-09
+  nombre: Backlog atrasado en cero
+  area: logistica
+  metrica: "kpi:LOG-14"
+  parametros: {medida: backlog_atrasado}
+  periodicidades: [diario]
+  alcances: [empresa, deposito]
+  tipo_meta: maximo
+  curva_esperada: {diario: no_aplica}
+  meta_sugerida: "0 pedidos atrasados al cierre del día."
+  responsable: logistica
+  palancas: [LOG-03, PRC-LOG]
+  si_en_riesgo:
+    - {accion: "Despachar primero los pedidos atrasados y los que vencen hoy.", responsable: operario_deposito, plazo: "2 h"}
+  si_fuera_de_camino:
+    - {accion: "Escalar: recursos extra hoy y comunicación proactiva a clientes afectados.", responsable: gerente_operaciones, plazo: "mismo día"}
+
+- id: OBJ-10
+  nombre: Costo logístico sobre venta
+  area: logistica
+  metrica: "kpi:LOG-12"
+  periodicidades: [mensual]
+  alcances: [empresa, canal]
+  tipo_meta: maximo
+  curva_esperada: {mensual: no_aplica}
+  meta_sugerida: "Promedio real de los últimos 3 meses − 0,5 pp."
+  responsable: logistica
+  palancas: [LOG-11, LOG-13, LOG-17]
+  si_en_riesgo:
+    - {accion: "Revisar envíos con subsidio alto (LOG-13) y zonas con costo por envío fuera de rango.", responsable: logistica, plazo: "7 días"}
+  si_fuera_de_camino:
+    - {accion: "Renegociar tarifas o cambiar mix de transportistas por zona; revisar el umbral de envío gratis.", responsable: gerente_operaciones, plazo: "30 días"}
+
+# ---- COBRANZAS / FINANZAS -------------------------------------------------------------------
+- id: OBJ-11
+  nombre: Cobranza del período
+  area: finanzas
+  metrica: "kpi:FIN-15"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, vendedor, cobrador]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "Efectividad de cobranza (CEI) 90 % o P75 histórico."
+  responsable: cobrador
+  palancas: [FIN-10, FIN-11, PRC-COB]
+  si_en_riesgo:
+    - {accion: "Trabajar el listado de documentos vencidos por importe (PRC-COB P3) y registrar promesas de pago.", responsable: cobrador, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Aplicar la escalera de cobranza (aviso formal, suspensión de crédito a 30 días) a los 10 mayores deudores.", responsable: finanzas, plazo: "72 h"}
+
+- id: OBJ-12
+  nombre: Cartera vencida
+  area: finanzas
+  metrica: "kpi:FIN-10"
+  parametros: {medida: pct_vencido}
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, vendedor]
+  tipo_meta: maximo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "15 % o P25 histórico (el mejor cuartil de la empresa)."
+  responsable: finanzas
+  palancas: [FIN-11, FIN-12, PRC-COB]
+  si_en_riesgo:
+    - {accion: "Revisar clientes con documentos a más de 30 días y confirmar que tengan gestión registrada.", responsable: cobrador, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Suspender ventas a cuenta corriente a clientes con más de 60 días de atraso y revisar límites de crédito.", responsable: gerente_general, plazo: "72 h"}
+
+- id: OBJ-13
+  nombre: Documentos gestionados a tiempo
+  area: finanzas
+  metrica: "proceso:PRC-COB.P3.cumplimiento_sla_pct"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, cobrador]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "95 %."
+  responsable: cobrador
+  palancas: [PRC-COB, ACT-07]
+  si_en_riesgo:
+    - {accion: "Resolver las tareas de gestión de cobranza vencidas (ACT-07 sobre PRC-COB).", responsable: cobrador, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Reasignar cartera entre cobradores o reforzar horas de gestión.", responsable: finanzas, plazo: "72 h"}
+
+- id: OBJ-14
+  nombre: Gastos operativos dentro del presupuesto
+  area: finanzas
+  metrica: "kpi:FIN-04"
+  periodicidades: [mensual]
+  alcances: [empresa, centro_costo]
+  tipo_meta: maximo
+  curva_esperada: {mensual: dias_habiles}
+  meta_sugerida: "Presupuesto de gastos del mes; si no hay, promedio real de 3 meses."
+  responsable: finanzas
+  palancas: [FIN-22, FIN-19]
+  si_en_riesgo:
+    - {accion: "Identificar las cuentas que explican el desvío y congelar gastos no comprometidos de esas cuentas.", responsable: finanzas, plazo: "72 h"}
+  si_fuera_de_camino:
+    - {accion: "Aprobación previa obligatoria para nuevos gastos del mes y revisión de contratos recurrentes.", responsable: gerente_general, plazo: "7 días"}
+
+- id: OBJ-15
+  nombre: Caja mínima
+  area: finanzas
+  metrica: "kpi:FIN-07"
+  periodicidades: [diario]
+  alcances: [empresa]
+  tipo_meta: minimo
+  curva_esperada: {diario: no_aplica}
+  meta_sugerida: "Pagos promedio de 15 días (configurable)."
+  responsable: finanzas
+  palancas: [FIN-16, FIN-13, OBJ-11]
+  si_en_riesgo:
+    - {accion: "Revisar la proyección de caja a 30 días y reprogramar pagos no críticos.", responsable: finanzas, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Acelerar cobranza de los mayores saldos vencidos y evaluar financiación de corto plazo.", responsable: gerente_general, plazo: "48 h"}
+
+# ---- INVENTARIO / COMPRAS -------------------------------------------------------------------
+- id: OBJ-16
+  nombre: Quiebre de stock
+  area: inventario
+  metrica: "kpi:INV-06"
+  parametros: {medida: tasa_quiebre_ponderada}
+  periodicidades: [diario, semanal]
+  alcances: [empresa, sucursal, categoria]
+  tipo_meta: maximo
+  curva_esperada: {diario: no_aplica, semanal: no_aplica}
+  meta_sugerida: "3 % ponderado por venta (1 % para clase A)."
+  responsable: comprador
+  palancas: [ACT-02, ACT-01, INV-15]
+  si_en_riesgo:
+    - {accion: "Emitir hoy los pedidos urgentes de ACT-02 C1 y resolver quiebres ocultos (ACT-01).", responsable: comprador, plazo: "mismo día"}
+  si_fuera_de_camino:
+    - {accion: "Revisar proveedores con peor cumplimiento (INV-16) y activar transferencias entre sucursales.", responsable: gerente_operaciones, plazo: "48 h"}
+
+- id: OBJ-17
+  nombre: Días de inventario
+  area: inventario
+  metrica: "kpi:INV-04"
+  periodicidades: [mensual]
+  alcances: [empresa, categoria]
+  tipo_meta: maximo
+  curva_esperada: {mensual: no_aplica}
+  meta_sugerida: "Objetivo de cobertura por categoría de la política de producto ponderado por mix."
+  responsable: comprador
+  palancas: [ACT-03, INV-09, INV-10]
+  si_en_riesgo:
+    - {accion: "Reducir compras de productos en sobrestock (ACT-03 C2) en los próximos pedidos.", responsable: comprador, plazo: "próximo pedido"}
+  si_fuera_de_camino:
+    - {accion: "Plan de liquidación de inmovilizado (ACT-03 C1) y revisión de mínimos de compra con proveedores.", responsable: comercial, plazo: "14 días"}
+
+- id: OBJ-18
+  nombre: Pedidos a proveedores en tiempo
+  area: inventario
+  metrica: "proceso:PRC-COM.P4.cumplimiento_sla_pct"
+  periodicidades: [mensual]
+  alcances: [empresa, proveedor]
+  tipo_meta: minimo
+  curva_esperada: {mensual: no_aplica}
+  meta_sugerida: "90 %."
+  responsable: comprador
+  palancas: [INV-16, INV-17, PRC-COM]
+  si_en_riesgo:
+    - {accion: "Reclamar las órdenes atrasadas y actualizar las fechas prometidas en el sistema.", responsable: comprador, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Aumentar el lead time/stock de seguridad de los proveedores incumplidores y evaluar proveedores alternativos.", responsable: comprador, plazo: "30 días"}
+
+- id: OBJ-19
+  nombre: Mercadería vencida o en riesgo
+  area: inventario
+  metrica: "kpi:INV-20"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, sucursal, categoria]
+  tipo_meta: maximo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "≤ 0,5 % del valor del inventario."
+  responsable: encargado_sucursal
+  palancas: [ACT-06, ACT-02]
+  si_en_riesgo:
+    - {accion: "Ejecutar las tareas de vencimiento próximas (ACT-06 C2) hoy.", responsable: encargado_sucursal, plazo: "24 h"}
+  si_fuera_de_camino:
+    - {accion: "Aplicar el tope por vida útil a todos los perecederos del pedido sugerido y revisar lotes que llegan con poca vida.", responsable: comprador, plazo: "7 días"}
+
+# ---- MARKETING ------------------------------------------------------------------------------
+- id: OBJ-20
+  nombre: Eficiencia de marketing (MER)
+  area: marketing
+  metrica: "kpi:MKT-07"
+  parametros: {medida: mer}
+  periodicidades: [semanal, mensual]
+  alcances: [empresa]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "P50 de los últimos 6 meses o el mínimo que garantiza contribución positiva (1 / (margen de contribución % − costos variables))."
+  responsable: marketing
+  palancas: [MKT-06, MKT-19, MKT-20]
+  si_en_riesgo:
+    - {accion: "Pausar o reducir campañas con ROAS real por debajo del mínimo y anuncios fatigados (MKT-20).", responsable: marketing, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Reasignar presupuesto al canal con mejor ROAS real y revisar la oferta/landing de las campañas principales.", responsable: marketing, plazo: "72 h"}
+
+- id: OBJ-21
+  nombre: Costo de adquisición (CAC)
+  area: marketing
+  metrica: "kpi:MKT-08"
+  periodicidades: [mensual]
+  alcances: [empresa, canal_marketing]
+  tipo_meta: maximo
+  curva_esperada: {mensual: no_aplica}
+  meta_sugerida: "LTV 12 m / 3."
+  responsable: marketing
+  palancas: [MKT-05, MKT-09, OBJ-05]
+  si_en_riesgo:
+    - {accion: "Revisar campañas de adquisición con CPA creciente y ajustar segmentación/puja.", responsable: marketing, plazo: "72 h"}
+  si_fuera_de_camino:
+    - {accion: "Reducir inversión de adquisición hasta recuperar eficiencia y reforzar canales propios (email, orgánico).", responsable: marketing, plazo: "7 días"}
+
+# ---- PROCESOS Y EJECUCIÓN ------------------------------------------------------------------
+- id: OBJ-22
+  nombre: Pedidos facturados en plazo
+  area: ventas
+  metrica: "proceso:PRC-VEN.P3.cumplimiento_sla_pct"
+  periodicidades: [diario, semanal]
+  alcances: [empresa, sucursal]
+  tipo_meta: minimo
+  curva_esperada: {diario: no_aplica, semanal: no_aplica}
+  meta_sugerida: "98 %."
+  responsable: administrativo
+  palancas: [PRC-VEN, ACT-07]
+  si_en_riesgo:
+    - {accion: "Emitir las facturas pendientes vencidas (listado de ACT-07 sobre PRC-VEN P3).", responsable: administrativo, plazo: "mismo día"}
+  si_fuera_de_camino:
+    - {accion: "Revisar la causa (errores de datos fiscales, integración caída) con el operador de la plataforma y el sistema de facturación.", responsable: finanzas, plazo: "24 h"}
+
+- id: OBJ-23
+  nombre: Tiempo de ciclo de venta a entrega
+  area: logistica
+  metrica: "proceso:PRC-VEN.tiempo_ciclo_p90"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, canal]
+  tipo_meta: maximo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "P90 del último trimestre − 10 %."
+  responsable: gerente_operaciones
+  palancas: [PRC-VEN, PRC-LOG, LOG-04]
+  si_en_riesgo:
+    - {accion: "Ver en el tablero de procesos qué paso concentra la demora (mayor aumento de tiempo_paso_p50) y atacar ese paso.", responsable: gerente_operaciones, plazo: "72 h"}
+  si_fuera_de_camino:
+    - {accion: "Revisión del proceso con los responsables de cada paso; definir cambios y medir 2 semanas.", responsable: gerente_general, plazo: "7 días"}
+
+- id: OBJ-24
+  nombre: Tareas resueltas en plazo
+  area: gestion
+  metrica: "actividad:todas.tareas_resueltas_en_plazo_pct"
+  periodicidades: [semanal, mensual]
+  alcances: [empresa, sucursal, persona]
+  tipo_meta: minimo
+  curva_esperada: {semanal: no_aplica, mensual: no_aplica}
+  meta_sugerida: "85 %."
+  responsable: gerente_operaciones
+  palancas: [ACT-01, ACT-02, ACT-03, ACT-04, ACT-05, ACT-06, ACT-07]
+  si_en_riesgo:
+    - {accion: "Revisar tareas vencidas por responsable y reasignar las de mayor impacto.", responsable: gerente_operaciones, plazo: "48 h"}
+  si_fuera_de_camino:
+    - {accion: "Revisar la carga de tareas por persona (tope diario) y la precisión de las actividades; ajustar parámetros si hay muchas falsas alarmas.", responsable: gerente_general, plazo: "7 días"}

@@ -1,0 +1,45 @@
+id: OBJ-01
+nombre: Venta neta
+area: ventas
+metrica: kpi:VEN-01
+periodicidades:
+- diario
+- semanal
+- mensual
+alcances:
+- empresa
+- sucursal
+- canal
+- vendedor
+- categoria
+tipo_meta: minimo
+curva_esperada:
+  diario: intradia_historica
+  semanal: estacionalidad_historica
+  mensual: estacionalidad_historica
+meta_sugerida: 'Venta del mismo período del año anterior en términos reales × (1 + crecimiento real objetivo del tenant, default 5 %), llevada
+  a nominal con la inflación esperada; alternativa: presupuesto cargado.'
+responsable: comercial
+palancas:
+- VEN-24
+- VEN-15
+- INV-06
+- ACT-01
+- ACT-02
+- MKT-07
+si_en_riesgo:
+- accion: Revisar la explicación automática de la brecha (canal, sucursal, categoría con mayor caída) y confirmar si es precio, tráfico o falta
+    de stock.
+  responsable: comercial
+  plazo: 24 h
+- accion: Resolver primero las tareas abiertas de quiebre oculto y reposición urgente de productos clase A (ACT-01, ACT-02 C1).
+  responsable: encargado_sucursal
+  plazo: 24 h
+si_fuera_de_camino:
+- accion: 'Armar plan de recuperación: contactar clientes recurrentes en riesgo (VEN-15), activar una promoción táctica con margen positivo (ver
+    histórico ACT-05) y reforzar la inversión en el canal con mejor ROAS real.'
+  responsable: comercial
+  plazo: 48 h
+- accion: Reunión de seguimiento con responsables de sucursal/canal y revisión diaria hasta volver a amarillo.
+  responsable: gerente_general
+  plazo: 72 h
