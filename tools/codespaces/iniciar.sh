@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Se ejecuta cada vez que abrís el Codespace: levanta la plataforma en el puerto 8000.
 # Codespaces la abre en una pestaña nueva; el link es privado (solo tu cuenta de GitHub).
-cd "$(dirname "$0")/../../backend"
+# Todo va dentro de una función: bash la lee entera antes de ejecutarla, así la actualización
+# de este mismo archivo (git reset) no lo corta a la mitad.
+principal() {
+cd "$(dirname "$0")/../../backend" || exit 1
 # Trae la última versión de la plataforma antes de arrancar (no toca .env ni los datos, que no se versionan).
 echo "Buscando actualizaciones…"
 if git fetch -q origin main; then
@@ -25,3 +28,6 @@ grep -q "^CLAVE_U5=" .env || printf "\n# Claves del Centro de pruebas (cambialas
 python -m app.erp.demo >/dev/null
 echo "Abriendo la plataforma… si no se abre sola, andá a la pestaña PORTS y abrí el puerto 8000."
 exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+}
+principal "$@"
+exit

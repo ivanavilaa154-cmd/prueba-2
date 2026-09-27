@@ -260,3 +260,25 @@ def test_estado_general_dice_que_falta(base_demo_config):
     assert not e["listo"] and len(e["criterios"]) == 6
     assert all(c["falta"] for c in e["criterios"] if not c["ok"])
     assert {c["pantalla"] for c in e["criterios"]} == {"cuadratura", "integridad", "automaticas", "manuales"}
+
+
+def test_claves_demo_se_agregan_a_un_env_anterior(tmp_path, monkeypatch):
+    from app import config
+    from app.pruebas import sesion
+    (tmp_path / ".env").write_text("ERP_URL=sqlite:///x.db")   # sin salto de línea final, como un .env viejo
+    monkeypatch.setattr(config, "BACKEND", tmp_path)
+    for k in sesion.CLAVES_DEMO:
+        monkeypatch.delenv(k, raising=False)
+    assert sesion.asegurar_claves_demo() == ["CLAVE_U4", "CLAVE_U5"]
+    texto = (tmp_path / ".env").read_text()
+    assert "ERP_URL=sqlite:///x.db\n" in texto and "CLAVE_U5=tester-demo\n" in texto
+    assert sesion.verificar_clave("u5", " tester-demo ").rol == "tester"
+    assert sesion.asegurar_claves_demo() == []                   # no duplica ni pisa
+
+
+def test_ingreso_sin_clave_configurada_lo_explica(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    monkeypatch.delenv("CLAVE_U5", raising=False)
+    r = TestClient(app).post("/pruebas/ingresar", data={"usuario_id": "u5", "clave": "tester-demo"}, follow_redirects=False)
+    assert r.status_code == 401 and "CLAVE_U5" in r.text

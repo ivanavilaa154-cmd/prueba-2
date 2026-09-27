@@ -85,6 +85,9 @@ async def ingresar(request: Request):
         import time
         time.sleep(1)
         almacen.auditar(usuario_id or "?", "ingreso_fallido", "centro_de_pruebas")
+        if usuario_id and not sesion.clave_configurada(usuario_id):
+            return _pagina_ingreso(f"Este usuario todavía no tiene clave: agregá CLAVE_{usuario_id.upper()}=… en backend/.env "
+                                   "y reiniciá la plataforma.", 401)
         return _pagina_ingreso("Usuario o clave incorrectos, o el usuario no es operador ni tester.", 401)
     almacen.auditar(u, "ingreso", "centro_de_pruebas")
     r = RedirectResponse("/pruebas", status_code=303)

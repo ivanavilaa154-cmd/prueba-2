@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -57,6 +58,11 @@ def _usar_odoo(entrada: dict) -> None:
 
 @asynccontextmanager
 async def _ciclo_de_vida(_app):
+    # Un .env de una versión anterior no trae las claves del Centro de pruebas: se agregan las de ejemplo.
+    if "pytest" not in sys.modules:
+        agregadas = pruebas_sesion.asegurar_claves_demo()
+        if agregadas:
+            print(f"Centro de pruebas: se agregaron las claves de ejemplo {', '.join(agregadas)} a backend/.env (cambialas antes de publicar).")
     # Las bases locales creadas con una versión anterior se completan con las tablas y columnas nuevas.
     from .erp import modelo
     for url in fuente.opciones().values():

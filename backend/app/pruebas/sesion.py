@@ -53,12 +53,35 @@ def leer(valor: str | None) -> str | None:
     return usuario_id
 
 
+CLAVES_DEMO = {"CLAVE_U4": "operador-demo", "CLAVE_U5": "tester-demo"}
+
+
+def asegurar_claves_demo() -> list[str]:
+    """Si backend/.env no trae las claves del Centro de pruebas (un .env de una versión anterior),
+    agrega las de ejemplo y las activa. No pisa claves que ya existan."""
+    agregadas = [k for k in CLAVES_DEMO if not os.getenv(k)]
+    if not agregadas:
+        return []
+    archivo = config.BACKEND / ".env"
+    previo = archivo.read_text(encoding="utf-8") if archivo.exists() else ""
+    lineas = "".join(f"{k}={CLAVES_DEMO[k]}\n" for k in agregadas)
+    separador = "" if not previo or previo.endswith("\n") else "\n"
+    archivo.write_text(previo + separador + "# Claves del Centro de pruebas (cambialas antes de publicar)\n" + lineas, encoding="utf-8")
+    for k in agregadas:
+        os.environ[k] = CLAVES_DEMO[k]
+    return agregadas
+
+
+def clave_configurada(usuario_id: str) -> bool:
+    return bool(os.getenv(f"CLAVE_{usuario_id.upper()}", "").strip())
+
+
 def verificar_clave(usuario_id: str, clave: str) -> Usuario | None:
     datos = config.roles()["usuarios"].get(usuario_id)
-    esperada = os.getenv(f"CLAVE_{usuario_id.upper()}", "")
+    esperada = os.getenv(f"CLAVE_{usuario_id.upper()}", "").strip()
     if not datos or datos.get("rol") not in ROLES or not esperada:
         return None
-    if not hmac.compare_digest(clave.encode(), esperada.encode()):
+    if not hmac.compare_digest(clave.strip().encode(), esperada.encode()):
         return None
     return obtener_usuario(usuario_id)
 
