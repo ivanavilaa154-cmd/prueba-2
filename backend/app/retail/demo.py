@@ -45,9 +45,11 @@ CASOS = {
     "vence_pronto": {"subcategoria": "Yogures", "ubicacion": "Salta Norte", "dias": 6, "exceso": 60},
     "aumento_sin_remarcar": {"proveedor": "Lácteos del Valle", "aumento": 0.12, "hace_dias": 6},
     "cajero_anomalo": {"ubicacion": "Salta Norte", "cajero": "Cajero N3"},
+    "sobreventa": {"productos": ["P0001", "P0004"], "exceso": 6},
     "precio_distinto": {"productos": ["P0005", "P0006"], "ubicacion": "San Salvador de Jujuy", "recargo": 0.12, "hace_dias": 20},
 }
 
+ATRASO = {"Golosinas del Norte": 0.3, "Limpieza Total": 0.2}      # probabilidad de llegar un día tarde; el resto 6 %
 TICKETS_BASE = {"Salta Centro": 190, "Salta Norte": 150, "San Salvador de Jujuy": 120}
 PESO_CATEGORIA = {"Bebidas": 1.5, "Almacén": 1.2, "Lácteos": 1.6, "Fiambrería": 1.0, "Limpieza": 0.6, "Perfumería": 0.45,
                   "Golosinas": 1.1, "Cigarrillos": 1.4, "Congelados": 0.55, "Panadería y rotisería": 1.8}
@@ -407,11 +409,13 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                     continue
                 nonlocal_ids["oc"] += 1
                 num = nonlocal_ids["oc"]
-                llegada = d + timedelta(days=demora)
+                esperada = d + timedelta(days=demora)
+                # Algunos proveedores llegan un día tarde de vez en cuando (puntualidad en el análisis de proveedores).
+                llegada = esperada + timedelta(days=1 if rng.random() < ATRASO.get(nombre, 0.06) else 0)
                 total = sum(c * (costo_en(p, d) or 0) for p, c in lineas)
                 creada = datetime.combine(d, time(9, 30), ZONA)
                 f_oc.append((num, org_id, f"OC-{num:06d}", prov["id"], ubic[s], "recibida" if llegada <= hoy else "enviada", "manual",
-                             f"{total:.2f}", llegada, "manual", datetime.combine(d, time(10), ZONA), datetime.combine(d, time(10, 30), ZONA),
+                             f"{total:.2f}", esperada, "manual", datetime.combine(d, time(10), ZONA), datetime.combine(d, time(10, 30), ZONA),
                              creada, datetime.combine(llegada, time(9), ZONA) if llegada <= hoy else creada))
                 for p, c in lineas:
                     f_oc_l.append((org_id, num, p.id, ubic[s], c, c, c // p.bulto, None if costo_en(p, d) is None else f"{costo_en(p, d):.4f}"))
@@ -615,7 +619,8 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                             f_tickets.append((t_id, org_id, ubic[s], canales["ecommerce"], plataformas[plat], plat, None, fh, None,
                                               f"{total:.2f}", "confirmado", f"{plat[:2].upper()}{t_id:08d}", plat))
                             f_pagos.append((org_id, t_id, ubic[s], "plataforma", f"{total:.2f}", 1, f"{total * comision:.2f}", 14))
-                            envio = 3500.0 if plat == "mercadolibre" and total < 35000 and rng.random() < 0.6 else 0.0
+                            # Envío gratis de Mercado Libre (desde $ 35.000): el costo lo paga el vendedor; por debajo lo paga el comprador.
+                            envio = 3500.0 if plat == "mercadolibre" and total >= 35000 else 0.0
                             f_costos_canal.append((org_id, plataformas[plat], t_id, d, f"{total * comision:.2f}", f"{envio:.2f}", "0.00"))
                     if d.day == 1:
                         for plat, publicidad in (("tiendanube", 60000), ("mercadolibre", 90000)):
@@ -741,9 +746,13 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
             compras90 = sum(float(f[7]) for f in f_oc if f[12].date() >= desde90)
             presupuesto = round(compras90 / 3 * 1.10, -3) or 1000000
             cur.execute("INSERT INTO presupuestos_compra (org_id, mes, monto) VALUES (%s,%s,%s)", (org_id, _mes(hoy), presupuesto))
+            # Impacto: para la demo, el comercio «se conectó» hace unos tres meses (la línea base son esas 4 semanas).
+            cur.execute("INSERT INTO parametros (org_id, clave, valor) VALUES (%s,'linea_base',%s)",
+                        (org_id, json.dumps({"desde": (hoy - timedelta(days=90)).isoformat(), "hasta": (hoy - timedelta(days=63)).isoformat()})))
             cur.execute("INSERT INTO parametros (org_id, clave, valor) VALUES (%s,'comisiones_medios',%s)",
                         (org_id, json.dumps({m[0]: {"comision": m[2], "acreditacion_dias": m[3]} for m in MEDIOS})))
         _fiado_y_metas(conn, org_id, hoy, rng, sucursales, ubic)
+        _online(conn, org_id, hoy, rng, plataformas, ubic)
         with conn.cursor() as cur:
             # secuencias
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
@@ -790,6 +799,9 @@ def _fiado_y_metas(conn, org_id: int, hoy: date, rng: random.Random, sucursales:
     Metas del mes: ventas y ganancia por sucursal = lo del mes anterior por día × días del mes × 1,05."""
     ids = {}
     with conn.cursor() as cur:
+        # Recién cargadas con COPY no tienen estadísticas: sin esto el planificador elige planes de minutos.
+        for tabla in ("tickets", "tickets_lineas", "pagos", "stock_actual"):
+            cur.execute(f"ANALYZE {tabla}")
         for i, nombre in enumerate(CLIENTES_FIADO):
             ids[nombre] = db.fila(conn, "INSERT INTO clientes (org_id, identificador, nombre, alta, consentimiento) VALUES (%s,%s,%s,%s,true) RETURNING id",
                                   (org_id, f"CC-{i + 1:03d}", nombre, hoy - timedelta(days=400)))["id"]
@@ -820,6 +832,61 @@ def _fiado_y_metas(conn, org_id: int, hoy: date, rng: random.Random, sucursales:
                             (org_id, mes, f["ubicacion_id"], metrica, round(valor / dias_ant * dias_mes * Decimal("1.05"), -3)))
 
 
+CATEGORIAS_ONLINE = ("Bebidas", "Almacén", "Perfumería", "Limpieza")
+
+
+def _online(conn, org_id: int, hoy: date, rng: random.Random, plataformas: dict, ubic: dict) -> None:
+    """Estado de los pedidos online (pendientes de hoy, despachados, entregados, algunos cancelados, devueltos o con reclamo),
+    stock reservado por lo no despachado y publicaciones en Tiendanube y Mercado Libre: se publica el stock de Salta Centro,
+    salvo dos productos con más stock publicado que el disponible (sobreventa) y algunos que no se publicaron."""
+    despacho = ubic["Salta Centro"]
+    ids_plat = {plataformas[t]: t for t in ("tiendanube", "mercadolibre")}
+    pedidos, anular = [], []
+    for t in db.filas(conn, "SELECT id, fecha_hora, plataforma_id FROM tickets WHERE org_id=%s AND plataforma_id = ANY(%s) ORDER BY id",
+                      (org_id, list(ids_plat))):
+        dia = t["fecha_hora"].astimezone(ZONA).date()
+        ml = ids_plat[t["plataforma_id"]] == "mercadolibre"
+        r = rng.random()
+        if dia == hoy and r < 0.7:
+            estado = "pendiente"
+        elif r < 0.03:
+            estado = "cancelado"
+            anular.append(t["id"])
+        elif r < 0.05:
+            estado = "devuelto"
+        else:
+            estado = "despachado" if dia >= hoy - timedelta(days=2) else "entregado"
+        horas = rng.uniform(2, 20) if ml else rng.uniform(4, 40)
+        pedidos.append((t["id"], org_id, despacho, t["plataforma_id"], estado, t["fecha_hora"],
+                        None if estado in ("pendiente", "cancelado") else t["fecha_hora"] + timedelta(hours=horas),
+                        rng.random() < (0.05 if ml else 0.02), "No llegó a tiempo" if estado == "devuelto" else None))
+    _copy(conn, "pedidos_online", ["ticket_id", "org_id", "ubicacion_id", "plataforma_id", "estado", "creado_at", "despachado_at", "reclamo", "motivo"], pedidos)
+    with conn.cursor() as cur:
+        if anular:
+            cur.execute("UPDATE tickets SET estado='anulado' WHERE id = ANY(%s)", (anular,))
+        cur.execute("""UPDATE stock_actual s SET reservado = x.q FROM (
+                           SELECT l.producto_id, sum(l.cantidad) q FROM pedidos_online po JOIN tickets_lineas l ON l.ticket_id = po.ticket_id
+                           WHERE po.estado = 'pendiente' AND po.org_id = %s GROUP BY 1) x
+                       WHERE s.producto_id = x.producto_id AND s.ubicacion_id = %s""", (org_id, despacho))
+    stock = {f["producto_id"]: f for f in db.filas(conn, """
+        SELECT p.id producto_id, p.codigo_interno, p.nombre, coalesce(s.cantidad - s.reservado, 0) disponible, c.nombre categoria,
+               (SELECT precio FROM precios x WHERE x.producto_id = p.id AND x.canal_id IS NOT NULL AND x.hasta IS NULL LIMIT 1) precio_online,
+               (SELECT precio FROM precios x WHERE x.producto_id = p.id AND x.canal_id IS NULL AND x.ubicacion_id IS NULL AND x.hasta IS NULL LIMIT 1) precio
+        FROM productos p LEFT JOIN categorias sc ON sc.id = p.categoria_id LEFT JOIN categorias c ON c.id = sc.padre_id
+        LEFT JOIN stock_actual s ON s.producto_id = p.id AND s.ubicacion_id = %s WHERE p.org_id = %s""", (despacho, org_id))}
+    caso = CASOS["sobreventa"]
+    publicaciones = []
+    for n, (pid, f) in enumerate(sorted(stock.items())):
+        if f["categoria"] not in CATEGORIAS_ONLINE or n % 9 == 4:      # algunos no se publicaron
+            if f["codigo_interno"] not in caso["productos"]:
+                continue
+        publicado = max(0, float(f["disponible"])) + (caso["exceso"] if f["codigo_interno"] in caso["productos"] else 0)
+        for tipo in ("tiendanube", "mercadolibre"):
+            publicaciones.append((org_id, plataformas[tipo], pid, f"{tipo[:2].upper()}-{pid}", f["codigo_interno"], f["nombre"],
+                                  f["precio_online"] or f["precio"], publicado, True))
+    _copy(conn, "publicaciones", ["org_id", "plataforma_id", "producto_id", "id_externo", "sku", "titulo", "precio", "stock_publicado", "activa"], publicaciones)
+
+
 def borrar(org_id: int) -> None:
     """Borra los datos operativos de la empresa demo (no toca usuarios, sucursales ni configuración de acceso)."""
     tablas = ["alertas", "emails", "metricas_producto_actual", "agg_ubicacion_hora", "agg_producto_ubicacion_dia", "stock_diario",
@@ -829,7 +896,7 @@ def borrar(org_id: int) -> None:
               "ordenes_compra", "listas_precios_proveedor_lineas", "listas_precios_proveedor", "precios", "promociones",
               "margenes_objetivo", "reglas_redondeo", "reglas_reposicion", "config_automatizacion", "config_abastecimiento",
               "presupuestos_compra", "parametros", "metas", "alias_producto", "producto_proveedores", "documentos_leidos",
-              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes"]
+              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes", "pedidos_online", "publicaciones"]
     with db.transaccion(superadmin=True, org_id=org_id) as conn, conn.cursor() as cur:
         for t in tablas:
             cur.execute(f"DELETE FROM {t} WHERE org_id=%s", (org_id,))

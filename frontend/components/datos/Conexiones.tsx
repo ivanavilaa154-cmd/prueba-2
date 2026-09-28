@@ -6,7 +6,7 @@ import { fechaHora, numero } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
 import { Aviso, Boton, Campo, Entrada, Etiqueta, Selector, Tabla, Tarjeta } from "@/components/ui";
 
-type Conexion = { id: number; nombre: string; activa: boolean; config: { url: string; base: string; usuario: string; almacenes?: Record<string, number> };
+type Conexion = { id: number; tipo: string; nombre: string; activa: boolean; config: { url: string; base: string; usuario: string; almacenes?: Record<string, number>; store_id?: string };
   ultima_sincronizacion: string | null; sincronizado_hasta: string | null; estado_sincronizacion: string | null; error_sincronizacion: string | null; tiene_clave: boolean };
 type Deteccion = { version: string; almacenes: { id: number; nombre: string; codigo: string | null; ubicacion_sugerida: number | null }[];
   cajas: { id: number; nombre: string; almacen_id: number | null }[]; conteos: { tickets: number; productos: number } };
@@ -17,6 +17,65 @@ const ESTADOS: Record<string, { texto: string; tono: "ok" | "alerta" | "peligro"
   error: { texto: "✕ Con error", tono: "peligro" },
   sin_probar: { texto: "Sin sincronizar", tono: "gris" },
 };
+
+function TiendaOnline({ alGuardar }: { alGuardar: (texto: string) => void }) {
+  const { yo } = useSesion();
+  const [f, setF] = useState({ tipo: "mercadolibre", nombre: "", token: "", store_id: "", comision: "", ubicacion_despacho_id: yo?.ubicaciones[0]?.id ?? 0 });
+  const [prueba, setPrueba] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cuerpo = () => ({ tipo: f.tipo, nombre: f.nombre || null, token: f.token || null, store_id: f.store_id || null,
+    comision_pct: f.comision ? Number(f.comision.replace(",", ".")) / 100 : null, ubicacion_despacho_id: f.ubicacion_despacho_id });
+  async function probar() {
+    setError(null);
+    try {
+      const r = await api<{ nombre: string }>("/conexiones/tienda/probar", { metodo: "POST", cuerpo: cuerpo() });
+      setPrueba(`Conectado a la cuenta «${r.nombre}».`);
+    } catch (e) {
+      setPrueba(null);
+      setError(e instanceof Error ? e.message : "No se pudo conectar.");
+    }
+  }
+  async function guardar() {
+    try {
+      const r = await api<{ id: number }>("/conexiones/tienda", { metodo: "POST", cuerpo: cuerpo() });
+      await api(`/conexiones/${r.id}/sincronizar`, { metodo: "POST" });
+      setF({ ...f, token: "", store_id: "", nombre: "", comision: "" });
+      setPrueba(null);
+      alGuardar("Tienda conectada. Empezó la sincronización de pedidos y publicaciones.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    }
+  }
+  const tn = f.tipo === "tiendanube";
+  return (
+    <Tarjeta titulo="Conectar una tienda online">
+      <p className="mb-3 text-sm text-suave">
+        {tn ? "En Tiendanube: Mis aplicaciones → la app de Retail IA te da el número de tienda y el token de acceso."
+          : "En Mercado Libre: autorizá la app de Retail IA y pegá acá el token de acceso que te da."} Se guarda cifrado; solo se leen pedidos y publicaciones.
+      </p>
+      {error && <div className="mb-3"><Aviso tipo="error">{error}</Aviso></div>}
+      {prueba && <div className="mb-3"><Aviso tipo="ok">✓ {prueba}</Aviso></div>}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Campo etiqueta="Plataforma">
+          <Selector value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}><option value="mercadolibre">Mercado Libre</option><option value="tiendanube">Tiendanube</option></Selector>
+        </Campo>
+        <Campo etiqueta="Sucursal que despacha">
+          <Selector value={f.ubicacion_despacho_id} onChange={(e) => setF({ ...f, ubicacion_despacho_id: Number(e.target.value) })}>
+            {yo?.ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+          </Selector>
+        </Campo>
+        <Campo etiqueta="Token de acceso"><Entrada type="password" autoComplete="new-password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} /></Campo>
+        {tn && <Campo etiqueta="Número de tienda"><Entrada inputMode="numeric" value={f.store_id} onChange={(e) => setF({ ...f, store_id: e.target.value })} /></Campo>}
+        {tn && <Campo etiqueta="Comisión por venta de tu plan (%)"><Entrada inputMode="decimal" value={f.comision} onChange={(e) => setF({ ...f, comision: e.target.value })} placeholder="Ej.: 2" /></Campo>}
+        <Campo etiqueta="Nombre (opcional)"><Entrada value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder={tn ? "Tiendanube" : "Mercado Libre"} /></Campo>
+      </div>
+      <div className="mt-4 flex gap-2">
+        <Boton variante="secundario" disabled={!f.token || (tn && !f.store_id)} onClick={probar}>Probar</Boton>
+        <Boton disabled={!prueba} onClick={guardar}>Guardar y sincronizar</Boton>
+      </div>
+    </Tarjeta>
+  );
+}
 
 export function Conexiones() {
   const { yo } = useSesion();
@@ -90,20 +149,20 @@ export function Conexiones() {
     <div className="grid grid-cols-1 gap-4">
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
       {activas.length > 0 && (
-        <Tarjeta titulo="Cajas conectadas">
+        <Tarjeta titulo="Conexiones activas">
           <Tabla columnas={["Conexión", "Estado", "Última sincronización", ""]}>
             {activas.map((c) => {
               const e = ESTADOS[c.estado_sincronizacion ?? "sin_probar"] ?? ESTADOS.sin_probar;
               return (
                 <tr key={c.id} className="align-top">
-                  <td>{c.nombre}<div className="text-xs text-suave">{c.config.url}</div></td>
+                  <td>{c.nombre}<div className="text-xs text-suave">{c.tipo === "odoo" ? c.config.url : c.tipo === "tiendanube" ? `Tiendanube · tienda ${c.config.store_id ?? ""}` : "Mercado Libre"}</div></td>
                   <td><Etiqueta tono={e.tono}>{e.texto}</Etiqueta>{c.error_sincronizacion && <div className="mt-1 max-w-xs text-xs text-peligro">{c.error_sincronizacion}</div>}</td>
                   <td className="whitespace-nowrap">{c.ultima_sincronizacion ? fechaHora(c.ultima_sincronizacion) : "—"}
                     {c.sincronizado_hasta && <div className="text-xs text-suave">tickets hasta {fechaHora(c.sincronizado_hasta)}</div>}</td>
                   <td>
                     <div className="flex flex-wrap gap-2">
                       <Boton variante="secundario" disabled={c.estado_sincronizacion === "sincronizando"} onClick={() => sincronizar(c.id)}>Sincronizar ahora</Boton>
-                      <Boton variante="fantasma" onClick={() => editar(c)}>Editar</Boton>
+                      {c.tipo === "odoo" && <Boton variante="fantasma" onClick={() => editar(c)}>Editar</Boton>}
                       <Boton variante="peligro" onClick={() => desconectar(c.id)}>Desconectar</Boton>
                     </div>
                   </td>
@@ -155,6 +214,7 @@ export function Conexiones() {
           </div>
         )}
       </Tarjeta>
+      <TiendaOnline alGuardar={(texto) => { setMensaje({ tipo: "ok", texto }); cargar(); }} />
     </div>
   );
 }

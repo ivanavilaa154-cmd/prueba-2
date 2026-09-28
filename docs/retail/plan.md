@@ -27,3 +27,13 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
 ## Demo
 
 `python -m app.retail.demo` (o sola al arrancar si la empresa demo no tiene datos). Se regenera cada día que cambia la fecha para que «hoy» siempre tenga datos; lo que se haga sobre la demo se pierde al regenerarla. Casos conocidos para las pruebas: `demo.CASOS`.
+
+## Fase 2 (28/09/2026)
+
+- [x] Plata parada, vencimientos y ofertas (cartel PDF y seguimiento), merma que ajusta el pedido de perecederos (sección 9).
+- [x] Sucursales: comparativos, matriz producto × sucursal, precios distintos, faltantes sospechosos, ajustes auditados (sección 8).
+- [x] Rentabilidad del inventario (10.6), medios de pago y fiado (10.8), proveedores (10.11), metas y proyección (10.13).
+- [x] Canales: ganancia real por canal, stock unificado con reservas, sobreventa, métricas de e-commerce (sección 12).
+- [x] Conectores de Tiendanube y Mercado Libre, solo lectura (5.4).
+- [x] Copiloto con herramientas (13.2) y medición de impacto (13.4).
+- [x] Avisos nuevos: sobreventa online, meta en riesgo, deuda vencida de fiado.

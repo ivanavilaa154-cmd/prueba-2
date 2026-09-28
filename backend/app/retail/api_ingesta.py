@@ -12,7 +12,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import catalogo, db, importar, permisos, sesiones
 from .rutas import respuesta
@@ -355,7 +355,8 @@ def conexiones(ctx: db.Contexto = Depends(sesiones.contexto)):
     with db.transaccion(ctx) as conn:
         filas = db.filas(conn, """SELECT id, tipo, nombre, activa, config, ultima_sincronizacion, sincronizado_hasta, estado_sincronizacion,
                                          error_sincronizacion, credenciales_cifradas IS NOT NULL AS tiene_clave
-                                  FROM plataformas WHERE tipo='odoo' ORDER BY id""")
+                                  FROM plataformas WHERE tipo='odoo' OR (tipo IN ('tiendanube', 'mercadolibre') AND credenciales_cifradas IS NOT NULL)
+                                  ORDER BY id""")
         return respuesta(filas)
 
 
@@ -403,7 +404,8 @@ def sincronizar_ahora(plataforma_id: int, ctx: db.Contexto = Depends(sesiones.co
     if plataforma_id in _sincronizando:
         return respuesta({"en_curso": True, "mensaje": "Ya se está sincronizando."})
     with db.transaccion(ctx) as conn:
-        if not db.fila(conn, "SELECT 1 FROM plataformas WHERE id=%s AND tipo='odoo' AND activa", (plataforma_id,)):
+        conexion = db.fila(conn, "SELECT tipo FROM plataformas WHERE id=%s AND tipo IN ('odoo', 'tiendanube', 'mercadolibre') AND activa", (plataforma_id,))
+        if not conexion:
             raise HTTPException(status_code=404, detail="No existe esa conexión.")
         with conn.cursor() as cur:
             cur.execute("UPDATE plataformas SET estado_sincronizacion='sincronizando' WHERE id=%s", (plataforma_id,))
@@ -412,7 +414,11 @@ def sincronizar_ahora(plataforma_id: int, ctx: db.Contexto = Depends(sesiones.co
     def correr():
         try:
             with db.transaccion(ctx) as conn:
-                r = odoo_pos.sincronizar(conn, ctx, plataforma_id)
+                if conexion["tipo"] == "odoo":
+                    r = odoo_pos.sincronizar(conn, ctx, plataforma_id)
+                else:
+                    from . import plataformas_online
+                    r = plataformas_online.sincronizar(conn, ctx, plataforma_id)
             recalcular_en_segundo_plano(ctx.org_id, r.get("desde"))
         except Exception as e:
             odoo_pos.marcar_error(ctx, plataforma_id, e)
@@ -428,6 +434,66 @@ def desconectar(plataforma_id: int, request: Request, ctx: db.Contexto = Depends
     permisos.exigir(ctx, "gestionar_conexiones")
     with db.transaccion(ctx) as conn:
         with conn.cursor() as cur:
-            cur.execute("UPDATE plataformas SET activa=false, credenciales_cifradas=NULL, updated_at=now() WHERE id=%s AND tipo='odoo'", (plataforma_id,))
+            cur.execute("UPDATE plataformas SET activa=false, credenciales_cifradas=NULL, updated_at=now() WHERE id=%s "
+                    "AND tipo IN ('odoo', 'tiendanube', 'mercadolibre')", (plataforma_id,))
         sesiones.auditar(conn, ctx, ctx.usuario_id, "desconectar", "conexion", plataforma_id, {}, sesiones.ip_de(request))
     return respuesta({"ok": True})
+
+
+# ------------------------------------------------------------------------------ Tiendanube y Mercado Libre
+class ConexionTienda(BaseModel):
+    tipo: str                                # tiendanube, mercadolibre
+    nombre: str | None = None
+    ubicacion_despacho_id: int | None = None
+    token: str | None = None                 # al editar, vacío = se mantiene el guardado
+    store_id: str | None = None              # Tiendanube
+    comision_pct: float | None = Field(default=None, ge=0, le=0.5)    # Tiendanube: lo que cobra el plan por venta
+
+
+def _cliente_tienda(conn, datos: ConexionTienda, plataforma_id: int | None):
+    from . import cifrado, plataformas_online
+    if datos.tipo not in ("tiendanube", "mercadolibre"):
+        raise HTTPException(status_code=400, detail="Plataforma no soportada todavía.")
+    token = datos.token
+    config = {"store_id": datos.store_id}
+    if plataforma_id:
+        p = db.fila(conn, "SELECT credenciales_cifradas, config FROM plataformas WHERE id=%s AND tipo=%s", (plataforma_id, datos.tipo))
+        if p:
+            token = token or cifrado.descifrar(p["credenciales_cifradas"]).get("token")
+            config = {**(p["config"] or {}), **{k: v for k, v in config.items() if v}}
+    if not token:
+        raise HTTPException(status_code=400, detail="Falta el token de acceso.")
+    if datos.tipo == "tiendanube" and not config.get("store_id"):
+        raise HTTPException(status_code=400, detail="Falta el número de tienda de Tiendanube.")
+    return plataformas_online.cliente_de(datos.tipo, config, {"token": token}), token
+
+
+@api.post("/conexiones/tienda/probar")
+def probar_tienda(datos: ConexionTienda, plataforma_id: int | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import plataformas_online
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        c, _ = _cliente_tienda(conn, datos, plataforma_id)
+    try:
+        return respuesta(c.probar())
+    except plataformas_online.ErrorPlataforma as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo conectar ({e}).")
+
+
+@api.post("/conexiones/tienda")
+def guardar_tienda(datos: ConexionTienda, request: Request, plataforma_id: int | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import plataformas_online
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        if not datos.ubicacion_despacho_id or not db.fila(conn, "SELECT 1 FROM ubicaciones WHERE id=%s", (datos.ubicacion_despacho_id,)):
+            raise HTTPException(status_code=400, detail="Elegí la sucursal que despacha los pedidos.")
+        _, token = _cliente_tienda(conn, datos, plataforma_id)
+        try:
+            pid = plataformas_online.guardar(conn, ctx, datos.tipo, {**datos.model_dump(), "token": token}, plataforma_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "guardar", "conexion", pid,
+                         {"tipo": datos.tipo, "nombre": datos.nombre, "ubicacion_despacho_id": datos.ubicacion_despacho_id}, sesiones.ip_de(request))
+    return respuesta({"id": pid})

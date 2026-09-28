@@ -1,4 +1,4 @@
-// Navegación lateral (sección 15 del documento) y en qué parte o fase llega cada sección.
+// Navegación lateral (sección 15 del documento). «llega» marca una sección todavía no construida (se muestra «pronto»).
 export type Seccion = { ruta: string; nombre: string; llega?: string; que_hace: string };
 
 export const SECCIONES: Seccion[] = [
@@ -17,7 +17,7 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Aumentos de proveedores, remarcación priorizada, margen erosionado y etiquetas de góndola." },
   { ruta: "/sucursales/", nombre: "Sucursales",
     que_hace: "Comparativos entre sucursales, matriz producto × sucursal, precios distintos y ajustes de stock." },
-  { ruta: "/canales/", nombre: "Canales", llega: "Fase 2",
+  { ruta: "/canales/", nombre: "Canales",
     que_hace: "Ganancia real por canal (comisiones y envíos), stock unificado y sobreventa online." },
   { ruta: "/caja/", nombre: "Caja y control",
     que_hace: "Anulaciones, devoluciones, descuentos manuales y valores atípicos por cajero y turno." },
@@ -25,11 +25,10 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Días de visita, demoras, pedidos mínimos, nivel de servicio y rentabilidad por proveedor." },
   { ruta: "/avisos/", nombre: "Avisos",
     que_hace: "Bandeja de avisos con prioridad, impacto en pesos, explicación y acción, más el resumen diario por email." },
-  { ruta: "/copiloto/", nombre: "Copiloto", llega: "Fase 2",
+  { ruta: "/copiloto/", nombre: "Copiloto",
     que_hace: "Preguntale a tus datos en español; responde solo con cifras de sus herramientas." },
   { ruta: "/datos/", nombre: "Datos",
     que_hace: "Importar Excel o CSV, conectar la caja, leer facturas y listas con IA, y emparejar el catálogo." },
   { ruta: "/configuracion/", nombre: "Configuración", que_hace: "Empresa, sucursales, canales, usuarios, límites, auditoría y tu cuenta." },
 ];
 
-export const PROXIMAS = SECCIONES.filter((s) => s.llega).map((s) => s.ruta.replaceAll("/", ""));

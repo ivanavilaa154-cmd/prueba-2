@@ -64,7 +64,7 @@ export function Metas() {
                   </td>,
                   <td key={`${m.metrica}-p`} className="whitespace-nowrap text-right">{valor(m, m.proyeccion)}<span className="block text-xs font-normal text-suave">hoy {valor(m, m.actual)}</span></td>,
                   <td key={`${m.metrica}-s`} className="whitespace-nowrap text-sm font-normal">
-                    {m.semaforo !== "gris" && <><span aria-hidden="true" style={{ color: e.color }}>{e.icono}</span> {e.texto}{m.cumplimiento !== null && ` (${numero(m.cumplimiento * 100)} %)`}</>}
+                    {m.semaforo !== "gris" && <><span aria-hidden="true" style={{ color: e.color }}>{e.icono}</span> {e.texto}{m.cumplimiento !== null && ` (${numero(m.cumplimiento * 100, 1)} %)`}</>}
                   </td>,
                 ];
               })}

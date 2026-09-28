@@ -50,11 +50,11 @@ export function MediosDePago() {
             {r.medios.map((m) => (
               <tr key={m.medio}>
                 <td>{m.nombre}</td>
-                <td className="text-right">{plata(m.monto)}</td>
+                <td className="whitespace-nowrap text-right">{plata(m.monto)}</td>
                 <td className="text-right">{numero(m.participacion * 100, 1)} %</td>
                 <td className="text-right">{m.comision_pct === null ? "—" : `${numero(m.comision_pct * 100, 2)} %`}</td>
-                <td className="text-right">{m.acreditacion_dias ? `${m.acreditacion_dias} días` : "en el día"}</td>
-                <td className="text-right">{plata(m.costo)} <span className="text-xs text-suave">({numero(m.costo_pct * 100, 2)} %)</span></td>
+                <td className="text-right">{m.acreditacion_dias ? `${m.acreditacion_dias} ${m.acreditacion_dias === 1 ? "día" : "días"}` : "en el día"}</td>
+                <td className="whitespace-nowrap text-right">{plata(m.costo)}<span className="block text-xs text-suave">{numero(m.costo_pct * 100, 2)} %</span></td>
                 <td className="text-right">{m.impacto_margen_pct === null ? "—" : `${numero(m.impacto_margen_pct * 100, 1)} %`}</td>
               </tr>
             ))}

@@ -2,6 +2,7 @@
 // Ventas, rendimiento y análisis retail (sección 10): ganadores, Pareto, inflación, ticket y tráfico.
 import { useEffect, useState } from "react";
 import { Ganadores } from "@/components/ventas/Ganadores";
+import { Impacto } from "@/components/ventas/Impacto";
 import { Inflacion } from "@/components/ventas/Inflacion";
 import { MediosDePago } from "@/components/ventas/MediosDePago";
 import { Metas } from "@/components/ventas/Metas";
@@ -18,6 +19,7 @@ const PESTANAS = [
   { id: "rentabilidad", nombre: "Rentabilidad del stock", componente: Rentabilidad },
   { id: "medios", nombre: "Medios de pago y fiado", componente: MediosDePago },
   { id: "metas", nombre: "Metas", componente: Metas },
+  { id: "impacto", nombre: "Impacto", componente: Impacto },
 ];
 
 export default function Ventas() {

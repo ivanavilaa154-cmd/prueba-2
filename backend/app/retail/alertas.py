@@ -26,6 +26,7 @@ ETIQUETAS = {
     "sobrestock": "Sobrestock", "stock_muerto": "Stock muerto", "vencimiento": "Vencimiento", "margen": "Margen erosionado",
     "aumento_proveedor": "Aumento de proveedor", "caja": "Anomalía de caja", "inventario": "Diferencia de inventario",
     "caida_a": "Caída de un producto A", "fiado": "Deuda vencida de clientes",
+    "sobreventa": "Sobreventa online", "meta": "Meta en riesgo",
 }
 DESTINOS = {
     "quiebre": ["dueno", "comprador", "encargado"], "gondola": ["encargado", "dueno"], "stock_fantasma": ["encargado", "dueno"],
@@ -33,6 +34,7 @@ DESTINOS = {
     "sobrestock": ["comprador", "dueno"], "stock_muerto": ["comprador", "dueno"], "vencimiento": ["encargado", "comprador", "dueno"],
     "margen": ["comprador", "dueno"], "aumento_proveedor": ["comprador", "dueno"], "caja": ["dueno"], "inventario": ["dueno", "encargado"],
     "caida_a": ["comprador", "dueno"], "fiado": ["dueno", "encargado"],
+    "sobreventa": ["dueno", "comprador", "encargado"], "meta": ["dueno", "encargado"],
 }
 MINIMO_IMPACTO = Decimal("1000")      # por debajo de esto, no vale la pena molestar (configurable en parámetros)
 
@@ -220,6 +222,8 @@ def _generar(conn, org_id: int, hoy: date) -> dict:
     # --- control de caja (últimos 30 días) y diferencias de inventario
     alertas.extend(_caja(conn, hoy))
     alertas.extend(_fiado(conn, hoy))
+    alertas.extend(_sobreventa(conn, hoy))
+    alertas.extend(_metas(conn, hoy))
     for d in db.filas(conn, """SELECT r.ubicacion_id, u.nombre, count(*) n, -sum(l.diferencia_pesos) monto FROM recuentos_lineas l
                                JOIN recuentos r ON r.id = l.recuento_id JOIN ubicaciones u ON u.id = r.ubicacion_id
                                WHERE r.fecha > %s AND l.diferencia < 0 GROUP BY 1, 2""", (hoy - timedelta(days=7),)):
@@ -278,6 +282,48 @@ def _gondola(conn, metricas, hoy: date, ahora: datetime, minimo: Decimal) -> lis
                                 "revisá la góndola.", impacto, "en_riesgo", {"etiqueta": "Marcar para recuento", "tipo": "recuento",
                                                                              "datos": {"producto_id": m["producto_id"], "ubicacion_id": m["ubicacion_id"]}},
                                 f"gondola:{m['producto_id']}:{m['ubicacion_id']}:{hoy}", m["ubicacion_id"], m["producto_id"], hoy))
+    return resultado
+
+
+def _sobreventa(conn, hoy: date) -> list[dict]:
+    """Stock publicado mayor que el disponible: un aviso por plataforma con los productos a corregir."""
+    from .api_canales import sobreventa
+    grupos = defaultdict(list)
+    for f in sobreventa(conn):
+        grupos[(f["plataforma_id"], f["plataforma"], f["ubicacion_despacho_id"])].append(f)
+    resultado = []
+    for (pid, plataforma, ubicacion), fs in grupos.items():
+        riesgo = sum((f["en_riesgo"] for f in fs), Decimal(0))
+        detalle = ", ".join(f"{f['nombre']} (publicado {num(f['stock_publicado'], 0)}, hay {num(f['disponible'], 0)})" for f in fs[:4])
+        resultado.append(_nueva("sobreventa", "urgente", f"{plataforma}: {len(fs)} productos publicados con más stock del que hay",
+                                f"Si entran esos pedidos no vas a poder cumplirlos (cancelaciones y reputación): {detalle}{'…' if len(fs) > 4 else ''}. "
+                                "Bajá el stock publicado.", riesgo, "en_riesgo", {"etiqueta": "Ver sobreventa", "tipo": "ir", "destino": "/canales/#stock"},
+                                f"sobreventa:{pid}", ubicacion, None, hoy + timedelta(days=1)))
+    return resultado
+
+
+def _metas(conn, hoy: date) -> list[dict]:
+    """Desde el día 8 del mes: sucursales cuya proyección de ventas no llega al 95 % de la meta."""
+    if hoy.day < 8:
+        return []
+    import calendar as _cal
+    from .api_analisis import factores_calendario, proyeccion
+    mes = hoy.replace(day=1)
+    fin = mes.replace(day=_cal.monthrange(mes.year, mes.month)[1])
+    resultado = []
+    for m in db.filas(conn, """SELECT m.ubicacion_id, u.nombre, m.valor,
+                                      (SELECT coalesce(sum(facturacion), 0) FROM agg_producto_ubicacion_dia a WHERE a.ubicacion_id = m.ubicacion_id
+                                         AND a.fecha BETWEEN %s AND %s) actual
+                               FROM metas m JOIN ubicaciones u ON u.id = m.ubicacion_id
+                               WHERE m.periodo = %s AND m.metrica = 'ventas' AND m.canal_id IS NULL""", (mes, hoy, mes)):
+        semana, f_inicio, base = factores_calendario(conn, hoy, m["ubicacion_id"])
+        proy = Decimal(str(round(proyeccion(float(m["actual"]), hoy, fin, semana, f_inicio, base), 2)))
+        if m["valor"] and proy < m["valor"] * Decimal("0.95"):
+            falta = m["valor"] - proy
+            resultado.append(_nueva("meta", "normal", f"{m['nombre']}: al ritmo actual cierra el mes en {pesos(proy)}, {num(proy / m['valor'] * 100, 0)} % de la meta",
+                                    f"La meta de ventas es {pesos(m['valor'])}. Faltarían {pesos(falta)}: revisá faltantes y ofertas de los productos A.",
+                                    falta, "en_riesgo", {"etiqueta": "Ver metas", "tipo": "ir", "destino": "/ventas/#metas"},
+                                    f"meta:{m['ubicacion_id']}:{mes}", m["ubicacion_id"], None, fin))
     return resultado
 
 

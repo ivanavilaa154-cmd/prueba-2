@@ -279,17 +279,23 @@ def _stock(conn, ctx, c: ClienteOdoo, almacenes: dict, productos: dict) -> dict:
 
 
 def sincronizar_todas(org_id: int) -> date | None:
-    """Sincroniza cada conexión de Odoo activa de la empresa (lo usa el programador cada hora). Devuelve la fecha más vieja
+    """Sincroniza cada conexión activa de la empresa (Odoo, Tiendanube, Mercado Libre) (lo usa el programador cada hora). Devuelve la fecha más vieja
     con tickets nuevos, para reagregar desde ahí."""
     from .motor import contexto_sistema
     ctx = contexto_sistema(org_id)
     with db.transaccion(ctx) as conn:
-        ids = [p["id"] for p in db.filas(conn, "SELECT id FROM plataformas WHERE tipo='odoo' AND activa AND config ? 'almacenes'")]
+        conexiones = db.filas(conn, "SELECT id, tipo FROM plataformas WHERE activa AND ((tipo='odoo' AND config ? 'almacenes') "
+                                    "OR (tipo IN ('tiendanube', 'mercadolibre') AND credenciales_cifradas IS NOT NULL))")
     desde = None
-    for pid in ids:
+    for x in conexiones:
+        pid = x["id"]
         try:
             with db.transaccion(ctx) as conn:
-                r = sincronizar(conn, ctx, pid)
+                if x["tipo"] == "odoo":
+                    r = sincronizar(conn, ctx, pid)
+                else:
+                    from . import plataformas_online
+                    r = plataformas_online.sincronizar(conn, ctx, pid)
             if r.get("desde") and (desde is None or r["desde"] < desde):
                 desde = r["desde"]
         except Exception as e:           # una conexión caída no frena a las demás; el error queda en la conexión

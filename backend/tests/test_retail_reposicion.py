@@ -116,9 +116,10 @@ def test_aprobacion_respeta_limites_por_rol(retail_demo):
     assert r.status_code == 403 and "límite" in r.json()["detail"]
     assert encargado.post(f"/retail/api/ordenes/{grande['id']}/aprobar").status_code in (403, 404)
     assert dueno.post(f"/retail/api/ordenes/{grande['id']}/aprobar").status_code == 200
+    # Con el límite igual al total, el comprador sí puede aprobarla (se vuelve a borrador para probarlo).
     _x("UPDATE limites_aprobacion SET monto_maximo=%s WHERE rol='comprador' AND tipo_documento='orden_compra'", (grande["total"],))
-    otra = _q("SELECT id FROM ordenes_compra WHERE origen='sugerida' AND estado='borrador' AND total <= %s LIMIT 1", (grande["total"],))[0]
-    assert comprador.post(f"/retail/api/ordenes/{otra['id']}/aprobar").status_code == 200
+    _x("UPDATE ordenes_compra SET estado='borrador', aprobada_por=NULL, aprobada_at=NULL, aprobacion=NULL WHERE id=%s", (grande["id"],))
+    assert comprador.post(f"/retail/api/ordenes/{grande['id']}/aprobar").status_code == 200
 
 
 def test_envio_y_recepcion_con_diferencias(retail_demo, tmp_path, monkeypatch):

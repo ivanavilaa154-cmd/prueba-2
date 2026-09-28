@@ -9,7 +9,7 @@ import { Importar } from "@/components/datos/Importar";
 
 const PESTANAS = [
   { id: "importar", nombre: "Importar archivos", permiso: "importar_datos", componente: Importar },
-  { id: "conexiones", nombre: "Conectar la caja", permiso: "gestionar_conexiones", componente: Conexiones },
+  { id: "conexiones", nombre: "Conectar caja y tiendas", permiso: "gestionar_conexiones", componente: Conexiones },
   { id: "documentos", nombre: "Leer facturas y listas", permiso: "recepciones", componente: Documentos },
   { id: "catalogo", nombre: "Catálogo", permiso: "gestionar_proveedores", componente: Catalogo },
 ] as const;
