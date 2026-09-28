@@ -180,6 +180,12 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
         facturacion90[f["producto_id"]] += f["fa"]
         ganancia90_pu[(f["producto_id"], f["ubicacion_id"])] += f["g"]
         costo90_pu[(f["producto_id"], f["ubicacion_id"])] += f["co"]
+    merma90 = {(f["producto_id"], f["ubicacion_id"]): float(f["m"]) for f in db.filas(
+        conn, "SELECT producto_id, ubicacion_id, -sum(cantidad) m FROM movimientos_stock WHERE org_id=%s AND tipo IN ('merma', 'vencimiento') "
+              "AND fecha >= %s GROUP BY 1, 2", (org_id, hoy - timedelta(days=90)))}
+    vendido90 = {(f["producto_id"], f["ubicacion_id"]): float(f["u"]) for f in db.filas(
+        conn, "SELECT producto_id, ubicacion_id, sum(unidades) u FROM agg_producto_ubicacion_dia WHERE org_id=%s AND fecha > %s GROUP BY 1, 2",
+        (org_id, hoy - timedelta(days=91)))}
     ultima_venta = {(f["producto_id"], f["ubicacion_id"]): f["u"] for f in db.filas(
         conn, "SELECT producto_id, ubicacion_id, max(fecha) u FROM agg_producto_ubicacion_dia WHERE org_id=%s AND unidades > 0 GROUP BY 1, 2",
         (org_id,))}
@@ -270,6 +276,9 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                 elif regla["stock_maximo_dias"] is not None:
                     maximo = float(regla["stock_maximo_dias"]) * (sum(pron[:28]) / 28)
             pron_h = sum(pron[:h.horizonte])
+            # La merma histórica de los perecederos baja el pedido (sección 9: merma).
+            f_merma = C.factor_merma(merma90.get(clave, 0.0), vendido90.get(clave, 0.0)) if p["perecedero"] else 1.0
+            pron_h *= f_merma
             if u["tipo"] == "deposito":
                 sug = C.Sugerencia(0.0, 0.0, 0.0, 1)
             else:
@@ -287,6 +296,7 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
             ultima = ultima_venta.get(clave)
             dias_sin_venta = (hoy - ultima).days if ultima else None
             riesgo_venc = None
+            detalle_lotes = []
             if lotes.get(clave):
                 detalle_lotes = C.unidades_que_no_llegan(lotes[clave], pron, hoy)
                 riesgo_venc = sum(Decimal(str(x["no_llegan"])) for x in detalle_lotes) * (costo or Decimal(0))
@@ -320,6 +330,10 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                 "recortada_por_maximo": sug.recortada_por_maximo, "stock_maximo": maximo,
                 "stock_negativo": cantidad < 0, "sin_costo": costo is None, "clase_abc": abc[pid][0],
                 "precio": str(pv) if pv is not None else None, "costo": str(costo) if costo is not None else None,
+                "merma_90d": round(merma90.get(clave, 0.0), 3), "factor_merma": round(f_merma, 3),
+                "lotes": [{"lote": x["lote"], "vencimiento": x["vencimiento"], "cantidad": float(x["cantidad"]), "no_llegan": round(x["no_llegan"], 3),
+                           "dias": x.get("dias"), "vendido_hasta_vencer": round(float(x["cantidad"]) - x["no_llegan"], 3)} for x in detalle_lotes],
+                "pronostico_120d": [round(x, 3) for x in pron[:120]] if detalle_lotes else None,
             }
             filas.append((org_id, pid, uid, round(r_vpd.vpd, 4), round(sum(pron[:28]) / 28, 4), round(disponible, 3),
                            None if dias_stock is None else round(min(dias_stock, 99999), 2), quiebre, h.horizonte, round(ss, 3),

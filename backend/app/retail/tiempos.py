@@ -25,6 +25,8 @@ PANTALLAS: dict[str, list[str]] = {
     "Ventas · ticket y tráfico": [f"/ventas/ticket?{FILTRO}"],
     "Precios": ["/precios/remarcacion?filtro=todos"],
     "Caja y control": [f"/caja?{FILTRO}"],
+    "Plata parada": ["/plata-parada", "/merma"],
+    "Vencimientos y ofertas": ["/vencimientos", "/ofertas"],
     "Avisos": ["/avisos?estado=abiertas"],
     "Datos · importar": ["/importar/tipos", "/importar/lotes"],
     "Datos · catálogo": ["/catalogo/pendientes"],

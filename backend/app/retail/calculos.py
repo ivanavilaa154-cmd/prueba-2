@@ -444,6 +444,33 @@ def unidades_que_no_llegan(lotes: list[dict], pron: list[float], hoy: date) -> l
     return resultado
 
 
+def factor_merma(merma: float, vendido: float, umbral: float = 0.05, tope: float = 0.5) -> float:
+    """Perecederos: si en 90 días se tiró más del umbral de lo que entró en juego (vendido + merma), se pide esa proporción
+    menos. Ej.: vendió 90 y tiró 10 → merma 10 % → se pide 90 % de lo pronosticado. Con tope, para no cortar de más."""
+    total = merma + vendido
+    if merma <= 0 or total <= 0:
+        return 1.0
+    tasa = merma / total
+    return 1.0 - min(tasa, tope) if tasa > umbral else 1.0
+
+
+DESCUENTO_VENTAS = ((0.10, 1.3), (0.20, 1.7), (0.30, 2.2), (0.40, 2.8), (0.50, 3.5))   # descuento → ventas × factor (por defecto)
+
+
+def descuento_minimo(sobrante: float, vendido_sin_oferta: float, dias: int, escala=DESCUENTO_VENTAS) -> tuple[float, float] | None:
+    """Menor descuento de la escala con el que se vende lo que sobra antes de vencer: con descuento d las ventas de esos días
+    pasan a vendido_sin_oferta × factor(d), y tiene que alcanzar para vendido_sin_oferta + sobrante.
+    Devuelve (descuento, factor) o None si ni el mayor descuento alcanza (conviene transferir o devolver)."""
+    if sobrante <= 0:
+        return (0.0, 1.0)
+    if dias <= 0 or vendido_sin_oferta <= 0:
+        return None
+    for d, f in escala:
+        if vendido_sin_oferta * f >= vendido_sin_oferta + sobrante:
+            return (d, f)
+    return None
+
+
 # ------------------------------------------------------------------------------ anomalías (control de caja)
 def z_atipico(valor: float, otros: list[float]) -> float | None:
     """Cuántos desvíos estándar se aleja un cajero/turno del resto. None si no hay con qué comparar."""

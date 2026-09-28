@@ -76,3 +76,38 @@ def etiquetas(productos: list[dict], titulo: str = "Precios actualizados") -> Pa
     ruta = CARPETA / f"etiquetas-{date.today().isoformat()}-{len(productos)}.pdf"
     pdf.output(str(ruta))
     return ruta
+
+
+def cartel_oferta(nombre: str, oferta: dict, tamano: str = "a5") -> Path:
+    """Cartel de góndola de una oferta: producto, precio normal tachado, precio de oferta grande y hasta cuándo."""
+    from fpdf import FPDF
+    p = oferta["parametros"]
+    pdf = FPDF(orientation="L", format={"a4": (210, 297), "a5": (148, 210), "a6": (105, 148)}[tamano])   # mm
+    pdf.set_auto_page_break(False)
+    pdf.add_page()
+    escala = {"a4": 1.4, "a5": 1.0, "a6": 0.7}[tamano]
+    ancho = pdf.w - 20
+    pdf.set_xy(10, 10 * escala)
+    pdf.set_font("Helvetica", "B", int(34 * escala))
+    pdf.cell(ancho, 16 * escala, "OFERTA", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", int(18 * escala))
+    pdf.multi_cell(ancho, 9 * escala, _t(nombre[:80]), align="C")
+    if oferta["tipo"] == "segunda_unidad":
+        pdf.set_font("Helvetica", "B", int(26 * escala))
+        pdf.cell(ancho, 14 * escala, _t(f"2.ª unidad {num(float(p['descuento']) * 100, 0)} % OFF"), align="C", new_x="LMARGIN", new_y="NEXT")
+    antes = f"$ {num(p['precio_normal'], 0)}"
+    pdf.set_font("Helvetica", "", int(20 * escala))
+    y = pdf.get_y() + 3
+    pdf.set_xy(10, y)
+    pdf.cell(ancho, 10 * escala, _t(f"Antes {antes}"), align="C")
+    w = pdf.get_string_width(f"Antes {antes}")
+    pdf.line(10 + (ancho - w) / 2, y + 5 * escala, 10 + (ancho + w) / 2, y + 5 * escala)
+    pdf.set_xy(10, y + 12 * escala)
+    pdf.set_font("Helvetica", "B", int(64 * escala))
+    pdf.cell(ancho, 28 * escala, _t(f"$ {num(p['precio_oferta'], 0)}"), align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", int(12 * escala))
+    pdf.cell(ancho, 8 * escala, _t(f"Válido hasta el {oferta['hasta'].strftime('%d/%m/%Y')} o hasta agotar stock"), align="C")
+    CARPETA.mkdir(exist_ok=True)
+    ruta = CARPETA / f"oferta-{oferta['id']}-{tamano}.pdf"
+    pdf.output(str(ruta))
+    return ruta
