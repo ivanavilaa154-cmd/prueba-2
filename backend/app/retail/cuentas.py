@@ -179,8 +179,21 @@ def main() -> None:
     print("\nListo. Entrá en la dirección de la plataforma con /retail al final.")
 
 
+def reales_ahora() -> None:
+    """python -m app.retail.cuentas --reales : deja solo las dos cuentas ya mismo, sin reiniciar la plataforma."""
+    from .. import config  # noqa: F401  (carga backend/.env)
+    db.migrar()
+    r = dejar_solo_reales()
+    print(f"Creadas: {', '.join(r['creadas']) or 'ya existían'}. Empresas de ejemplo borradas: {', '.join(r['borradas']) or 'ninguna'}.")
+    print(f"Administración: {ADMIN[0]} (clave inicial {ADMIN[2]})")
+    print(f"Pulpo Azul: {PULPO['email']} (clave inicial {PULPO['clave']}) — si ya creaste Pulpo Azul con otro email, entrá con ese.")
+
+
 if __name__ == "__main__":
     try:
+        if "--reales" in sys.argv:
+            reales_ahora()
+            sys.exit(0)
         main()
     except (KeyboardInterrupt, EOFError):
         print("\nCancelado.")

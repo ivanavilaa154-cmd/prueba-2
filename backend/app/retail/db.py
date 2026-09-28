@@ -52,6 +52,15 @@ def _releer_env() -> None:
                 os.environ["RETAIL_DB_URL"] = linea.split("=", 1)[1].strip().strip('"').strip("'")
 
 
+def modo_cuentas() -> str:
+    """«reales»: solo la administración y Pulpo Azul (ver cuentas.py). En un Codespace es lo predeterminado (GitHub define
+    CODESPACES=true); en otro lado, la demo. RETAIL_CUENTAS=demo o =reales en backend/.env lo fija a mano."""
+    valor = os.getenv("RETAIL_CUENTAS", "").strip().lower()
+    if valor in ("demo", "reales"):
+        return valor
+    return "reales" if os.getenv("CODESPACES", "").lower() == "true" else "demo"
+
+
 def asegurar_lista() -> None:
     """Deja la base lista (migraciones + demo si está vacía) la primera vez que se usa. Si todavía no se puede,
     levanta BaseNoConfigurada con un mensaje claro; se reintenta en el pedido siguiente."""
@@ -66,7 +75,7 @@ def asegurar_lista() -> None:
             return
         try:
             import sys
-            if os.getenv("RETAIL_CUENTAS", "").strip().lower() == "reales" and "pytest" not in sys.modules:
+            if modo_cuentas() == "reales" and "pytest" not in sys.modules:
                 from . import cuentas
                 migrar()
                 r = cuentas.dejar_solo_reales()

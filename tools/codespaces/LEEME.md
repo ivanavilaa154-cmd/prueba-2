@@ -12,6 +12,9 @@ base de datos, usuario y API key → **Probar conexión** → **Guardar** → **
 - Administración de la plataforma (ve todas las empresas): `admin@retail-ia.local` · clave inicial `Admin-Retail-2026`
 - Dueño de Pulpo Azul (ve todo, solo de su empresa): `dueno@pulpoazul.local` · clave inicial `PulpoAzul-2026`
 
+¿No te deja entrar? En la terminal escribí `cd backend && python -m app.retail.cuentas --reales`: deja las dos cuentas listas
+y muestra con qué entrar. Entrá siempre por la dirección con **/retail** al final.
+
 Cambiá las dos claves la primera vez que entres (arriba a la derecha → Configuración → Mi cuenta). Las empresas y cuentas de
 ejemplo se borran solas al arrancar; para volver a la demo, borrá la línea `RETAIL_CUENTAS=reales` de `backend/.env`.
 
