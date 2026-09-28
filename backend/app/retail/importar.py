@@ -1,4 +1,7 @@
-"""Importación de archivos (sección 5.2): Excel o CSV de ventas, stock, productos, compras y listas de precios.
+"""Importación de archivos (sección 5.2): Excel o CSV de ventas, stock, productos, compras, listas de precios y pedidos de delivery.
+
+Pedidos de delivery (PedidosYa, Rappi): sus APIs solo se habilitan a integradores aprobados, así que entran por el reporte de
+pedidos que cada comercio descarga de su panel (una fila por producto del pedido, con la comisión y el envío del pedido).
 
 1. Analizar: se leen los encabezados, se propone qué columna es cada dato (o se usa el mapeo recordado para ese formato de
    archivo) y se guarda todo en staging. Si el mismo archivo ya se importó (misma huella), se avisa.
@@ -35,6 +38,10 @@ CAMPOS: dict[str, list[tuple[str, str, bool]]] = {
     "compras": [("fecha", "Fecha", True), ("proveedor", "Proveedor", True), ("documento", "Número de factura o remito", True),
                 ("sucursal", "Sucursal que recibe", True), ("producto", "Producto", True), ("cantidad", "Cantidad", True), ("costo", "Costo unitario", True),
                 ("lote", "Lote", False), ("vencimiento", "Vencimiento", False)],
+    "delivery": [("fecha", "Fecha", True), ("hora", "Hora", False), ("plataforma", "Plataforma (PedidosYa o Rappi)", True),
+                 ("pedido", "Número de pedido", True), ("sucursal", "Sucursal (local)", True), ("producto", "Producto (código, EAN o nombre)", True),
+                 ("cantidad", "Cantidad", True), ("precio", "Precio unitario", True), ("comision", "Comisión del pedido", False),
+                 ("envio", "Envío a cargo del local", False), ("estado", "Estado del pedido", False)],
     "precios": [("proveedor", "Proveedor", True), ("producto", "Código o EAN del producto", False), ("descripcion", "Descripción", False),
                 ("costo", "Costo", True), ("vigencia", "Vigente desde", False)],
 }
@@ -52,7 +59,12 @@ SINONIMOS = {
     "proveedor": ["proveedor", "supplier"], "bulto": ["bulto", "unidades por bulto", "u x bulto", "pack"], "unidad": ["unidad", "um", "unidad medida"],
     "documento": ["documento", "factura", "remito", "comprobante", "numero"], "descripcion": ["descripcion", "detalle", "producto", "articulo"],
     "vigencia": ["vigencia", "vigente desde", "desde", "fecha"],
+    "plataforma": ["plataforma", "app", "aplicacion", "canal venta", "marketplace"], "pedido": ["pedido", "orden", "nro pedido", "order id", "id pedido"],
+    "comision": ["comision", "comision plataforma", "fee", "cargo servicio"], "envio": ["envio", "costo envio", "delivery fee", "cargo envio"],
+    "estado": ["estado", "status", "estado pedido"],
 }
+DELIVERY = {"pedidosya": ("pedidosya", "PedidosYa"), "pedidos ya": ("pedidosya", "PedidosYa"), "rappi": ("rappi", "Rappi")}
+ANULADOS = {"cancelado", "cancelada", "rechazado", "rechazada", "cancelled", "canceled", "rejected"}
 MEDIOS = {"efectivo": "efectivo", "contado": "efectivo", "debito": "debito", "tarjeta de debito": "debito", "credito": "credito",
           "tarjeta de credito": "credito", "tarjeta": "credito", "qr": "qr", "mercado pago": "qr", "transferencia": "transferencia",
           "cuenta corriente": "cuenta_corriente", "fiado": "cuenta_corriente"}
@@ -268,16 +280,24 @@ def _validar_fila(conn, tipo: str, v: dict, cat: dict, sin_producto: dict) -> st
         for c, e, o in CAMPOS[tipo]:
             if o and (v.get(c) is None or str(v.get(c)).strip() == ""):
                 return f"Falta {e.lower()}"
-        if tipo in ("ventas", "compras", "stock"):
+        if tipo == "delivery" and _plataforma_delivery(v["plataforma"]) is None:
+            return f"«{v['plataforma']}» no es PedidosYa ni Rappi"
+        if tipo in ("ventas", "compras", "stock", "delivery"):
             if _norm(v["sucursal"]) not in cat["ubicaciones"]:
                 return f"No existe la sucursal «{v['sucursal']}» (cargala en Configuración o corregí el nombre)"
-        if tipo in ("ventas", "compras", "stock"):
+        if tipo in ("ventas", "compras", "stock", "delivery"):
             pid, _ = _producto(conn, cat, v["producto"])
             if not pid:
                 sin_producto[str(v["producto"])] += 1
                 return f"No se encontró el producto «{v['producto']}» (importá primero los productos o emparejalo en Catálogo)"
-        if tipo in ("ventas", "compras"):
+        if tipo in ("ventas", "compras", "delivery"):
             fecha(v["fecha"])
+        if tipo == "delivery":
+            hora(v.get("hora"))
+            numero(v["cantidad"])
+            numero(v["precio"])
+            numero(v.get("comision"))
+            numero(v.get("envio"))
         if tipo == "ventas":
             hora(v.get("hora"))
             numero(v["cantidad"])
@@ -321,7 +341,8 @@ def confirmar(conn, ctx, lote_id: int) -> dict:
              for f in db.filas(conn, "SELECT numero, datos FROM staging_filas WHERE lote_id=%s AND error IS NULL ORDER BY numero", (lote_id,))]
     cat = _contexto_catalogo(conn)
     zona = ZoneInfo(db.fila(conn, "SELECT zona_horaria FROM organizaciones WHERE id = app_org()")["zona_horaria"])
-    resultado = {"ventas": _ventas, "stock": _stock, "productos": _productos, "compras": _compras, "precios": _precios}[lote["tipo"]](conn, ctx, lote, filas, cat, zona)
+    resultado = {"ventas": _ventas, "stock": _stock, "productos": _productos, "compras": _compras, "precios": _precios,
+                 "delivery": _delivery}[lote["tipo"]](conn, ctx, lote, filas, cat, zona)
     with conn.cursor() as cur:
         cur.execute("UPDATE lotes_importacion SET estado='importado', filas_ok=%s, filas_duplicadas=%s, resultado=%s WHERE id=%s",
                     (resultado.get("importadas", 0), resultado.get("duplicadas", 0), json.dumps(resultado, default=str), lote_id))
@@ -378,6 +399,77 @@ def _ventas(conn, ctx, lote, filas, cat, zona) -> dict:
     return {"importadas": importados, "duplicadas": duplicados, "lineas": lineas, "desde": min(fechas) if fechas else None,
             "hasta": max(fechas) if fechas else None,
             "mensaje": f"{importados} tickets nuevos ({lineas} líneas)" + (f"; {duplicados} ya estaban cargados y no se duplicaron" if duplicados else "")}
+
+
+def _plataforma_delivery(texto) -> tuple[str, str] | None:
+    t = _norm(texto or "").replace("-", " ")
+    return next((v for k, v in DELIVERY.items() if k in t or k.replace(" ", "") in t.replace(" ", "")), None)
+
+
+def _delivery(conn, ctx, lote, filas, cat, zona) -> dict:
+    """Idempotente: cada pedido se identifica por plataforma + número. La comisión y el envío son del pedido (se toma el primer
+    valor informado, no la suma de las filas). Crea la plataforma y activa el canal delivery la primera vez."""
+    pedidos: dict = defaultdict(list)
+    for _, v in filas:
+        tipo, _nombre = _plataforma_delivery(v["plataforma"])
+        pedidos[(tipo, str(v["pedido"]).strip())].append(v)
+    plataformas: dict = {}
+    importados = duplicados = lineas = anulados = 0
+    fechas = set()
+    with conn.cursor() as cur:
+        canal = db.fila(conn, "SELECT id FROM canales WHERE codigo='delivery'")
+        if not canal:
+            canal = db.fila(conn, "INSERT INTO canales (org_id, codigo, nombre, created_by) VALUES (%s,'delivery','Delivery',%s) RETURNING id",
+                            (ctx.org_id, ctx.usuario_id))
+        cur.execute("UPDATE canales SET activo=true WHERE id=%s", (canal["id"],))
+        for (tipo, numero_pedido), vs in pedidos.items():
+            v0 = vs[0]
+            uid = cat["ubicaciones"][_norm(v0["sucursal"])]
+            if (tipo, uid) not in plataformas:
+                p = db.fila(conn, "SELECT id FROM plataformas WHERE tipo=%s AND ubicacion_despacho_id=%s", (tipo, uid)) or \
+                    db.fila(conn, "INSERT INTO plataformas (org_id, tipo, nombre, canal_id, ubicacion_despacho_id, created_by) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                            (ctx.org_id, tipo, _plataforma_delivery(v0["plataforma"])[1], canal["id"], uid, ctx.usuario_id))
+                plataformas[(tipo, uid)] = p["id"]
+            plataforma_id = plataformas[(tipo, uid)]
+            clave = f"{plataforma_id}-{numero_pedido}"
+            if db.fila(conn, "SELECT 1 FROM tickets WHERE origen=%s AND numero_externo=%s", (tipo, clave)):
+                duplicados += 1
+                continue
+            f = fecha(v0["fecha"])
+            fechas.add(f)
+            fh = datetime.combine(f, hora(v0.get("hora")), zona)
+            anulado = _norm(v0.get("estado") or "") in ANULADOS
+            detalle, total = [], Decimal(0)
+            for v in vs:
+                pid, _ = _producto(conn, cat, v["producto"])
+                cant, precio = numero(v["cantidad"]), numero(v["precio"])
+                c = db.fila(conn, "SELECT costo FROM producto_proveedores WHERE producto_id=%s ORDER BY principal DESC LIMIT 1", (pid,))
+                detalle.append((pid, cant, precio, c["costo"] if c else None))
+                total += cant * precio
+            comision = next((numero(v.get("comision")) for v in vs if numero(v.get("comision")) is not None), Decimal(0))
+            envio = next((numero(v.get("envio")) for v in vs if numero(v.get("envio")) is not None), Decimal(0))
+            t = db.fila(conn, "INSERT INTO tickets (org_id, ubicacion_id, canal_id, plataforma_id, punto_venta, fecha_hora, total, estado, numero_externo, origen, "
+                              "lote_importacion_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (org_id, origen, numero_externo) DO NOTHING RETURNING id",
+                        (ctx.org_id, uid, canal["id"], plataforma_id, tipo, fh, total, "anulado" if anulado else "confirmado", clave, tipo, lote["id"]))
+            if not t:
+                duplicados += 1
+                continue
+            for pid, cant, precio, costo in detalle:
+                cur.execute("INSERT INTO tickets_lineas (org_id, ticket_id, ubicacion_id, fecha, producto_id, cantidad, precio_lista, precio_cobrado, descuento, costo_unitario) "
+                            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,%s)", (ctx.org_id, t["id"], uid, f, pid, cant, precio, precio, costo))
+                lineas += 1
+            cur.execute("INSERT INTO pagos (org_id, ticket_id, ubicacion_id, medio, monto, comision_estimada, plazo_acreditacion_dias) VALUES (%s,%s,%s,'plataforma',%s,%s,7)",
+                        (ctx.org_id, t["id"], uid, total, comision))
+            cur.execute("INSERT INTO costos_canal (org_id, plataforma_id, ticket_id, fecha, comision, envio) VALUES (%s,%s,%s,%s,%s,%s)",
+                        (ctx.org_id, plataforma_id, t["id"], f, comision, envio))
+            cur.execute("INSERT INTO pedidos_online (ticket_id, org_id, ubicacion_id, plataforma_id, estado, creado_at, despachado_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                        (t["id"], ctx.org_id, uid, plataforma_id, "cancelado" if anulado else "entregado", fh, None if anulado else fh))
+            importados += 1
+            anulados += anulado
+    return {"importadas": importados, "duplicadas": duplicados, "lineas": lineas, "anulados": anulados, "desde": min(fechas) if fechas else None,
+            "hasta": max(fechas) if fechas else None,
+            "mensaje": f"{importados} pedidos de delivery nuevos ({lineas} líneas" + (f", {anulados} cancelados" if anulados else "") + ")"
+                       + (f"; {duplicados} ya estaban cargados y no se duplicaron" if duplicados else "")}
 
 
 def _stock(conn, ctx, lote, filas, cat, zona) -> dict:

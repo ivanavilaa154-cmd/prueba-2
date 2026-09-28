@@ -46,6 +46,7 @@ CASOS = {
     "aumento_sin_remarcar": {"proveedor": "Lácteos del Valle", "aumento": 0.12, "hace_dias": 6},
     "cajero_anomalo": {"ubicacion": "Salta Norte", "cajero": "Cajero N3"},
     "sobreventa": {"productos": ["P0001", "P0004"], "exceso": 6},
+    "sin_publicar_stock": {"productos": ["P0007"]},             # publicado en 0 teniendo stock: propuesta de subirlo
     "precio_distinto": {"productos": ["P0005", "P0006"], "ubicacion": "San Salvador de Jujuy", "recargo": 0.12, "hace_dias": 20},
 }
 
@@ -917,10 +918,17 @@ def _online(conn, org_id: int, hoy: date, rng: random.Random, plataformas: dict,
             if f["codigo_interno"] not in caso["productos"]:
                 continue
         publicado = max(0, float(f["disponible"])) + (caso["exceso"] if f["codigo_interno"] in caso["productos"] else 0)
+        if f["codigo_interno"] in CASOS["sin_publicar_stock"]["productos"]:
+            publicado = 0
         for tipo in ("tiendanube", "mercadolibre"):
             publicaciones.append((org_id, plataformas[tipo], pid, f"{tipo[:2].upper()}-{pid}", f["codigo_interno"], f["nombre"],
                                   f["precio_online"] or f["precio"], publicado, True))
     _copy(conn, "publicaciones", ["org_id", "plataforma_id", "producto_id", "id_externo", "sku", "titulo", "precio", "stock_publicado", "activa"], publicaciones)
+    # Plataformas de demostración: sin claves; aprobar una propuesta de stock actualiza el valor local y no sale nada.
+    with conn.cursor() as cur:
+        cur.execute("UPDATE plataformas SET config = config || '{\"demo\": true}' WHERE id = ANY(%s)", (list(ids_plat),))
+    from . import stock_publicado
+    stock_publicado.proponer(conn)
 
 
 def _clientes_identificados(conn, org_id: int, hoy: date) -> None:
@@ -951,7 +959,7 @@ def borrar(org_id: int) -> None:
               "ordenes_compra", "listas_precios_proveedor_lineas", "listas_precios_proveedor", "precios", "promociones",
               "margenes_objetivo", "reglas_redondeo", "reglas_reposicion", "config_automatizacion", "config_abastecimiento",
               "presupuestos_compra", "parametros", "metas", "alias_producto", "producto_proveedores", "documentos_leidos",
-              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes", "pedidos_online", "publicaciones"]
+              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes", "pedidos_online", "propuestas_stock", "publicaciones"]
     with db.transaccion(superadmin=True, org_id=org_id) as conn, conn.cursor() as cur:
         for t in tablas:
             cur.execute(f"DELETE FROM {t} WHERE org_id=%s", (org_id,))

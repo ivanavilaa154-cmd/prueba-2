@@ -51,4 +51,9 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
       supresión complementaria para que nadie despeje un dato reservado restando. Sell-out por zona y semana, participación por marca,
       cobertura, quiebres, oportunidades y efectividad de promociones. Portal de pedidos: el distribuidor ve y confirma las OC que le
       enviaron (por CUIT). Las marcas de cada distribuidor las carga la administración de la plataforma.
-- [ ] Otras plataformas y delivery; stock publicado: por la regla 4 de CLAUDE.md la actualización en la plataforma la confirma una persona.
+- [x] Otras plataformas: WooCommerce, Shopify y VTEX por API, en lectura (pedidos, publicaciones y stock publicado), con las claves cifradas.
+- [x] Delivery: PedidosYa y Rappi solo abren su API a integradores aprobados; entran importando el reporte de pedidos de su panel
+      (tipo «Pedidos de delivery»: comisión y envío por pedido, cancelados, sin duplicar al reimportar), en el canal delivery.
+- [x] Stock publicado: en lugar de sincronizarlo solo (regla 4 de CLAUDE.md), el sistema propone después de cada sincronización y cada
+      hora (sobreventa o publicado en 0 con stock) y el dueño elige y aprueba en Canales → Stock; recién ahí se escribe en la plataforma,
+      con el disponible de ese momento, y queda auditado quién lo aprobó y qué respondió la plataforma.

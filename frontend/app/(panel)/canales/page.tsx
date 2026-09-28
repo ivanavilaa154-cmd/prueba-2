@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { parametrosFiltro } from "@/lib/consulta";
 import { fechaHora, numero, plata, plataCorta } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
-import { Aviso, ComoSeCalcula, Tabla, Tarjeta, Vacio, cx } from "@/components/ui";
+import { Aviso, Boton, ComoSeCalcula, Etiqueta, Tabla, Tarjeta, Vacio, cx } from "@/components/ui";
 
 type Fila = { canal: string; codigo: string; plataforma: string; plataforma_id: number | null; tickets: number; ventas: string; costo_mercaderia: string; ganancia_bruta: string;
   comision: string; envio: string; costo_medios: string; publicidad: string; ganancia_real: string; margen_bruto: number | null; margen_real: number | null;
@@ -85,16 +85,100 @@ function Resultado() {
   );
 }
 
+type Propuesta = { id: number; motivo: "sobreventa" | "falta_publicar"; stock_publicado: string; disponible: string; stock_propuesto: number; plataforma: string;
+  nombre: string; codigo_interno: string; ubicacion: string; precio: string | null; se_puede_enviar: boolean };
+type Historial = { id: number; estado: string; stock_publicado: string; stock_propuesto: number; resuelta_at: string; respuesta: string | null; plataforma: string;
+  nombre: string; resuelta_por: string | null };
+type Propuestas = { propuestas: Propuesta[]; historial: Historial[]; puede_aprobar: boolean };
+
+// Stock publicado (fase 3): el sistema propone y una persona aprueba (CLAUDE.md, regla 4). Nada se envía sin ese clic.
+function PropuestasStock({ alCambiar }: { alCambiar: () => void }) {
+  const [r, setR] = useState<Propuestas | null>(null);
+  const [elegidas, setElegidas] = useState<Set<number>>(new Set());
+  const [mensaje, setMensaje] = useState<{ tipo: "ok" | "error" | "alerta"; texto: string } | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const cargar = () => api<Propuestas>("/canales/stock/propuestas").then((x) => { setR(x); setElegidas(new Set(x.propuestas.filter((p) => p.se_puede_enviar).map((p) => p.id))); }).catch(() => {});
+  useEffect(() => { cargar(); }, []);
+  async function accion(que: "aplicar" | "descartar") {
+    setOcupado(true);
+    try {
+      const x = await api<{ mensaje?: string; descartadas?: number; aplicadas?: number; resultados?: { estado: string }[] }>(
+        `/canales/stock/propuestas/${que}`, { metodo: "POST", cuerpo: { ids: [...elegidas] } });
+      const fallas = (x.resultados ?? []).filter((y) => y.estado === "error").length;
+      setMensaje({ tipo: fallas ? "alerta" : "ok", texto: x.mensaje ?? `${x.descartadas} propuestas descartadas.` });
+      await cargar();
+      alCambiar();
+    } catch (e) {
+      setMensaje({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo." });
+    } finally {
+      setOcupado(false);
+    }
+  }
+  if (!r) return null;
+  const alternar = (id: number) => setElegidas((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  return (
+    <Tarjeta titulo={`Stock publicado para corregir · ${r.propuestas.length}`}>
+      <p className="mb-3 text-sm text-suave">
+        Comparamos lo publicado con lo disponible en la sucursal que despacha. Nada se cambia en las plataformas hasta que elegís y aprobás.
+      </p>
+      {mensaje && <div className="mb-3"><Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso></div>}
+      {r.propuestas.length === 0 ? <Aviso tipo="ok">✓ Lo publicado coincide con lo disponible.</Aviso> : (
+        <>
+          <Tabla columnas={["", "Producto", "Plataforma", "Publicado", "Disponible", "Publicar", "Por qué"]}>
+            {r.propuestas.map((p) => (
+              <tr key={p.id}>
+                <td><input type="checkbox" aria-label={`Elegir ${p.nombre} en ${p.plataforma}`} checked={elegidas.has(p.id)} disabled={!r.puede_aprobar || !p.se_puede_enviar}
+                  onChange={() => alternar(p.id)} className="h-4 w-4" /></td>
+                <td>{p.nombre}<span className="block text-xs text-suave">{p.codigo_interno} · despacha {p.ubicacion}</span></td>
+                <td>{p.plataforma}{!p.se_puede_enviar && <span className="block text-xs text-peligro">Sin conexión</span>}</td>
+                <td className="text-right">{numero(p.stock_publicado)}</td>
+                <td className="text-right">{numero(p.disponible)}</td>
+                <td className="text-right font-semibold">{numero(p.stock_propuesto)}</td>
+                <td>{p.motivo === "sobreventa" ? <Etiqueta tono="peligro">▲ Publicás de más</Etiqueta> : <Etiqueta tono="alerta">Publicado en 0 con stock</Etiqueta>}</td>
+              </tr>
+            ))}
+          </Tabla>
+          {r.puede_aprobar ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Boton disabled={ocupado || elegidas.size === 0} onClick={() => accion("aplicar")}>Actualizar {elegidas.size} en las plataformas</Boton>
+              <Boton variante="secundario" disabled={ocupado || elegidas.size === 0} onClick={() => accion("descartar")}>Descartar</Boton>
+            </div>
+          ) : <p className="mt-3 text-sm text-suave">Las aprueba el dueño (o quien gestiona las conexiones).</p>}
+          <p className="mt-2 text-xs text-suave">Al aprobar se vuelve a calcular el disponible de ese momento y ese es el valor que se envía.</p>
+        </>
+      )}
+      {r.historial.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer text-acento">Últimos cambios aprobados</summary>
+          <Tabla columnas={["Cuándo", "Producto", "Plataforma", "Cambio", "Resultado"]}>
+            {r.historial.map((h) => (
+              <tr key={h.id}>
+                <td className="whitespace-nowrap">{fechaHora(h.resuelta_at)}<span className="block text-xs text-suave">{h.resuelta_por}</span></td>
+                <td>{h.nombre}</td><td>{h.plataforma}</td>
+                <td className="whitespace-nowrap">{numero(h.stock_publicado)} → {numero(h.stock_propuesto)}</td>
+                <td>{h.estado === "aplicada" ? <Etiqueta tono="ok">✓ Aplicado</Etiqueta> : h.estado === "descartada" ? <Etiqueta>Descartado</Etiqueta> : <Etiqueta tono="peligro">✕ Error</Etiqueta>}
+                  {h.respuesta && <span className="block text-xs text-suave">{h.respuesta}</span>}</td>
+              </tr>
+            ))}
+          </Tabla>
+        </details>
+      )}
+    </Tarjeta>
+  );
+}
+
 function StockOnline() {
   const [r, setR] = useState<Stock | null>(null);
-  useEffect(() => { api<Stock>("/canales/stock").then(setR).catch(() => {}); }, []);
+  const cargar = () => api<Stock>("/canales/stock").then(setR).catch(() => {});
+  useEffect(() => { cargar(); }, []);
   if (!r) return <p className="text-sm text-suave">Cargando…</p>;
   return (
     <div className="grid grid-cols-1 gap-4">
+      <PropuestasStock alCambiar={cargar} />
       <Tarjeta titulo={`Sobreventa · ${r.sobreventa.length} publicaciones`}>
         {r.sobreventa.length === 0 ? <Aviso tipo="ok">✓ Todo lo publicado tiene stock para cumplir.</Aviso> : (
           <>
-            <Aviso tipo="error">▲ Estas publicaciones muestran más stock del que hay. Si entran esos pedidos vas a tener que cancelarlos: bajá el stock publicado.</Aviso>
+            <Aviso tipo="error">▲ Estas publicaciones muestran más stock del que hay. Si entran esos pedidos vas a tener que cancelarlos: aprobá la corrección de arriba.</Aviso>
             <div className="mt-3">
               <Tabla columnas={["Producto", "Plataforma", "Publicado", "Disponible", "De más", "En riesgo"]}>
                 {r.sobreventa.map((s) => (

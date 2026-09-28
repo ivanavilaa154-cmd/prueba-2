@@ -20,7 +20,7 @@ from .rutas import respuesta
 api = APIRouter(prefix="/retail/api", tags=["retail"])
 TAMANO_MAXIMO = 40 * 1024 * 1024
 TITULOS = {"ventas": "Ventas (tickets)", "stock": "Stock actual", "productos": "Productos", "compras": "Compras (facturas o remitos)",
-           "precios": "Lista de precios de un proveedor"}
+           "precios": "Lista de precios de un proveedor", "delivery": "Pedidos de delivery (reporte de PedidosYa o Rappi)"}
 
 
 def recalcular_en_segundo_plano(org_id: int, desde: date | None = None) -> None:
@@ -355,8 +355,8 @@ def conexiones(ctx: db.Contexto = Depends(sesiones.contexto)):
     with db.transaccion(ctx) as conn:
         filas = db.filas(conn, """SELECT id, tipo, nombre, activa, config, ultima_sincronizacion, sincronizado_hasta, estado_sincronizacion,
                                          error_sincronizacion, credenciales_cifradas IS NOT NULL AS tiene_clave
-                                  FROM plataformas WHERE tipo='odoo' OR (tipo IN ('tiendanube', 'mercadolibre') AND credenciales_cifradas IS NOT NULL)
-                                  ORDER BY id""")
+                                  FROM plataformas WHERE tipo='odoo' OR (tipo = ANY(%s) AND credenciales_cifradas IS NOT NULL)
+                                  ORDER BY id""", (list(_tiendas()),))
         return respuesta(filas)
 
 
@@ -404,7 +404,8 @@ def sincronizar_ahora(plataforma_id: int, ctx: db.Contexto = Depends(sesiones.co
     if plataforma_id in _sincronizando:
         return respuesta({"en_curso": True, "mensaje": "Ya se está sincronizando."})
     with db.transaccion(ctx) as conn:
-        conexion = db.fila(conn, "SELECT tipo FROM plataformas WHERE id=%s AND tipo IN ('odoo', 'tiendanube', 'mercadolibre') AND activa", (plataforma_id,))
+        conexion = db.fila(conn, "SELECT tipo FROM plataformas WHERE id=%s AND (tipo='odoo' OR tipo = ANY(%s)) AND activa",
+                              (plataforma_id, list(_tiendas())))
         if not conexion:
             raise HTTPException(status_code=404, detail="No existe esa conexión.")
         with conn.cursor() as cur:
@@ -435,37 +436,53 @@ def desconectar(plataforma_id: int, request: Request, ctx: db.Contexto = Depends
     with db.transaccion(ctx) as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE plataformas SET activa=false, credenciales_cifradas=NULL, updated_at=now() WHERE id=%s "
-                    "AND tipo IN ('odoo', 'tiendanube', 'mercadolibre')", (plataforma_id,))
+                    "AND (tipo='odoo' OR tipo = ANY(%s))", (plataforma_id, list(_tiendas())))
         sesiones.auditar(conn, ctx, ctx.usuario_id, "desconectar", "conexion", plataforma_id, {}, sesiones.ip_de(request))
     return respuesta({"ok": True})
 
 
-# ------------------------------------------------------------------------------ Tiendanube y Mercado Libre
+# ------------------------------------------------------------------------------ tiendas online
+def _tiendas() -> dict:
+    from .plataformas_online import TIENDAS
+    return TIENDAS
+
+
 class ConexionTienda(BaseModel):
-    tipo: str                                # tiendanube, mercadolibre
-    nombre: str | None = None
+    tipo: str                                # ver plataformas_online.TIENDAS
+    nombre: str | None = Field(default=None, max_length=80)
     ubicacion_despacho_id: int | None = None
-    token: str | None = None                 # al editar, vacío = se mantiene el guardado
-    store_id: str | None = None              # Tiendanube
-    comision_pct: float | None = Field(default=None, ge=0, le=0.5)    # Tiendanube: lo que cobra el plan por venta
+    # claves (al editar, vacías = se mantienen las guardadas)
+    token: str | None = Field(default=None, max_length=500)
+    clave: str | None = Field(default=None, max_length=500)
+    secreto: str | None = Field(default=None, max_length=500)
+    # datos de la conexión
+    store_id: str | None = Field(default=None, max_length=40)     # Tiendanube
+    url: str | None = Field(default=None, max_length=300)         # WooCommerce
+    tienda: str | None = Field(default=None, max_length=120)      # Shopify
+    cuenta: str | None = Field(default=None, max_length=60)       # VTEX
+    comision_pct: float | None = Field(default=None, ge=0, le=0.5)    # lo que cobra el plan por venta (Mercado Libre lo informa en cada venta)
 
 
 def _cliente_tienda(conn, datos: ConexionTienda, plataforma_id: int | None):
     from . import cifrado, plataformas_online
-    if datos.tipo not in ("tiendanube", "mercadolibre"):
+    tiendas = _tiendas()
+    if datos.tipo not in tiendas:
         raise HTTPException(status_code=400, detail="Plataforma no soportada todavía.")
-    token = datos.token
-    config = {"store_id": datos.store_id}
+    info = tiendas[datos.tipo]
+    credenciales = {k: getattr(datos, k) for k in info["credenciales"] if getattr(datos, k)}
+    config = {k: getattr(datos, k) for k in info["config"] if getattr(datos, k)}
     if plataforma_id:
         p = db.fila(conn, "SELECT credenciales_cifradas, config FROM plataformas WHERE id=%s AND tipo=%s", (plataforma_id, datos.tipo))
         if p:
-            token = token or cifrado.descifrar(p["credenciales_cifradas"]).get("token")
-            config = {**(p["config"] or {}), **{k: v for k, v in config.items() if v}}
-    if not token:
-        raise HTTPException(status_code=400, detail="Falta el token de acceso.")
-    if datos.tipo == "tiendanube" and not config.get("store_id"):
-        raise HTTPException(status_code=400, detail="Falta el número de tienda de Tiendanube.")
-    return plataformas_online.cliente_de(datos.tipo, config, {"token": token}), token
+            credenciales = {**(cifrado.descifrar(p["credenciales_cifradas"]) if p["credenciales_cifradas"] else {}), **credenciales}
+            config = {**(p["config"] or {}), **config}
+    if any(not credenciales.get(k) for k in info["credenciales"]):
+        raise HTTPException(status_code=400, detail="Faltan las claves de acceso.")
+    try:
+        config = plataformas_online.validar_config(datos.tipo, config)
+        return plataformas_online.cliente_de(datos.tipo, config, credenciales), {**credenciales, **config}
+    except plataformas_online.ErrorPlataforma as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @api.post("/conexiones/tienda/probar")
@@ -489,9 +506,9 @@ def guardar_tienda(datos: ConexionTienda, request: Request, plataforma_id: int |
     with db.transaccion(ctx) as conn:
         if not datos.ubicacion_despacho_id or not db.fila(conn, "SELECT 1 FROM ubicaciones WHERE id=%s", (datos.ubicacion_despacho_id,)):
             raise HTTPException(status_code=400, detail="Elegí la sucursal que despacha los pedidos.")
-        _, token = _cliente_tienda(conn, datos, plataforma_id)
+        _, completos = _cliente_tienda(conn, datos, plataforma_id)
         try:
-            pid = plataformas_online.guardar(conn, ctx, datos.tipo, {**datos.model_dump(), "token": token}, plataforma_id)
+            pid = plataformas_online.guardar(conn, ctx, datos.tipo, {**datos.model_dump(), **completos}, plataforma_id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         sesiones.auditar(conn, ctx, ctx.usuario_id, "guardar", "conexion", pid,

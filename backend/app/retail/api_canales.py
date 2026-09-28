@@ -14,6 +14,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from . import db, permisos, sesiones
 from .api_comprar import _hoy_datos
@@ -160,3 +161,48 @@ def metricas_ecommerce(dias: int = 90, ctx: db.Contexto = Depends(sesiones.conte
         hay_publicaciones = bool(db.fila(conn, "SELECT 1 FROM publicaciones LIMIT 1"))
         return respuesta({"desde": desde, "totales": totales, "por_producto": por_producto, "despacho": despacho,
                           "no_publicados": no_publicados if hay_publicaciones else []})
+
+
+# --- stock publicado: propuestas que aprueba una persona (CLAUDE.md, regla 4) ----------------------------------------
+
+class SeleccionPropuestas(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=500)
+
+
+@api.get("/canales/stock/propuestas")
+def propuestas_stock(ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import stock_publicado
+    permisos.exigir(ctx, "ver_ventas")
+    with db.transaccion(ctx) as conn:
+        return respuesta({"propuestas": stock_publicado.listar(conn), "historial": stock_publicado.historial(conn),
+                          "puede_aprobar": permisos.puede(ctx, "gestionar_conexiones"),
+                          "stock_seguridad_online": parametro(conn, "stock_seguridad_online") or 0})
+
+
+@api.post("/canales/stock/propuestas/revisar")
+def revisar_propuestas(ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import stock_publicado
+    permisos.exigir(ctx, "ver_ventas")
+    with db.transaccion(ctx) as conn:
+        return respuesta(stock_publicado.proponer(conn))
+
+
+@api.post("/canales/stock/propuestas/aplicar")
+def aplicar_propuestas(datos: SeleccionPropuestas, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """La persona eligió qué actualizar: recién acá se escribe en las plataformas."""
+    from . import stock_publicado
+    permisos.exigir(ctx, "gestionar_conexiones")
+    resultados = stock_publicado.aplicar(ctx, datos.ids)
+    ok = sum(1 for r in resultados if r["estado"] == "aplicada")
+    return respuesta({"resultados": resultados, "aplicadas": ok,
+                      "mensaje": f"{ok} de {len(resultados)} publicaciones actualizadas" + ("" if ok == len(resultados) else "; revisá las que fallaron.")})
+
+
+@api.post("/canales/stock/propuestas/descartar")
+def descartar_propuestas(datos: SeleccionPropuestas, ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import stock_publicado
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        n = stock_publicado.descartar(conn, ctx, datos.ids)
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "descartar", "propuesta_stock", None, {"ids": datos.ids})
+    return respuesta({"descartadas": n})

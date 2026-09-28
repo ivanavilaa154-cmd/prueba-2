@@ -6,7 +6,7 @@ import { fechaHora, numero } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
 import { Aviso, Boton, Campo, Entrada, Etiqueta, Selector, Tabla, Tarjeta } from "@/components/ui";
 
-type Conexion = { id: number; tipo: string; nombre: string; activa: boolean; config: { url: string; base: string; usuario: string; almacenes?: Record<string, number>; store_id?: string };
+type Conexion = { id: number; tipo: string; nombre: string; activa: boolean; config: { url: string; base: string; usuario: string; almacenes?: Record<string, number>; store_id?: string; tienda?: string; cuenta?: string };
   ultima_sincronizacion: string | null; sincronizado_hasta: string | null; estado_sincronizacion: string | null; error_sincronizacion: string | null; tiene_clave: boolean };
 type Deteccion = { version: string; almacenes: { id: number; nombre: string; codigo: string | null; ubicacion_sugerida: number | null }[];
   cajas: { id: number; nombre: string; almacen_id: number | null }[]; conteos: { tickets: number; productos: number } };
@@ -18,18 +18,38 @@ const ESTADOS: Record<string, { texto: string; tono: "ok" | "alerta" | "peligro"
   sin_probar: { texto: "Sin sincronizar", tono: "gris" },
 };
 
+// Qué pide cada plataforma y dónde se consigue. Las claves se guardan cifradas y nunca vuelven a mostrarse.
+const TIENDAS: Record<string, { nombre: string; ayuda: string; campos: [string, string, string?][]; comision: boolean }> = {
+  mercadolibre: { nombre: "Mercado Libre", ayuda: "Autorizá la app de Retail IA en Mercado Libre y pegá el token de acceso que te da.",
+    campos: [["token", "Token de acceso", "password"]], comision: false },
+  tiendanube: { nombre: "Tiendanube", ayuda: "En Tiendanube: Mis aplicaciones → la app de Retail IA te da el número de tienda y el token de acceso.",
+    campos: [["token", "Token de acceso", "password"], ["store_id", "Número de tienda"]], comision: true },
+  woocommerce: { nombre: "WooCommerce", ayuda: "En WordPress: WooCommerce → Ajustes → Avanzado → API REST → Añadir clave (permiso Lectura; Lectura/Escritura si vas a aprobar cambios de stock).",
+    campos: [["url", "Dirección de la tienda (https://…)"], ["clave", "Clave del cliente (ck_…)", "password"], ["secreto", "Clave secreta (cs_…)", "password"]], comision: true },
+  shopify: { nombre: "Shopify", ayuda: "En Shopify: Configuración → Apps → Desarrollar apps → creá una app con permisos de pedidos, productos e inventario y copiá el token de la API de administración.",
+    campos: [["tienda", "Tienda (tutienda.myshopify.com)"], ["token", "Token de acceso (shpat_…)", "password"]], comision: true },
+  vtex: { nombre: "VTEX", ayuda: "En VTEX: Configuración de la cuenta → Claves de aplicación → generá una clave con acceso a pedidos, catálogo y logística.",
+    campos: [["cuenta", "Nombre de cuenta"], ["clave", "App key", "password"], ["secreto", "App token", "password"]], comision: true },
+};
+
 function TiendaOnline({ alGuardar }: { alGuardar: (texto: string) => void }) {
   const { yo } = useSesion();
-  const [f, setF] = useState({ tipo: "mercadolibre", nombre: "", token: "", store_id: "", comision: "", ubicacion_despacho_id: yo?.ubicaciones[0]?.id ?? 0 });
+  const vacio = { nombre: "", token: "", clave: "", secreto: "", store_id: "", url: "", tienda: "", cuenta: "", comision: "" };
+  const [tipo, setTipo] = useState("mercadolibre");
+  const [f, setF] = useState<Record<string, string>>(vacio);
+  const [despacho, setDespacho] = useState<number>(yo?.ubicaciones[0]?.id ?? 0);
   const [prueba, setPrueba] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const cuerpo = () => ({ tipo: f.tipo, nombre: f.nombre || null, token: f.token || null, store_id: f.store_id || null,
-    comision_pct: f.comision ? Number(f.comision.replace(",", ".")) / 100 : null, ubicacion_despacho_id: f.ubicacion_despacho_id });
+  const info = TIENDAS[tipo];
+  const completo = info.campos.every(([k]) => f[k]);
+  const cuerpo = () => ({ tipo, nombre: f.nombre || null, ubicacion_despacho_id: despacho,
+    ...Object.fromEntries(info.campos.map(([k]) => [k, f[k] || null])),
+    comision_pct: info.comision && f.comision ? Number(f.comision.replace(",", ".")) / 100 : null });
   async function probar() {
     setError(null);
     try {
       const r = await api<{ nombre: string }>("/conexiones/tienda/probar", { metodo: "POST", cuerpo: cuerpo() });
-      setPrueba(`Conectado a la cuenta «${r.nombre}».`);
+      setPrueba(`Conectado a «${r.nombre}».`);
     } catch (e) {
       setPrueba(null);
       setError(e instanceof Error ? e.message : "No se pudo conectar.");
@@ -39,40 +59,45 @@ function TiendaOnline({ alGuardar }: { alGuardar: (texto: string) => void }) {
     try {
       const r = await api<{ id: number }>("/conexiones/tienda", { metodo: "POST", cuerpo: cuerpo() });
       await api(`/conexiones/${r.id}/sincronizar`, { metodo: "POST" });
-      setF({ ...f, token: "", store_id: "", nombre: "", comision: "" });
+      setF(vacio);
       setPrueba(null);
       alGuardar("Tienda conectada. Empezó la sincronización de pedidos y publicaciones.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo guardar.");
     }
   }
-  const tn = f.tipo === "tiendanube";
   return (
     <Tarjeta titulo="Conectar una tienda online">
       <p className="mb-3 text-sm text-suave">
-        {tn ? "En Tiendanube: Mis aplicaciones → la app de Retail IA te da el número de tienda y el token de acceso."
-          : "En Mercado Libre: autorizá la app de Retail IA y pegá acá el token de acceso que te da."} Se guarda cifrado; solo se leen pedidos y publicaciones.
+        {info.ayuda} Se guarda cifrado. Se leen pedidos y publicaciones; el stock publicado solo se cambia cuando vos aprobás la propuesta en Canales.
       </p>
       {error && <div className="mb-3"><Aviso tipo="error">{error}</Aviso></div>}
       {prueba && <div className="mb-3"><Aviso tipo="ok">✓ {prueba}</Aviso></div>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Campo etiqueta="Plataforma">
-          <Selector value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })}><option value="mercadolibre">Mercado Libre</option><option value="tiendanube">Tiendanube</option></Selector>
+          <Selector value={tipo} onChange={(e) => { setTipo(e.target.value); setPrueba(null); setError(null); }}>
+            {Object.entries(TIENDAS).map(([k, v]) => <option key={k} value={k}>{v.nombre}</option>)}
+          </Selector>
         </Campo>
         <Campo etiqueta="Sucursal que despacha">
-          <Selector value={f.ubicacion_despacho_id} onChange={(e) => setF({ ...f, ubicacion_despacho_id: Number(e.target.value) })}>
+          <Selector value={despacho} onChange={(e) => setDespacho(Number(e.target.value))}>
             {yo?.ubicaciones.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
           </Selector>
         </Campo>
-        <Campo etiqueta="Token de acceso"><Entrada type="password" autoComplete="new-password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value })} /></Campo>
-        {tn && <Campo etiqueta="Número de tienda"><Entrada inputMode="numeric" value={f.store_id} onChange={(e) => setF({ ...f, store_id: e.target.value })} /></Campo>}
-        {tn && <Campo etiqueta="Comisión por venta de tu plan (%)"><Entrada inputMode="decimal" value={f.comision} onChange={(e) => setF({ ...f, comision: e.target.value })} placeholder="Ej.: 2" /></Campo>}
-        <Campo etiqueta="Nombre (opcional)"><Entrada value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder={tn ? "Tiendanube" : "Mercado Libre"} /></Campo>
+        {info.campos.map(([k, etiqueta, tipoCampo]) => (
+          <Campo key={`${tipo}-${k}`} etiqueta={etiqueta}>
+            <Entrada type={tipoCampo ?? "text"} autoComplete={tipoCampo ? "new-password" : "off"} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+          </Campo>
+        ))}
+        {info.comision && <Campo etiqueta="Comisión por venta de tu plan (%)"><Entrada inputMode="decimal" value={f.comision} onChange={(e) => setF({ ...f, comision: e.target.value })} placeholder="Ej.: 2" /></Campo>}
+        <Campo etiqueta="Nombre (opcional)"><Entrada value={f.nombre} onChange={(e) => setF({ ...f, nombre: e.target.value })} placeholder={info.nombre} /></Campo>
       </div>
       <div className="mt-4 flex gap-2">
-        <Boton variante="secundario" disabled={!f.token || (tn && !f.store_id)} onClick={probar}>Probar</Boton>
+        <Boton variante="secundario" disabled={!completo} onClick={probar}>Probar</Boton>
         <Boton disabled={!prueba} onClick={guardar}>Guardar y sincronizar</Boton>
       </div>
+      <p className="mt-3 text-xs text-suave">¿PedidosYa o Rappi? Sus conexiones directas solo se habilitan a integradores aprobados: descargá el reporte de pedidos
+        de su panel e importalo en Datos → Importar, tipo «Pedidos de delivery».</p>
     </Tarjeta>
   );
 }
@@ -134,7 +159,7 @@ export function Conexiones() {
     cargar();
   }
   async function desconectar(id: number) {
-    if (!confirm("¿Desconectar Odoo? Se borra la clave guardada; lo ya sincronizado queda.")) return;
+    if (!confirm("¿Desconectar? Se borra la clave guardada; lo ya sincronizado queda.")) return;
     await api(`/conexiones/${id}`, { metodo: "DELETE" });
     cargar();
   }
@@ -155,7 +180,7 @@ export function Conexiones() {
               const e = ESTADOS[c.estado_sincronizacion ?? "sin_probar"] ?? ESTADOS.sin_probar;
               return (
                 <tr key={c.id} className="align-top">
-                  <td>{c.nombre}<div className="text-xs text-suave">{c.tipo === "odoo" ? c.config.url : c.tipo === "tiendanube" ? `Tiendanube · tienda ${c.config.store_id ?? ""}` : "Mercado Libre"}</div></td>
+                  <td>{c.nombre}<div className="text-xs text-suave">{c.tipo === "odoo" ? c.config.url : `${TIENDAS[c.tipo]?.nombre ?? c.tipo}${c.config.store_id ? ` · tienda ${c.config.store_id}` : ""}${c.config.url ? ` · ${c.config.url}` : ""}${c.config.tienda ? ` · ${c.config.tienda}` : ""}${c.config.cuenta ? ` · ${c.config.cuenta}` : ""}`}</div></td>
                   <td><Etiqueta tono={e.tono}>{e.texto}</Etiqueta>{c.error_sincronizacion && <div className="mt-1 max-w-xs text-xs text-peligro">{c.error_sincronizacion}</div>}</td>
                   <td className="whitespace-nowrap">{c.ultima_sincronizacion ? fechaHora(c.ultima_sincronizacion) : "—"}
                     {c.sincronizado_hasta && <div className="text-xs text-suave">tickets hasta {fechaHora(c.sincronizado_hasta)}</div>}</td>
@@ -170,7 +195,7 @@ export function Conexiones() {
               );
             })}
           </Tabla>
-          <p className="mt-3 text-sm text-suave">Se sincroniza sola cada hora. Solo lectura: la plataforma nunca modifica nada en Odoo.</p>
+          <p className="mt-3 text-sm text-suave">Se sincronizan solas cada hora. Solo lectura: nunca se modifica nada en Odoo; en las tiendas online solo se cambia el stock publicado que vos aprobás en Canales.</p>
         </Tarjeta>
       )}
 

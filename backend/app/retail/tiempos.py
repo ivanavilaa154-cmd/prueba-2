@@ -38,7 +38,7 @@ PANTALLAS: dict[str, list[str]] = {
     "Ventas · surtido": ["/surtido"],
     "Ventas · clientes": ["/clientes"],
     "Canales · ganancia": [f"/canales/resultado?{FILTRO}"],
-    "Canales · stock y online": ["/canales/stock", "/canales/ecommerce"],
+    "Canales · stock y online": ["/canales/stock", "/canales/stock/propuestas", "/canales/ecommerce"],
     "Sucursales · comparar": [f"/sucursales/comparativo?{FILTRO}"],
     "Sucursales · matriz": ["/sucursales/matriz"],
     "Sucursales · precios y ajustes": ["/sucursales/precios-distintos", "/sucursales/ajustes"],
