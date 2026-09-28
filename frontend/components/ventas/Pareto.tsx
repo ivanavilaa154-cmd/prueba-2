@@ -43,7 +43,7 @@ export function Pareto() {
   if (error) return <Aviso tipo="error">{error}</Aviso>;
   const unidad = criterio === "unidades" ? "unidades" : criterio === "facturacion" ? "facturación" : "ganancia";
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div className="flex flex-wrap gap-2">
         <Selector aria-label="Criterio" className="w-auto" value={criterio} onChange={(e) => setCriterio(e.target.value)}>
           <option value="ganancia">Por ganancia</option><option value="facturacion">Por facturación</option><option value="unidades">Por unidades</option>

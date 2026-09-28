@@ -59,7 +59,7 @@ export function Ganadores() {
     </Tabla>
   );
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <p className="text-sm text-suave">Período: {r.periodo.etiqueta} ({fechaCorta(r.periodo.desde)} a {fechaCorta(r.periodo.hasta)}), comparado con {fechaCorta(r.periodo.desde_anterior)} a {fechaCorta(r.periodo.hasta_anterior)}.</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Indicador titulo="Facturación" valor={plataCorta(r.resumen.facturacion)} actual={r.resumen.facturacion} anterior={r.resumen.facturacion_anterior} />
@@ -80,7 +80,7 @@ export function Ganadores() {
           <option value="">Todo el día</option><option value="8-12">8 a 12 h</option><option value="12-16">12 a 16 h</option><option value="16-20">16 a 20 h</option><option value="20-24">20 a 24 h</option>
         </Selector>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Tarjeta titulo={`Los 10 mejores por ${r.criterios[crit].toLowerCase()}`}>{tabla(r.rankings[crit].mejores)}</Tarjeta>
         <Tarjeta titulo={`Los 10 peores por ${r.criterios[crit].toLowerCase()}`}>{tabla(r.rankings[crit].peores)}</Tarjeta>
       </div>

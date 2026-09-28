@@ -77,20 +77,21 @@ def _foto_stock(conn, org_id: int, hoy: date) -> None:
                     (hoy, org_id))
 
 
-def recalcular(org_id: int, hoy: date | None = None, tipo: str = "nocturno") -> dict:
-    """Recalcula todo para una empresa. Devuelve un resumen (tiempos y conteos)."""
+def recalcular(org_id: int, hoy: date | None = None, tipo: str = "nocturno", desde: date | None = None) -> dict:
+    """Recalcula todo para una empresa. Devuelve un resumen (tiempos y conteos).
+    desde: reagrega a partir de esa fecha (por ejemplo, después de importar ventas viejas)."""
     with _candados[org_id]:
-        return _recalcular(org_id, hoy, tipo)
+        return _recalcular(org_id, hoy, tipo, desde)
 
 
-def _recalcular(org_id: int, hoy: date | None, tipo: str) -> dict:
+def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = None) -> dict:
     t0 = _time.time()
     ctx = contexto_sistema(org_id)
     with db.transaccion(ctx) as conn:
         hoy = hoy or hoy_de(conn, org_id)
         ejecucion = db.fila(conn, "INSERT INTO ejecuciones_calculo (org_id, tipo) VALUES (%s,%s) RETURNING id", (org_id, tipo))["id"]
         _foto_stock(conn, org_id, hoy)
-        _agregar(conn, org_id, None if tipo == "nocturno" else hoy - timedelta(days=3))
+        _agregar(conn, org_id, desde if desde else (None if tipo == "nocturno" else hoy - timedelta(days=3)))
         t_agg = _time.time() - t0
         resumen = _metricas(conn, org_id, hoy)
         resumen["segundos_agregados"] = round(t_agg, 2)

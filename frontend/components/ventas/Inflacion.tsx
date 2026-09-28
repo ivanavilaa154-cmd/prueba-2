@@ -32,7 +32,7 @@ export function Inflacion() {
   const ultimo = completos[completos.length - 1];
   const datos = r.meses.map((m) => ({ mes: nombreMes(m.mes), nominal: Number(m.nominal), real: Number(m.real) }));
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {ultimo && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-borde bg-panel p-4"><p className="text-sm text-suave">Ventas de {nombreMes(ultimo.mes)}</p><p className="mt-1 text-2xl font-semibold">{plataCorta(ultimo.nominal)}</p></div>

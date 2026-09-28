@@ -34,6 +34,7 @@ from .pruebas import sesion as pruebas_sesion
 from .retail import db as retail_db
 from .retail import api_comprar as retail_comprar
 from .retail import api_documentos as retail_documentos
+from .retail import api_ingesta as retail_ingesta
 from .retail import api_avisos as retail_avisos
 from .retail import api_precios as retail_precios
 from .retail import api_ventas as retail_ventas
@@ -135,6 +136,7 @@ app.include_router(retail_documentos.api)
 app.include_router(retail_ventas.api)
 app.include_router(retail_precios.api)
 app.include_router(retail_avisos.api)
+app.include_router(retail_ingesta.api)
 app.include_router(retail_rutas.sitio)   # último: sirve las pantallas en /retail/…
 
 

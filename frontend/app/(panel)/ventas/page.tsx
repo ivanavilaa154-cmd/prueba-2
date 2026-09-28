@@ -24,7 +24,7 @@ export default function Ventas() {
   }, []);
   const Actual = PESTANAS.find((p) => p.id === activa)!.componente;
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Ventas y ganadores</h1>

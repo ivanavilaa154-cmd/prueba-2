@@ -23,7 +23,7 @@ export default function Caja() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { setR(null); api<R>(`/caja?${parametrosFiltro(filtro)}`).then(setR).catch((e) => setError(e.message)); }, [filtro]);
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div>
         <h1 className="text-2xl font-semibold">Caja y control</h1>
         <p className="text-sm text-suave">Anulaciones, devoluciones y descuentos manuales por cajero y turno, y lo que se aparta de lo normal.</p>
@@ -59,7 +59,7 @@ export default function Caja() {
                 { id: "lista", titulo: "Fuera de lista", valor: (c) => c.fuera_de_lista, derecha: true, ocultarEnCelular: true },
               ]} />
           </Tarjeta>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Tarjeta titulo="Por turno">
               <Tabla columnas={["Sucursal", "Turno", "Tickets", "Anulaciones", "Devoluciones"]}>
                 {r.por_turno.map((t) => <tr key={t.ubicacion + t.turno}><td>{t.ubicacion}</td><td>{t.turno}</td><td className="cifra text-right">{numero(t.tickets)}</td>

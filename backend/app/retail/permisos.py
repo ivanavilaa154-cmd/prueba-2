@@ -16,9 +16,9 @@ from . import db
 PERMISOS: dict[str, set[str]] = {
     "dueno": {"ver_todas_ubicaciones", "configurar_empresa", "gestionar_ubicaciones", "gestionar_usuarios",
               "ver_auditoria", "gestionar_proveedores", "crear_oc", "aprobar_oc", "aprobar_transferencias",
-              "recepciones", "recuentos", "remarcar", "ver_costos", "ver_ventas"},
+              "recepciones", "recuentos", "remarcar", "ver_costos", "ver_ventas", "importar_datos", "gestionar_conexiones"},
     "comprador": {"ver_todas_ubicaciones", "gestionar_proveedores", "crear_oc", "aprobar_oc", "remarcar",
-                  "ver_costos", "ver_ventas"},
+                  "ver_costos", "ver_ventas", "importar_datos"},
     "encargado": {"aprobar_transferencias", "recepciones", "recuentos", "ver_costos", "ver_ventas"},
     "cajero": {"recepciones", "recuentos"},
     "distribuidor": set(),   # fase 3: solo el panel agregado y anónimo

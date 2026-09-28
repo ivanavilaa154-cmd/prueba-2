@@ -31,7 +31,7 @@ export function Ticket() {
   const d = r.descomposicion;
   const clientes = Number(d.efecto_clientes), gasto = Number(d.efecto_gasto);
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Indicador titulo="Tickets" valor={numero(r.actual.tickets)} actual={r.actual.tickets} anterior={r.anterior.tickets} />
         <Indicador titulo="Ticket promedio" valor={plata(Number(r.actual.promedio).toFixed(0))} actual={r.actual.promedio} anterior={r.anterior.promedio} />
@@ -73,7 +73,7 @@ export function Ticket() {
         </div>
         <p className="mt-2 text-xs text-suave">Más oscuro = más movimiento. Usalo para planificar turnos y reposición de góndola.</p>
       </Tarjeta>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {(["ubicacion", "canal"] as const).map((dim) => (
           <Tarjeta key={dim} titulo={dim === "ubicacion" ? "Por sucursal" : "Por canal"}>
             <Tabla columnas={[dim === "ubicacion" ? "Sucursal" : "Canal", "Tickets", "Ticket promedio", "Unid./ticket"]}>

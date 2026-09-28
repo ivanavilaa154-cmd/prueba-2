@@ -7,11 +7,11 @@ export class ErrorApi extends Error {
   }
 }
 
-export async function api<T = unknown>(ruta: string, opciones: { metodo?: string; cuerpo?: unknown } = {}): Promise<T> {
+export async function api<T = unknown>(ruta: string, opciones: { metodo?: string; cuerpo?: unknown; formulario?: FormData } = {}): Promise<T> {
   const r = await fetch(`${BASE}/api${ruta}`, {
-    method: opciones.metodo ?? "GET",
+    method: opciones.metodo ?? (opciones.formulario ? "POST" : "GET"),
     headers: opciones.cuerpo !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: opciones.cuerpo !== undefined ? JSON.stringify(opciones.cuerpo) : undefined,
+    body: opciones.formulario ?? (opciones.cuerpo !== undefined ? JSON.stringify(opciones.cuerpo) : undefined),
     credentials: "same-origin",
   });
   let datos: unknown = null;
