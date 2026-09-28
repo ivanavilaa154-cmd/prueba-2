@@ -47,12 +47,14 @@ export function Campo({ etiqueta, ayuda, children }: { etiqueta: string; ayuda?:
   );
 }
 
-const control = "min-h-9 w-full rounded-lg border border-borde bg-panel px-3 py-1.5 text-sm text-texto placeholder:text-suave";
+const control = "min-h-9 rounded-lg border border-borde bg-panel px-3 py-1.5 text-sm text-texto placeholder:text-suave";
+// Ancho completo salvo que se indique otro ancho (w-auto, w-40, max-w-xs…).
+const ancho = (clase?: string) => (clase && /(^|\s)w-/.test(clase) ? "" : "w-full");
 export function Entrada(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cx(control, props.className)} />;
+  return <input {...props} className={cx(control, ancho(props.className), props.className)} />;
 }
 export function Selector(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cx(control, props.className)} />;
+  return <select {...props} className={cx(control, ancho(props.className), props.className)} />;
 }
 
 export function Aviso({ tipo = "info", children }: { tipo?: "info" | "error" | "ok" | "alerta"; children: ReactNode }) {

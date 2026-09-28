@@ -9,6 +9,7 @@ python-multipart>=0.0.9
 anthropic>=0.40
 pytest>=8.0
 httpx>=0.27
+fpdf2>=2.8             # PDF de órdenes de compra y etiquetas de góndola
 psycopg[binary]>=3.2   # base PostgreSQL de Retail (y Odoo por base directa)
 # Drivers según el ERP del cliente (descomentar el que corresponda):
 # pyodbc          # SQL Server (Tango, Bejerman, SAP B1 sobre SQL Server)

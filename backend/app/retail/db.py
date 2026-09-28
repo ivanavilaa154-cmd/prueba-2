@@ -149,3 +149,22 @@ def filas(conn, sql: str, params: tuple | dict = ()) -> list[dict]:
 def fila(conn, sql: str, params: tuple | dict = ()) -> dict | None:
     r = filas(conn, sql, params)
     return r[0] if r else None
+
+
+def copiar(conn, tabla: str, columnas: list[str], filas) -> int:
+    """Carga masiva respetando la RLS: COPY a una tabla temporal (sin RLS) y de ahí INSERT … SELECT, que sí pasa por las
+    políticas de la tabla destino (PostgreSQL no permite COPY directo sobre tablas con RLS)."""
+    filas = list(filas)
+    if not filas:
+        return 0
+    cols = ", ".join(columnas)
+    temporal = f"_carga_{tabla}"
+    with conn.cursor() as cur:
+        cur.execute(f"CREATE TEMP TABLE IF NOT EXISTS {temporal} (LIKE {tabla} INCLUDING DEFAULTS) ON COMMIT DROP")
+        cur.execute(f"TRUNCATE {temporal}")
+        with cur.copy(f"COPY {temporal} ({cols}) FROM STDIN") as cp:
+            for f in filas:
+                cp.write_row(f)
+        cur.execute(f"INSERT INTO {tabla} ({cols}) SELECT {cols} FROM {temporal}")
+        cur.execute(f"TRUNCATE {temporal}")
+    return len(filas)

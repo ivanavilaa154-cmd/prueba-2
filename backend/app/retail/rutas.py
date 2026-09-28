@@ -110,12 +110,18 @@ def yo(ctx: db.Contexto = Depends(sesiones.contexto)):
         canales = db.filas(conn, "SELECT id, codigo, nombre FROM canales WHERE activo ORDER BY id")
         plataformas = db.filas(conn, "SELECT id, tipo, nombre, canal_id FROM plataformas WHERE activa ORDER BY nombre")
         segundo = db.fila(conn, "SELECT totp_secreto IS NOT NULL AS activo FROM usuarios WHERE id=%s", (ctx.usuario_id,))
+        datos = None
+        if ctx.org_id:
+            datos = db.fila(conn, """SELECT (SELECT count(*) FROM productos) AS productos, (SELECT count(*) FROM proveedores) AS proveedores,
+                                            (SELECT count(*) FROM productos WHERE estado_mapeo='sin_mapear') AS sin_mapear,
+                                            (SELECT origen FROM tickets ORDER BY id DESC LIMIT 1) AS origen,
+                                            (SELECT max(calculado_at) FROM metricas_producto_actual) AS calculado_at""")
     return respuesta({
         "usuario": {"id": ctx.usuario_id, "nombre": ctx.nombre, "email": ctx.email, "rol": ctx.rol,
                     "es_superadmin": ctx.es_superadmin, "segundo_factor": bool(segundo and segundo["activo"]),
                     "todas_ubicaciones": ctx.todas_ubicaciones},
         "empresa": org, "permisos": sorted(permisos.permisos_de(ctx)),
-        "ubicaciones": ubicaciones, "canales": canales, "plataformas": plataformas,
+        "ubicaciones": ubicaciones, "canales": canales, "plataformas": plataformas, "datos": datos,
     })
 
 
@@ -517,6 +523,49 @@ def ver_auditoria(objeto: str | None = None, limite: int = 200, ctx: db.Contexto
         return respuesta(db.filas(conn, "SELECT a.*, u.nombre AS usuario FROM auditoria a LEFT JOIN usuarios u ON u.id=a.usuario_id "
                                         "WHERE a.org_id=app_org() AND (%s::text IS NULL OR a.objeto=%s) ORDER BY a.id DESC LIMIT %s",
                                   (objeto, objeto, max(1, min(limite, 1000)))))
+
+
+# --- exportación a Excel ------------------------------------------------------------------------
+
+class Exportacion(BaseModel):
+    nombre: str = Field(max_length=80)
+    columnas: list[str]
+    filas: list[list]
+
+
+@api.post("/exportar")
+def exportar_excel(datos: Exportacion, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Convierte lo que se ve en una tabla (ya filtrado por permisos en el servidor) en un .xlsx."""
+    import io
+    import re
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    if len(datos.filas) > 50000:
+        raise HTTPException(status_code=400, detail="Demasiadas filas para exportar de una vez (máximo 50.000).")
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = re.sub(r"[^\w -]", "", datos.nombre)[:30] or "Datos"
+    hoja.append(datos.columnas)
+    for f in datos.filas:
+        hoja.append([_celda(v) for v in f])
+    buf = io.BytesIO()
+    libro.save(buf)
+    buf.seek(0)
+    nombre = re.sub(r"[^\w-]", "_", datos.nombre)[:60] or "datos"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})
+
+
+def _celda(v):
+    """Números como números (Excel los suma); texto que empieza con = + - @ se neutraliza (inyección de fórmulas)."""
+    if isinstance(v, (int, float)):
+        return v
+    texto = "" if v is None else str(v)
+    try:
+        return float(texto) if texto.replace(".", "", 1).lstrip("-").isdigit() else (("'" + texto) if texto[:1] in "=+-@" else texto)
+    except ValueError:
+        return texto
 
 
 # --- plataforma (superadmin) ------------------------------------------------------------------

@@ -121,3 +121,41 @@ def retail(retail_pg, monkeypatch):
     yield nombre
     with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
         c.execute(f"DROP DATABASE IF EXISTS {nombre} WITH (FORCE)")
+
+
+DEMO_HOY = date(2026, 9, 24)
+
+
+@pytest.fixture(scope="session")
+def retail_demo_plantilla(retail_pg):
+    """Plantilla con la demo a escala reducida (120 días, ~120 productos) y las métricas calculadas."""
+    import os
+    import psycopg
+    from app.retail import demo
+    with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
+        c.execute("DROP DATABASE IF EXISTS retail_plantilla_demo")
+        c.execute("CREATE DATABASE retail_plantilla_demo TEMPLATE retail_plantilla OWNER retail_app")
+    anterior = os.environ.get("RETAIL_DB_URL")
+    os.environ["RETAIL_DB_URL"] = retail_pg["app"].replace("/postgres?", "/retail_plantilla_demo?", 1)
+    try:
+        resumen = demo.cargar(hoy=DEMO_HOY, escala=demo.Escala(dias=120, tickets=0.3, online_dias=60, productos=120))
+    finally:
+        if anterior is None:
+            os.environ.pop("RETAIL_DB_URL", None)
+        else:
+            os.environ["RETAIL_DB_URL"] = anterior
+    return resumen
+
+
+@pytest.fixture
+def retail_demo(retail_pg, retail_demo_plantilla, monkeypatch):
+    """Base nueva por prueba, copia de la plantilla con la demo."""
+    import psycopg
+    retail_pg["contador"][0] += 1
+    nombre = f"retail_d{retail_pg['contador'][0]}"
+    with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
+        c.execute(f"CREATE DATABASE {nombre} TEMPLATE retail_plantilla_demo OWNER retail_app")
+    monkeypatch.setenv("RETAIL_DB_URL", retail_pg["app"].replace("/postgres?", f"/{nombre}?", 1))
+    yield retail_demo_plantilla
+    with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
+        c.execute(f"DROP DATABASE IF EXISTS {nombre} WITH (FORCE)")

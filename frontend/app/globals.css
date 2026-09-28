@@ -16,6 +16,10 @@
   --alerta: #9a6200;
   --peligro: #c0322b;
   --gris: #6b7280;
+  /* gráficos (paleta validada: categórica, estados, tinta y grilla) */
+  --serie-1: #2a78d6; --serie-2: #eb6834; --serie-3: #1baf7a; --serie-4: #eda100;
+  --estado-bien: #0ca30c; --estado-alerta: #fab219; --estado-serio: #ec835a; --estado-critico: #d03b3b;
+  --grafico-grilla: #e1e0d9; --grafico-eje: #c3c2b7; --grafico-tinta: #898781;
 }
 .dark {
   --fondo: #0e1319;
@@ -30,6 +34,8 @@
   --alerta: #e0a93a;
   --peligro: #ff7a70;
   --gris: #9aa3ad;
+  --serie-1: #3987e5; --serie-2: #d95926; --serie-3: #199e70; --serie-4: #c98500;
+  --grafico-grilla: #2c2c2a; --grafico-eje: #383835; --grafico-tinta: #898781;
 }
 
 @theme inline {
@@ -59,4 +65,4 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 :focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
-.cifra { font-variant-numeric: tabular-nums; }
+.cifra { font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -32,6 +32,9 @@ from .pruebas import cuadratura as pruebas_cuadratura
 from .pruebas import rutas as pruebas_rutas
 from .pruebas import sesion as pruebas_sesion
 from .retail import db as retail_db
+from .retail import api_comprar as retail_comprar
+from .retail import api_documentos as retail_documentos
+from .retail import api_ventas as retail_ventas
 from .retail import rutas as retail_rutas
 from .integraciones import gestor, odoo
 from .permisos import AccesoDenegado, Usuario, obtener_usuario, preparar_consulta
@@ -73,6 +76,16 @@ async def _ciclo_de_vida(_app):
                 retail_db.asegurar_lista()
             except retail_db.BaseNoConfigurada as e:
                 print(f"Retail: {e}")
+                return
+            from .retail import demo as retail_demo
+            from .retail import motor as retail_motor
+            try:
+                resumen = retail_demo.preparar()
+                if resumen:
+                    print(f"Retail: demo del NOA lista ({resumen}).")
+            except Exception as e:
+                print(f"Retail: no se pudo cargar la demo ({type(e).__name__}: {str(e)[:200]}).")
+            retail_motor.iniciar_programador()
         threading.Thread(target=_preparar_retail, daemon=True).start()
     # Las bases locales creadas con una versión anterior se completan con las tablas y columnas nuevas.
     from .erp import modelo
@@ -115,7 +128,10 @@ acceso.registrar(app)
 app.include_router(pruebas_rutas.router)
 app.include_router(pruebas_rutas.api)
 app.include_router(retail_rutas.api)
-app.include_router(retail_rutas.sitio)
+app.include_router(retail_comprar.api)
+app.include_router(retail_documentos.api)
+app.include_router(retail_ventas.api)
+app.include_router(retail_rutas.sitio)   # último: sirve las pantallas en /retail/…
 
 
 class PreguntaChat(BaseModel):

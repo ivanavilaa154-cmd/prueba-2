@@ -65,4 +65,5 @@ export type Yo = {
   ubicaciones: Ubicacion[];
   canales: Canal[];
   plataformas: Plataforma[];
+  datos: { productos: number; proveedores: number; sin_mapear: number; origen: string | null; calculado_at: string | null } | null;
 };

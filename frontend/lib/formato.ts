@@ -53,3 +53,35 @@ export function parsearMonto(texto: string): string {
   if (/^\d{1,3}(\.\d{3})+$/.test(t)) return t.replaceAll(".", "");
   return t;
 }
+
+/** Número con formato argentino (1.234,5). Acepta texto de la API (importes) o números. */
+export function numero(valor: string | number | null | undefined, decimales = 0): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("es-AR", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+}
+
+/** Importe con formato argentino a partir de la API; sin centavos si son cero. */
+export function plata(valor: string | number | null | undefined, moneda = "ARS"): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  const n = Number(valor);
+  const signo = moneda === "USD" ? "US$" : "$";
+  return `${n < 0 ? "-" : ""}${signo} ${Math.abs(n).toLocaleString("es-AR", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Monto grande abreviado para tarjetas: $ 1,2 M · $ 350 mil. */
+export function plataCorta(valor: string | number | null | undefined): string {
+  const n = Number(valor ?? 0);
+  if (Math.abs(n) >= 1e6) return `$ ${(n / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 1 })} M`;
+  if (Math.abs(n) >= 1e4) return `$ ${Math.round(n / 1e3).toLocaleString("es-AR")} mil`;
+  return plata(n);
+}
+
+export const DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+
+export function fechaCorta(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}

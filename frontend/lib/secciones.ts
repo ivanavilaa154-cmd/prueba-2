@@ -3,9 +3,9 @@ export type Seccion = { ruta: string; nombre: string; llega?: string; que_hace: 
 
 export const SECCIONES: Seccion[] = [
   { ruta: "/", nombre: "Inicio", que_hace: "Resumen del día, tarjetas clave y acciones con botón." },
-  { ruta: "/comprar/", nombre: "Comprar y reponer", llega: "Fase 1 · parte 8",
+  { ruta: "/comprar/", nombre: "Comprar y reponer",
     que_hace: "Qué te falta, cuándo se agota cada producto y cuánto comprar, con semáforo y explicación del cálculo." },
-  { ruta: "/transferencias/", nombre: "Transferencias y OC", llega: "Fase 1 · parte 9",
+  { ruta: "/transferencias/", nombre: "Transferencias y OC",
     que_hace: "Transferencias y órdenes de compra sugeridas, aprobaciones por monto y recepción de mercadería." },
   { ruta: "/plata-parada/", nombre: "Plata parada", llega: "Fase 2",
     que_hace: "Capital inmovilizado en stock, sobrestock y productos que dejaron de venderse." },

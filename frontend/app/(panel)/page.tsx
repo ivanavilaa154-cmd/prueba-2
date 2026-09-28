@@ -14,18 +14,29 @@ export default function Inicio() {
   const modelo = MODELOS[yo.empresa?.modelo_abastecimiento ?? "mixto"];
 
   const pasos: Paso[] = [
-    { titulo: "Conectar tus datos", estado: "proximamente", cuando: "las partes 3 y 4",
-      detalle: "Conexión con tu sistema de caja (Odoo Punto de Venta) o importación de Excel/CSV de ventas, stock y productos." },
+    yo.datos?.productos
+      ? { titulo: "Conectar tus datos", estado: "listo" as const,
+          detalle: yo.datos.origen === "demo" ? `Estás viendo datos de demostración (${yo.datos.productos} productos, 13 meses de ventas). La conexión con tu caja llega en las partes 3 y 4.`
+            : `${yo.datos.productos} productos cargados.` }
+      : { titulo: "Conectar tus datos", estado: "proximamente" as const, cuando: "las partes 3 y 4",
+          detalle: "Conexión con tu sistema de caja (Odoo Punto de Venta) o importación de Excel/CSV de ventas, stock y productos." },
     { titulo: "Confirmar sucursales y depósitos", estado: sucursales > 0 ? "listo" : "pendiente", ir: "/configuracion/#sucursales",
       detalle: sucursales > 0 ? `${sucursales} sucursal${sucursales === 1 ? "" : "es"} y ${depositos} depósito${depositos === 1 ? "" : "s"} cargados.` : "Cargá al menos una sucursal." },
-    { titulo: "Mapear productos", estado: "proximamente", cuando: "la parte 6",
-      detalle: "Vincular tus productos al catálogo maestro por código de barras; lo dudoso lo confirmás vos una vez." },
-    { titulo: "Configurar proveedores", estado: "proximamente", cuando: "las partes 2 y 3",
-      detalle: "Días de visita, demora de entrega y pedido mínimo de cada proveedor." },
+    yo.datos?.productos && !yo.datos.sin_mapear
+      ? { titulo: "Mapear productos", estado: "listo" as const, detalle: "Todos los productos están vinculados al catálogo (o son de elaboración propia)." }
+      : { titulo: "Mapear productos", estado: "proximamente" as const, cuando: "la parte 6",
+          detalle: "Vincular tus productos al catálogo maestro por código de barras; lo dudoso lo confirmás vos una vez." },
+    yo.datos?.proveedores
+      ? { titulo: "Configurar proveedores", estado: "listo" as const, detalle: `${yo.datos.proveedores} proveedores con días de visita, demora y pedido mínimo.` }
+      : { titulo: "Configurar proveedores", estado: "proximamente" as const, cuando: "las partes 2 y 3",
+          detalle: "Días de visita, demora de entrega y pedido mínimo de cada proveedor." },
     { titulo: "Modelo de abastecimiento y márgenes", estado: "listo", ir: "/configuracion/#empresa",
       detalle: `Modelo ${modelo.nombre.toLowerCase()}: ${modelo.explicacion.charAt(0).toLowerCase()}${modelo.explicacion.slice(1)} Los márgenes objetivo llegan en la parte 10.` },
-    { titulo: "Ver las primeras recomendaciones", estado: "proximamente", cuando: "la parte 8",
-      detalle: "Qué te falta, cuánto comprar y a quién, con la explicación de cada número." },
+    yo.datos?.calculado_at
+      ? { titulo: "Ver las primeras recomendaciones", estado: "listo" as const, ir: "/comprar/",
+          detalle: "Qué te falta, cuánto comprar y a quién, con la explicación de cada número." }
+      : { titulo: "Ver las primeras recomendaciones", estado: "proximamente" as const, cuando: "la parte 8",
+          detalle: "Qué te falta, cuánto comprar y a quién, con la explicación de cada número." },
   ];
 
   const tarjetas = ["Ventas vs. período anterior", "Ganancia", "Productos en rojo", "Plata parada", "Plata en riesgo", "Anomalías de caja"];
