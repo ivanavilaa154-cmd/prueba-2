@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { ROLES } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
@@ -11,6 +11,8 @@ export function Cuenta() {
   const [factor, setFactor] = useState<{ secreto: string; uri: string } | null>(null);
   const [codigo, setCodigo] = useState("");
   const [mensaje, setMensaje] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null);
+  const [pref, setPref] = useState<{ resumen_diario: boolean; hora_resumen: number; urgentes_por_email: boolean } | null>(null);
+  useEffect(() => { if (yo.empresa) api<typeof pref>("/yo/preferencias").then(setPref).catch(() => null); }, [yo.empresa]);
 
   async function correr(accion: () => Promise<unknown>, ok: string) {
     setMensaje(null);
@@ -26,6 +28,19 @@ export function Cuenta() {
     <Tarjeta titulo="Mi cuenta">
       <p className="text-sm">{yo.usuario.nombre} · {yo.usuario.email} · {yo.usuario.es_superadmin ? "Administración de la plataforma" : ROLES[yo.usuario.rol ?? ""]}</p>
       {mensaje && <div className="mt-3"><Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso></div>}
+      {pref && (
+        <div className="mt-4 grid gap-2 rounded-lg border border-borde p-3 text-sm">
+          <h3 className="font-medium">Emails</h3>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={pref.resumen_diario} onChange={(e) => setPref({ ...pref, resumen_diario: e.target.checked })} />
+            Recibir el resumen del día a las
+            <select className="rounded border border-borde bg-panel px-1" value={pref.hora_resumen} onChange={(e) => setPref({ ...pref, hora_resumen: Number(e.target.value) })}>
+              {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+            </select></label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={pref.urgentes_por_email} onChange={(e) => setPref({ ...pref, urgentes_por_email: e.target.checked })} />
+            Recibir los avisos urgentes por email</label>
+          <div><Boton variante="secundario" onClick={() => correr(() => api("/yo/preferencias", { metodo: "PUT", cuerpo: pref }), "Preferencias guardadas.")}>Guardar preferencias</Boton></div>
+        </div>
+      )}
       <div className="mt-4 grid gap-6 md:grid-cols-2">
         <form className="grid gap-3" onSubmit={(e) => { e.preventDefault();
           if (clave.nueva !== clave.repetida) { setMensaje({ tipo: "error", texto: "Las dos claves nuevas no coinciden." }); return; }

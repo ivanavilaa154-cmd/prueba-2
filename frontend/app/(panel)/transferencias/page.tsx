@@ -51,6 +51,14 @@ export default function Documentos() {
   const abrirOc = (id: number) => api<DetalleOC>(`/ordenes/${id}`).then(setOc).catch((e) => setMensaje({ tipo: "error", texto: e.message }));
   const abrirTr = (id: number) => api<DetalleTR>(`/transferencias/${id}`).then(setTr).catch((e) => setMensaje({ tipo: "error", texto: e.message }));
 
+  // Enlaces desde avisos: #oc-ID abre la orden, #tr-ID la transferencia, #tr la pestaña de transferencias.
+  useEffect(() => {
+    const h = location.hash.slice(1);
+    if (h.startsWith("tr")) setVista("tr");
+    const m = h.match(/^(oc|tr)-(\d+)$/);
+    if (m) (m[1] === "oc" ? abrirOc : abrirTr)(Number(m[2]));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const escaladas = datos?.ordenes.filter((o) => o.escalada_at && ["sugerida", "borrador"].includes(o.estado)) ?? [];
   return (
     <div className="grid gap-4">

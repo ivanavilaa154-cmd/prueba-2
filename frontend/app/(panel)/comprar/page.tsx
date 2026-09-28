@@ -36,6 +36,21 @@ export default function Comprar() {
   const [mensaje, setMensaje] = useState<{ tipo: "ok" | "error"; texto: React.ReactNode } | null>(null);
   const [cargando, setCargando] = useState(true);
 
+  // Enlaces desde avisos e Inicio: ?semaforo=rojo · ?producto=ID&u=UBICACION (abre el detalle)
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get("semaforo")) setLocal((l) => ({ ...l, semaforo: q.get("semaforo") ?? "" }));
+    if (location.hash === "#recuento") setVista("recuento");
+  }, []);
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const pid = Number(q.get("producto"));
+    if (!pid || !datos || detalle) return;
+    const u = Number(q.get("u"));
+    const fila = datos.filas.find((f) => f.producto_id === pid && (!u || f.ubicacion_id === u));
+    if (fila) setDetalle(fila);
+  }, [datos]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const cargar = useCallback(() => {
     const q = new URLSearchParams();
     if (filtro.ubicaciones.length) q.set("ubicaciones", filtro.ubicaciones.join(","));

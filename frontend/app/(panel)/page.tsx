@@ -1,8 +1,28 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { TarjetaAviso, type AvisoDatos } from "@/components/Aviso";
 import { useSesion } from "@/components/Sesion";
 import { Etiqueta, Tarjeta } from "@/components/ui";
-import { MODELOS } from "@/lib/formato";
+import { fechaCorta, MODELOS, numero, plataCorta } from "@/lib/formato";
+
+type Resumen = { ayer: string; comparado_con: string; ventas_ayer: string; ventas_semana_anterior: string; var_ventas: string | null;
+  ganancia_ayer: string | null; var_ganancia: string | null; tickets_ayer: number; ventas_hoy: string; tickets_hoy: number; var_hoy: string | null;
+  productos_en_rojo: number; plata_parada: string | null; plata_en_riesgo: string | null; anomalias_caja: number;
+  avisos: AvisoDatos[]; acciones: AvisoDatos[] };
+
+function Clave({ titulo, valor, variacion, nota, href }: { titulo: string; valor: string; variacion?: string | null; nota?: string; href: string }) {
+  const v = variacion === null || variacion === undefined ? null : Number(variacion);
+  return (
+    <Link href={href} className="rounded-xl border border-borde bg-panel p-4 hover:border-acento">
+      <p className="text-sm text-suave">{titulo}</p>
+      <p className="mt-1 text-2xl font-semibold">{valor}</p>
+      {v !== null && <p className={`text-xs ${Math.abs(v) < 0.5 ? "text-suave" : v > 0 ? "text-ok" : "text-peligro"}`}>{v > 0 ? "▲ +" : v < 0 ? "▼ " : "= "}{numero(v, 1)} %</p>}
+      {nota && <p className="text-xs text-suave">{nota}</p>}
+    </Link>
+  );
+}
 
 type Paso = { titulo: string; estado: "listo" | "pendiente" | "proximamente"; detalle: string; ir?: string; cuando?: string };
 
@@ -39,6 +59,9 @@ export default function Inicio() {
           detalle: "Qué te falta, cuánto comprar y a quién, con la explicación de cada número." },
   ];
 
+  const [r, setR] = useState<Resumen | null>(null);
+  const [recarga, setRecarga] = useState(0);
+  useEffect(() => { if (yo.datos?.productos) api<Resumen>("/inicio").then(setR).catch(() => setR(null)); }, [yo.datos?.productos, recarga]);
   const tarjetas = ["Ventas vs. período anterior", "Ganancia", "Productos en rojo", "Plata parada", "Plata en riesgo", "Anomalías de caja"];
 
   return (
@@ -48,15 +71,43 @@ export default function Inicio() {
         <p className="text-suave">{yo.empresa?.nombre} · {new Date().toLocaleDateString("es-AR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+      {r && (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <Clave titulo={`Ventas de ayer (${fechaCorta(r.ayer).slice(0, 5)})`} valor={plataCorta(r.ventas_ayer)} variacion={r.var_ventas}
+              nota={`vs. ${fechaCorta(r.comparado_con).slice(0, 5)} · hoy van ${plataCorta(r.ventas_hoy)}`} href="/ventas/" />
+            {r.ganancia_ayer !== null && <Clave titulo="Ganancia bruta de ayer" valor={plataCorta(r.ganancia_ayer)} variacion={r.var_ganancia} href="/ventas/" />}
+            <Clave titulo="Productos en rojo" valor={numero(r.productos_en_rojo)} nota="se agotan antes de reponer" href="/comprar/?semaforo=rojo" />
+            {r.plata_parada !== null && <Clave titulo="Plata parada" valor={plataCorta(r.plata_parada)} nota="sobrestock y sin ventas en 90 días" href="/comprar/?semaforo=gris" />}
+            {r.plata_en_riesgo !== null && <Clave titulo="Plata en riesgo de vencimiento" valor={plataCorta(r.plata_en_riesgo)} nota="a costo" href="/avisos/?tipo=vencimiento" />}
+            <Clave titulo="Anomalías de caja" valor={numero(r.anomalias_caja)} nota="cajeros fuera de lo normal" href="/caja/" />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Tarjeta titulo="Lo más importante hoy" accion={<Link href="/avisos/" className="text-sm text-acento underline">Todos los avisos</Link>}>
+              <div className="grid gap-3">
+                {r.avisos.length === 0 && <p className="text-sm text-suave">No hay avisos abiertos.</p>}
+                {r.avisos.map((a) => <TarjetaAviso key={a.id} a={a} compacto alCambiar={() => setRecarga(recarga + 1)} />)}
+              </div>
+            </Tarjeta>
+            <Tarjeta titulo="Acciones del día">
+              <div className="grid gap-3">
+                {r.acciones.length === 0 && <p className="text-sm text-suave">No hay acciones pendientes.</p>}
+                {r.acciones.map((a) => <TarjetaAviso key={a.id} a={{ ...a, prioridad: "normal", explicacion: "", estado: "nueva" }} compacto sinPrioridad alCambiar={() => setRecarga(recarga + 1)} />)}
+              </div>
+            </Tarjeta>
+          </div>
+        </>
+      )}
+
+      {!r && <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {tarjetas.map((t) => (
           <div key={t} className="rounded-xl border border-borde bg-panel p-4">
             <p className="text-sm text-suave">{t}</p>
             <p className="mt-1 text-2xl font-semibold text-suave">—</p>
-            <p className="mt-1 text-xs text-suave">Sin datos todavía: aparece cuando conectes tus ventas y tu stock.</p>
+            <p className="mt-1 text-xs text-suave">{yo.datos?.productos ? "Cargando…" : "Sin datos todavía: aparece cuando conectes tus ventas y tu stock."}</p>
           </div>
         ))}
-      </div>
+      </div>}
 
       {!configura && (
         <Tarjeta titulo="Tu trabajo en la plataforma">
@@ -66,7 +117,8 @@ export default function Inicio() {
           </p>
         </Tarjeta>
       )}
-      {configura && <Tarjeta titulo="Primeros pasos">
+      {configura && <details open={!yo.datos?.productos} className="rounded-xl border border-borde bg-panel p-4 sm:p-5">
+        <summary className="cursor-pointer font-semibold">Primeros pasos</summary><div className="mt-3">
         <ol className="grid gap-3">
           {pasos.map((p, i) => (
             <li key={p.titulo} className="flex gap-3">
@@ -86,7 +138,7 @@ export default function Inicio() {
             </li>
           ))}
         </ol>
-      </Tarjeta>}
+      </div></details>}
     </div>
   );
 }

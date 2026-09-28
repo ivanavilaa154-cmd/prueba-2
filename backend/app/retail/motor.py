@@ -404,6 +404,9 @@ def iniciar_programador() -> None:
                         recalcular(e["id"], tipo="nocturno")
                     elif 7 <= ahora.hour <= 22:
                         recalcular(e["id"], tipo="incremental")
+                    from . import api_avisos
+                    api_avisos.enviar_urgentes(e["id"])
+                    api_avisos.enviar_resumenes(e["id"], ahora.hour, ahora.date())
             except Exception as ex:   # la base puede no estar lista todavía
                 print(f"Retail: cálculo programado no disponible ({type(ex).__name__}: {str(ex)[:120]})")
             _time.sleep(300)

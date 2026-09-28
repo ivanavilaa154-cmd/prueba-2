@@ -15,9 +15,9 @@ Valores por defecto (configurables): ARS, America/Argentina/Buenos_Aires, semana
 - [x] Parte 7 — Tablas analíticas y cálculo nocturno/incremental.
 - [x] Parte 8 — Qué me falta y qué comprar (sección 6), con recuento guiado.
 - [x] Parte 9 — Reposición, transferencias y OC con aprobaciones (sección 7).
-- [ ] Parte 10 — Remarcación (sección 11).
-- [ ] Parte 11 — Ganadores, Pareto, inflación, ticket y tráfico, control de caja.
-- [ ] Parte 12 — Alertas, bandeja, emails y resumen diario.
+- [x] Parte 10 — Remarcación (sección 11).
+- [x] Parte 11 — Ganadores, Pareto, inflación, ticket y tráfico, control de caja.
+- [x] Parte 12 — Alertas, bandeja, emails y resumen diario; Inicio con datos reales.
 - [ ] Parte 13 — Verificación de los criterios de aceptación y tiempos de carga.
 
 ## Orden de trabajo acordado (28/09/2026)

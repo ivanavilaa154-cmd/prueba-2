@@ -7,6 +7,7 @@ import { Canales } from "@/components/config/Canales";
 import { Cuenta } from "@/components/config/Cuenta";
 import { Empresa } from "@/components/config/Empresa";
 import { Limites } from "@/components/config/Limites";
+import { Precios } from "@/components/config/Precios";
 import { Sucursales } from "@/components/config/Sucursales";
 import { Usuarios } from "@/components/config/Usuarios";
 
@@ -16,6 +17,7 @@ const PESTANAS = [
   { id: "canales", nombre: "Canales", permiso: null, componente: Canales },
   { id: "usuarios", nombre: "Usuarios", permiso: "gestionar_usuarios", componente: Usuarios },
   { id: "limites", nombre: "Límites de aprobación", permiso: "gestionar_usuarios", componente: Limites },
+  { id: "precios", nombre: "Precios", permiso: "ver_costos", componente: Precios },
   { id: "auditoria", nombre: "Auditoría", permiso: "ver_auditoria", componente: Auditoria },
   { id: "cuenta", nombre: "Mi cuenta", permiso: null, componente: Cuenta },
 ] as const;
