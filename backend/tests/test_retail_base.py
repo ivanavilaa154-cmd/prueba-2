@@ -252,7 +252,7 @@ def test_superadmin(retail):
 def test_sin_base_configurada_lo_explica(monkeypatch):
     monkeypatch.delenv("RETAIL_DB_URL", raising=False)
     r = TestClient(app).post("/retail/api/sesion", json={"email": "a@b.c", "clave": "x"})
-    assert r.status_code == 503 and "RETAIL_DB_URL" in r.json()["detail"]
+    assert r.status_code == 503 and "preparando" in r.json()["detail"]
 
 
 def test_totp_rfc6238():

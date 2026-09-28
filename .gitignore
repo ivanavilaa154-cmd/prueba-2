@@ -13,3 +13,4 @@ backend/.secreto_sesiones
 backend/.pgdata/
 frontend/.next/
 frontend/out/
+backend/postgres-inicio.log

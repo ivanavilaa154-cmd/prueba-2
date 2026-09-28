@@ -1,5 +1,5 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, BASE } from "@/lib/api";
 import { Aviso, Boton, Campo, Entrada } from "@/components/ui";
 
@@ -10,6 +10,17 @@ export default function Ingresar() {
   const [paso, setPaso] = useState<"clave" | "codigo">("clave");
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [base, setBase] = useState<{ lista: boolean; mensaje: string } | null>(null);
+
+  // Mientras la base se prepara (primer arranque del Codespace) se avisa y se vuelve a consultar sola.
+  useEffect(() => {
+    let vivo = true;
+    const consultar = () => api<{ lista: boolean; mensaje: string }>("/estado")
+      .then((e) => { if (vivo) { setBase(e); if (!e.lista) setTimeout(consultar, 10000); } })
+      .catch(() => { if (vivo) setTimeout(consultar, 10000); });
+    consultar();
+    return () => { vivo = false; };
+  }, []);
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
@@ -40,6 +51,7 @@ export default function Ingresar() {
           <p className="text-xs font-semibold uppercase tracking-wider text-suave">Retail IA</p>
           <h1 className="text-xl font-semibold">{paso === "clave" ? "Ingresá a tu comercio" : "Segundo factor"}</h1>
         </div>
+        {base && !base.lista && <Aviso tipo="alerta">{base.mensaje}</Aviso>}
         {error && <Aviso tipo="error">{error}</Aviso>}
         {paso === "clave" ? (
           <>

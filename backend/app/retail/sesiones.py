@@ -118,8 +118,10 @@ def contexto_de_sesion(s: dict) -> db.Contexto:
 
 def contexto(request: Request) -> db.Contexto:
     """Dependencia de todas las rutas de Retail: sin sesión válida → 401."""
-    if not db.configurada():
-        raise HTTPException(status_code=503, detail="Falta configurar la base de Retail (RETAIL_DB_URL en backend/.env).")
+    try:
+        db.asegurar_lista()
+    except db.BaseNoConfigurada as e:
+        raise HTTPException(status_code=503, detail=str(e))
     s = _sesion(request)
     if not s:
         raise HTTPException(status_code=401, detail="Ingresá con tu email y tu clave.")

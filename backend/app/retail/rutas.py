@@ -70,10 +70,18 @@ def _cookie(respuesta_: JSONResponse, request: Request, valor: str) -> None:
                           samesite="lax", secure=segura, path="/")
 
 
+@api.get("/estado")
+def estado_base():
+    """Público: si la base de Retail está lista (la pantalla de ingreso lo muestra mientras se prepara)."""
+    return respuesta(db.estado())
+
+
 @api.post("/sesion")
 def ingresar(datos: Ingreso, request: Request):
-    if not db.configurada():
-        raise HTTPException(status_code=503, detail="Falta configurar la base de Retail (RETAIL_DB_URL en backend/.env).")
+    try:
+        db.asegurar_lista()
+    except db.BaseNoConfigurada as e:
+        raise HTTPException(status_code=503, detail=str(e))
     valor, pendiente = sesiones.ingresar(datos.email, datos.clave, sesiones.ip_de(request))
     r = respuesta({"requiere_segundo_factor": pendiente})
     _cookie(r, request, valor)

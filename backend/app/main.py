@@ -66,13 +66,14 @@ async def _ciclo_de_vida(_app):
         if agregadas:
             print(f"Centro de pruebas: se agregaron las claves de ejemplo {', '.join(agregadas)} a backend/.env (cambialas antes de publicar).")
     # Retail: la base PostgreSQL se migra al arrancar y, si está vacía, se cargan las empresas demo.
-    if retail_db.configurada() and "pytest" not in sys.modules:
-        try:
-            from .retail import semilla
-            if semilla.cargar():
-                print(f"Retail: empresas de demostración cargadas (clave de las cuentas demo: {semilla.CLAVE_DEMO}).")
-        except Exception as e:
-            print(f"Retail: no se pudo preparar la base PostgreSQL ({type(e).__name__}: {e}).")
+    # En segundo plano: si PostgreSQL todavía se está instalando, la plataforma igual arranca y Retail se conecta después.
+    if "pytest" not in sys.modules:
+        def _preparar_retail():
+            try:
+                retail_db.asegurar_lista()
+            except retail_db.BaseNoConfigurada as e:
+                print(f"Retail: {e}")
+        threading.Thread(target=_preparar_retail, daemon=True).start()
     # Las bases locales creadas con una versión anterior se completan con las tablas y columnas nuevas.
     from .erp import modelo
     for url in fuente.opciones().values():

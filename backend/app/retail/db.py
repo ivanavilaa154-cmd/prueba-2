@@ -11,6 +11,7 @@ de base de datos de la aplicación no es superusuario ni tiene BYPASSRLS.
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,56 @@ def url() -> str:
 
 def configurada() -> bool:
     return bool(os.getenv("RETAIL_DB_URL", "").strip())
+
+
+_preparada: set[str] = set()
+_ultimo_error: dict = {"texto": None}
+_candado = threading.Lock()
+
+
+def _releer_env() -> None:
+    """En el Codespace, postgres.sh escribe RETAIL_DB_URL en backend/.env mientras la plataforma ya corre."""
+    import sys
+    if configurada() or "pytest" in sys.modules:
+        return
+    archivo = Path(__file__).resolve().parents[2] / ".env"
+    if archivo.exists():
+        for linea in archivo.read_text(encoding="utf-8").splitlines():
+            if linea.strip().startswith("RETAIL_DB_URL="):
+                os.environ["RETAIL_DB_URL"] = linea.split("=", 1)[1].strip().strip('"').strip("'")
+
+
+def asegurar_lista() -> None:
+    """Deja la base lista (migraciones + demo si está vacía) la primera vez que se usa. Si todavía no se puede,
+    levanta BaseNoConfigurada con un mensaje claro; se reintenta en el pedido siguiente."""
+    _releer_env()
+    if not configurada():
+        raise BaseNoConfigurada("La base de Retail todavía se está preparando (PostgreSQL). Esperá un minuto y recargá la página.")
+    actual = url()
+    if actual in _preparada:
+        return
+    with _candado:
+        if actual in _preparada:
+            return
+        try:
+            from . import semilla
+            if semilla.cargar():
+                print(f"Retail: empresas de demostración cargadas (clave de las cuentas demo: {semilla.CLAVE_DEMO}).")
+        except Exception as e:
+            _ultimo_error["texto"] = f"{type(e).__name__}: {str(e)[:200]}"
+            raise BaseNoConfigurada("La base de Retail todavía no responde (se está preparando o se detuvo). "
+                                    "Esperá un minuto y recargá; si sigue igual, reiniciá con bash tools/codespaces/iniciar.sh. "
+                                    f"Detalle: {_ultimo_error['texto']}") from e
+        _ultimo_error["texto"] = None
+        _preparada.add(actual)
+
+
+def estado() -> dict:
+    try:
+        asegurar_lista()
+        return {"lista": True, "mensaje": "La base de Retail está lista."}
+    except BaseNoConfigurada as e:
+        return {"lista": False, "mensaje": str(e)}
 
 
 @dataclass
