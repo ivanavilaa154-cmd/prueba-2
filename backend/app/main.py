@@ -42,6 +42,7 @@ from .retail import api_canales as retail_canales
 from .retail import api_copiloto as retail_copiloto
 from .retail import api_impacto as retail_impacto
 from .retail import api_avanzado as retail_avanzado
+from .retail import api_panel as retail_panel
 from .retail import api_avisos as retail_avisos
 from .retail import api_precios as retail_precios
 from .retail import api_ventas as retail_ventas
@@ -93,6 +94,10 @@ async def _ciclo_de_vida(_app):
                 resumen = retail_demo.preparar()
                 if resumen:
                     print(f"Retail: demo del NOA lista ({resumen}).")
+                from .retail import demo_panel as retail_demo_panel
+                panel = retail_demo_panel.preparar()
+                if panel:
+                    print(f"Retail: demo del panel de distribuidores lista ({panel}).")
             except Exception as e:
                 print(f"Retail: no se pudo cargar la demo ({type(e).__name__}: {str(e)[:200]}).")
             retail_motor.iniciar_programador()
@@ -151,6 +156,7 @@ app.include_router(retail_canales.api)
 app.include_router(retail_copiloto.api)
 app.include_router(retail_impacto.api)
 app.include_router(retail_avanzado.api)
+app.include_router(retail_panel.api)
 app.include_router(retail_rutas.sitio)   # último: sirve las pantallas en /retail/…
 
 

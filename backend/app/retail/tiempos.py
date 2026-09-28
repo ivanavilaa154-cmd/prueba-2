@@ -49,15 +49,18 @@ PANTALLAS: dict[str, list[str]] = {
     "Datos · conexiones": ["/conexiones"],
     "Configuración": ["/ubicaciones", "/canales", "/usuarios", "/limites", "/config/precios"],
 }
+# El panel de marcas lo abre el distribuidor (--email distribuidor@andina.demo).
+PANTALLAS_DISTRIBUIDOR: dict[str, list[str]] = {"Panel de marcas": ["/panel"], "Pedidos de clientes": ["/panel/pedidos"]}
 
 
-def medir(get: Callable[[str], object], base: str = "/retail/api") -> list[dict]:
+def medir(get: Callable[[str], object], base: str = "/retail/api", pantallas: dict | None = None) -> list[dict]:
     """get(ruta) hace el pedido y devuelve la respuesta (con .status_code y .json()). Devuelve una fila por pantalla."""
+    pantallas = pantallas or PANTALLAS
     comprar = get(f"{base}/comprar")
     items = comprar.json().get("filas", []) if comprar.status_code == 200 else []
     producto = items[0]["producto_id"] if items else 1
     salida = []
-    for pantalla, rutas in PANTALLAS.items():
+    for pantalla, rutas in pantallas.items():
         t0 = time.perf_counter()
         estados = []
         for ruta in rutas:
@@ -78,7 +81,8 @@ def main() -> None:
     with httpx.Client(base_url=a.url, timeout=60) as c:
         r = c.post("/retail/api/sesion", json={"email": a.email, "clave": a.clave})
         r.raise_for_status()
-        filas = medir(c.get)
+        yo = c.get("/retail/api/yo").json()
+        filas = medir(c.get, pantallas=PANTALLAS_DISTRIBUIDOR if yo["usuario"]["rol"] == "distribuidor" else PANTALLAS)
     for f in filas:
         print(f"{'✓' if f['ok'] else '✕'} {f['pantalla']:<28} {f['segundos']:>5.2f} s  {f['estados']}")
     lentas = [f for f in filas if not f["ok"]]

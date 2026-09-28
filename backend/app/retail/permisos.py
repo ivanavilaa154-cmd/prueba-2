@@ -21,7 +21,7 @@ PERMISOS: dict[str, set[str]] = {
                   "ver_costos", "ver_ventas", "importar_datos"},
     "encargado": {"aprobar_transferencias", "recepciones", "recuentos", "ver_costos", "ver_ventas"},
     "cajero": {"recepciones", "recuentos"},
-    "distribuidor": set(),   # fase 3: solo el panel agregado y anónimo
+    "distribuidor": {"panel_marcas"},   # solo el panel agregado y anónimo y los pedidos que le envían (13.3)
 }
 
 TIPOS_DOCUMENTO = ("orden_compra", "transferencia", "ajuste_stock", "precio")
@@ -31,7 +31,7 @@ PERMISO_APROBAR = {"orden_compra": "aprobar_oc", "transferencia": "aprobar_trans
 
 def permisos_de(ctx: db.Contexto) -> set[str]:
     if ctx.es_superadmin and ctx.org_id:
-        return PERMISOS["dueno"]      # el superadmin dentro de una empresa actúa con todo el alcance
+        return PERMISOS["dueno"] | {"panel_marcas"}   # el superadmin dentro de una empresa actúa con todo el alcance
     return PERMISOS.get(ctx.rol or "", set())
 
 

@@ -2,7 +2,7 @@
 // Transferencias y órdenes de compra (sección 7): sugeridas, aprobación por límite, envío (lo confirma una persona) y recepción.
 import { useCallback, useEffect, useState } from "react";
 import { api, BASE } from "@/lib/api";
-import { fechaCorta, fechaHora, numero, plata, plataCorta } from "@/lib/formato";
+import { fecha, fechaCorta, fechaHora, numero, plata, plataCorta } from "@/lib/formato";
 import { Panel } from "@/components/Panel";
 import { TablaDatos } from "@/components/TablaDatos";
 import { Aviso, Boton, ComoSeCalcula, Entrada, Etiqueta, Tabla, Tarjeta, cx } from "@/components/ui";
@@ -18,7 +18,8 @@ type TR = { id: number; numero: string; estado: string; motivo: string; valor: s
 type LineaOC = { id: number; producto_id: number; ubicacion_id: number | null; nombre: string; codigo_interno: string; ubicacion: string | null; cantidad: string;
   cantidad_sugerida: string | null; bultos: string | null; costo: string | null; cantidad_recibida: string; adelantada: boolean; explicacion: Record<string, unknown> };
 type DetalleOC = OC & { lineas: LineaOC[]; email_oc: string | null; notas: string | null; aprobada_por_nombre: string | null; enviada_por_nombre: string | null;
-  enviada_at: string | null; aprobada_at: string | null; limite: string | null; proveedor_id: number; ubicacion_id: number | null };
+  enviada_at: string | null; aprobada_at: string | null; limite: string | null; proveedor_id: number; ubicacion_id: number | null;
+  confirmada_proveedor_at: string | null; entrega_prometida: string | null; nota_proveedor: string | null };
 type DetalleTR = TR & { origen_id: number; destino_id: number; lineas: { id: number; nombre: string; cantidad: string; cantidad_recibida: string | null; lote: string | null; costo: string | null }[];
   explicacion: Record<string, unknown> };
 
@@ -157,7 +158,11 @@ function DetalleOrden({ oc, datos, accion, alCambiar }: { oc: DetalleOC; datos: 
         {oc.aprobacion === "automatica" && <Etiqueta>Aprobada automáticamente (bajo el límite)</Etiqueta>}
         {oc.aprobada_por_nombre && <Etiqueta>Aprobó {oc.aprobada_por_nombre}</Etiqueta>}
         {oc.enviada_por_nombre && <Etiqueta>Envió {oc.enviada_por_nombre} · {fechaHora(oc.enviada_at)}</Etiqueta>}
+        {oc.confirmada_proveedor_at && (
+          <Etiqueta tono="ok">✓ El proveedor la confirmó{oc.entrega_prometida ? ` · entrega ${fecha(oc.entrega_prometida)}` : ""}</Etiqueta>
+        )}
       </div>
+      {oc.nota_proveedor && <p className="text-sm text-suave">Nota del proveedor: {oc.nota_proveedor}</p>}
       {e.cumple_minimo === false && <Aviso tipo="alerta">No llega al pedido mínimo del proveedor ({plata(e.pedido_minimo_monto as string)}): faltan {plata(e.falta_para_minimo as string)}.</Aviso>}
       {Number(e.adelantos ?? 0) > 0 && <Aviso tipo="info">Para llegar al pedido mínimo se adelantaron {String(e.adelantos)} producto(s) que se iban a necesitar pronto: {plata(e.inversion_adelantos as string)} extra.</Aviso>}
       {Boolean(e.presupuesto) && (e.presupuesto as { dentro: boolean }).dentro === false && <Aviso tipo="alerta">Esta orden supera el presupuesto de compra disponible del mes.</Aviso>}

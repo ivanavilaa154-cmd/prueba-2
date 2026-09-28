@@ -46,5 +46,9 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
       el descuento de liquidación (10.10).
 - [x] Surtido: marcas, presentaciones, duplicados flojos, qué discontinuar y qué sumar por sucursal (10.12).
 - [x] Clientes (RFM) cuando la caja identifica clientes; si no, explica cómo activarlo (10.14).
-- [ ] Panel para distribuidores y marcas, agregado y anónimo (13.3).
+- [x] Panel para distribuidores y marcas, agregado y anónimo (13.3): solo comercios con consentimiento; un dato se muestra si lo
+      forman al menos 5 comercios y ninguno pesa más del 60 % (PANEL_MIN_COMERCIOS / PANEL_MAX_PARTICIPACION, los fija la plataforma);
+      supresión complementaria para que nadie despeje un dato reservado restando. Sell-out por zona y semana, participación por marca,
+      cobertura, quiebres, oportunidades y efectividad de promociones. Portal de pedidos: el distribuidor ve y confirma las OC que le
+      enviaron (por CUIT). Las marcas de cada distribuidor las carga la administración de la plataforma.
 - [ ] Otras plataformas y delivery; stock publicado: por la regla 4 de CLAUDE.md la actualización en la plataforma la confirma una persona.

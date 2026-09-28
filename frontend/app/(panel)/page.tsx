@@ -28,6 +28,8 @@ type Paso = { titulo: string; estado: "listo" | "pendiente" | "proximamente"; de
 
 export default function Inicio() {
   const { yo, puede } = useSesion();
+  const distribuidor = yo.usuario.rol === "distribuidor";
+  useEffect(() => { if (distribuidor) location.replace(`${location.pathname.replace(/\/$/, "")}/panel/`); }, [distribuidor]);
   const sucursales = yo.ubicaciones.filter((u) => u.tipo !== "deposito").length;
   const depositos = yo.ubicaciones.filter((u) => u.tipo === "deposito").length;
   const configura = puede("configurar_empresa");

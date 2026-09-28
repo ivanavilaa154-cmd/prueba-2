@@ -25,9 +25,10 @@ const PESTANAS = [
 ] as const;
 
 export default function Configuracion() {
-  const { puede } = useSesion();
-  const visibles = PESTANAS.filter((p) => !p.permiso || puede(p.permiso));
-  const [activa, setActiva] = useState<string>("empresa");
+  const { puede, yo } = useSesion();
+  const distribuidor = yo.usuario.rol === "distribuidor";   // solo su cuenta
+  const visibles = PESTANAS.filter((p) => (distribuidor ? p.id === "cuenta" : !p.permiso || puede(p.permiso)));
+  const [activa, setActiva] = useState<string>(distribuidor ? "cuenta" : "empresa");
 
   useEffect(() => {
     const leer = () => {

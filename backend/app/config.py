@@ -33,6 +33,9 @@ ERP_URL = os.getenv("ERP_URL", f"sqlite:///{BACKEND / 'demo_erp.db'}")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-5-5")
 MAX_FILAS = int(os.getenv("MAX_FILAS", "200"))
 MAX_VUELTAS_HERRAMIENTAS = int(os.getenv("MAX_VUELTAS_HERRAMIENTAS", "8"))
+# Panel para distribuidores (Retail 13.3): umbral de anonimato. Lo fija la plataforma, no el distribuidor.
+PANEL_MIN_COMERCIOS = max(3, int(os.getenv("PANEL_MIN_COMERCIOS", "5")))
+PANEL_MAX_PARTICIPACION = min(0.9, float(os.getenv("PANEL_MAX_PARTICIPACION", "0.6")))
 
 
 def _yaml(nombre: str) -> dict:

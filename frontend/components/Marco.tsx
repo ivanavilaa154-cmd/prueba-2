@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { api, BASE } from "@/lib/api";
 import { ROLES } from "@/lib/formato";
-import { SECCIONES } from "@/lib/secciones";
+import { SECCIONES, SECCIONES_DISTRIBUIDOR } from "@/lib/secciones";
 import { cx } from "./ui";
 import { FiltroGlobal } from "./FiltroGlobal";
 import { useSesion } from "./Sesion";
@@ -36,7 +36,7 @@ export function Marco({ children }: { children: ReactNode }) {
   const activa = (r: string) => (r === "/" ? ruta === "/" : ruta.startsWith(r));
   const menu = (
     <nav aria-label="Secciones" className="grid gap-0.5 p-2">
-      {SECCIONES.map((s) => (
+      {(yo.usuario.rol === "distribuidor" ? SECCIONES_DISTRIBUIDOR : SECCIONES).map((s) => (
         <Link key={s.ruta} href={s.ruta} onClick={() => setMenuAbierto(false)}
           className={cx("flex items-center justify-between rounded-lg px-3 py-2 text-sm",
             activa(s.ruta) ? "bg-acento/12 font-semibold text-acento" : "text-texto hover:bg-panel-2")}>
@@ -101,7 +101,7 @@ export function Marco({ children }: { children: ReactNode }) {
               </details>
             </div>
           </div>
-          {yo.empresa && <FiltroGlobal />}
+          {yo.empresa && yo.usuario.rol !== "distribuidor" && <FiltroGlobal />}
         </header>
         <main className="mx-auto max-w-6xl px-4 py-5 sm:py-6">{children}</main>
       </div>

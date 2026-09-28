@@ -1,6 +1,13 @@
 // Navegación lateral (sección 15 del documento). «llega» marca una sección todavía no construida (se muestra «pronto»).
 export type Seccion = { ruta: string; nombre: string; llega?: string; que_hace: string };
 
+// Distribuidor o marca (13.3): solo su panel agregado y anónimo, los pedidos que le envían y su cuenta.
+export const SECCIONES_DISTRIBUIDOR: Seccion[] = [
+  { ruta: "/panel/", nombre: "Panel de marcas",
+    que_hace: "Sell-out, cobertura, quiebres, participación, promociones y oportunidades, agregados y anónimos; y los pedidos de tus clientes." },
+  { ruta: "/configuracion/", nombre: "Mi cuenta", que_hace: "Tu clave y el segundo factor." },
+];
+
 export const SECCIONES: Seccion[] = [
   { ruta: "/", nombre: "Inicio", que_hace: "Resumen del día, tarjetas clave y acciones con botón." },
   { ruta: "/comprar/", nombre: "Comprar y reponer",
