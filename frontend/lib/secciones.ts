@@ -21,7 +21,7 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Ganancia real por canal (comisiones y envíos), stock unificado y sobreventa online." },
   { ruta: "/caja/", nombre: "Caja y control",
     que_hace: "Anulaciones, devoluciones, descuentos manuales y valores atípicos por cajero y turno." },
-  { ruta: "/proveedores/", nombre: "Proveedores", llega: "Fase 1 · partes 2 y 3 (carga); Fase 2 (análisis)",
+  { ruta: "/proveedores/", nombre: "Proveedores",
     que_hace: "Días de visita, demoras, pedidos mínimos, nivel de servicio y rentabilidad por proveedor." },
   { ruta: "/avisos/", nombre: "Avisos",
     que_hace: "Bandeja de avisos con prioridad, impacto en pesos, explicación y acción, más el resumen diario por email." },

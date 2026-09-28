@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { Ganadores } from "@/components/ventas/Ganadores";
 import { Inflacion } from "@/components/ventas/Inflacion";
+import { MediosDePago } from "@/components/ventas/MediosDePago";
+import { Metas } from "@/components/ventas/Metas";
 import { Pareto } from "@/components/ventas/Pareto";
+import { Rentabilidad } from "@/components/ventas/Rentabilidad";
 import { Ticket } from "@/components/ventas/Ticket";
 import { cx } from "@/components/ui";
 
@@ -12,6 +15,9 @@ const PESTANAS = [
   { id: "pareto", nombre: "Pareto ABC", componente: Pareto },
   { id: "inflacion", nombre: "Sin inflación", componente: Inflacion },
   { id: "ticket", nombre: "Ticket y tráfico", componente: Ticket },
+  { id: "rentabilidad", nombre: "Rentabilidad del stock", componente: Rentabilidad },
+  { id: "medios", nombre: "Medios de pago y fiado", componente: MediosDePago },
+  { id: "metas", nombre: "Metas", componente: Metas },
 ];
 
 export default function Ventas() {

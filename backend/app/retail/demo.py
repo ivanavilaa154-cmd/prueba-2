@@ -15,12 +15,15 @@ Casos conocidos para las pruebas de aceptación: ver CASOS.
 """
 from __future__ import annotations
 
+import calendar
 import io
 import json
 import math
 import random
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from . import catalogo_demo, db
@@ -740,6 +743,8 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
             cur.execute("INSERT INTO presupuestos_compra (org_id, mes, monto) VALUES (%s,%s,%s)", (org_id, _mes(hoy), presupuesto))
             cur.execute("INSERT INTO parametros (org_id, clave, valor) VALUES (%s,'comisiones_medios',%s)",
                         (org_id, json.dumps({m[0]: {"comision": m[2], "acreditacion_dias": m[3]} for m in MEDIOS})))
+        _fiado_y_metas(conn, org_id, hoy, rng, sucursales, ubic)
+        with conn.cursor() as cur:
             # secuencias
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), greatest((SELECT coalesce(max(id), 1) FROM {tabla}), 1))")
@@ -774,6 +779,47 @@ def preparar() -> dict | None:
     return cargar(org["id"])
 
 
+CLIENTES_FIADO = ["Rosa Tolaba", "Juan Mamaní", "Carmen Cruz", "Pedro Guanca", "Norma Vilte", "Luis Cardozo", "Elsa Quipildor",
+                  "Hugo Condorí", "Marta Liquín", "Raúl Sajama", "Olga Chauque", "Sergio Burgos", "Ana Gutiérrez", "Víctor Flores"]
+MOROSOS = {"Pedro Guanca", "Olga Chauque"}
+
+
+def _fiado_y_metas(conn, org_id: int, hoy: date, rng: random.Random, sucursales: list[str], ubic: dict) -> None:
+    """Clientes con cuenta corriente (fiado): cada venta a cuenta corriente es una compra del cliente con vencimiento a 30 días;
+    los clientes pagan lo del mes a fin de mes, salvo dos morosos que dejaron de pagar hace dos meses.
+    Metas del mes: ventas y ganancia por sucursal = lo del mes anterior por día × días del mes × 1,05."""
+    ids = {}
+    with conn.cursor() as cur:
+        for i, nombre in enumerate(CLIENTES_FIADO):
+            ids[nombre] = db.fila(conn, "INSERT INTO clientes (org_id, identificador, nombre, alta, consentimiento) VALUES (%s,%s,%s,%s,true) RETURNING id",
+                                  (org_id, f"CC-{i + 1:03d}", nombre, hoy - timedelta(days=400)))["id"]
+        ventas = db.filas(conn, """SELECT t.id, (t.fecha_hora AT TIME ZONE o.zona_horaria)::date fecha, p.monto
+                                   FROM pagos p JOIN tickets t ON t.id = p.ticket_id JOIN organizaciones o ON o.id = t.org_id WHERE p.org_id=%s AND p.medio='cuenta_corriente' AND p.monto > 0""",
+                           (org_id,))
+        compras, por_cliente_mes = [], defaultdict(Decimal)
+        for v in ventas:
+            nombre = CLIENTES_FIADO[v["id"] % len(CLIENTES_FIADO)]
+            compras.append((org_id, ids[nombre], v["fecha"], "compra", v["monto"], v["fecha"] + timedelta(days=30)))
+            por_cliente_mes[(nombre, v["fecha"].replace(day=1))] += v["monto"]
+            cur.execute("UPDATE tickets SET cliente=%s WHERE id=%s", (nombre, v["id"]))
+        pagos = []
+        for (nombre, mes), monto in por_cliente_mes.items():
+            dia_pago = (mes + timedelta(days=32)).replace(day=1) + timedelta(days=rng.randint(2, 12))
+            corte = hoy - timedelta(days=75) if nombre in MOROSOS else hoy
+            if dia_pago <= corte:
+                pagos.append((org_id, ids[nombre], dia_pago, "pago", -monto, None))
+        _copy(conn, "cuentas_clientes", ["org_id", "cliente_id", "fecha", "tipo", "monto", "vencimiento"], compras + pagos)
+        mes = hoy.replace(day=1)
+        anterior = (mes - timedelta(days=1)).replace(day=1)
+        dias_ant = (mes - anterior).days
+        dias_mes = calendar.monthrange(hoy.year, hoy.month)[1]
+        for f in db.filas(conn, """SELECT ubicacion_id, sum(precio_cobrado * cantidad) v, sum((precio_cobrado - coalesce(costo_unitario, 0)) * cantidad) g
+                                   FROM tickets_lineas WHERE org_id=%s AND fecha >= %s AND fecha < %s GROUP BY 1""", (org_id, anterior, mes)):
+            for metrica, valor in (("ventas", f["v"]), ("ganancia", f["g"])):
+                cur.execute("INSERT INTO metas (org_id, periodo, ubicacion_id, metrica, valor) VALUES (%s,%s,%s,%s,%s)",
+                            (org_id, mes, f["ubicacion_id"], metrica, round(valor / dias_ant * dias_mes * Decimal("1.05"), -3)))
+
+
 def borrar(org_id: int) -> None:
     """Borra los datos operativos de la empresa demo (no toca usuarios, sucursales ni configuración de acceso)."""
     tablas = ["alertas", "emails", "metricas_producto_actual", "agg_ubicacion_hora", "agg_producto_ubicacion_dia", "stock_diario",
@@ -783,7 +829,7 @@ def borrar(org_id: int) -> None:
               "ordenes_compra", "listas_precios_proveedor_lineas", "listas_precios_proveedor", "precios", "promociones",
               "margenes_objetivo", "reglas_redondeo", "reglas_reposicion", "config_automatizacion", "config_abastecimiento",
               "presupuestos_compra", "parametros", "metas", "alias_producto", "producto_proveedores", "documentos_leidos",
-              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario"]
+              "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes"]
     with db.transaccion(superadmin=True, org_id=org_id) as conn, conn.cursor() as cur:
         for t in tablas:
             cur.execute(f"DELETE FROM {t} WHERE org_id=%s", (org_id,))

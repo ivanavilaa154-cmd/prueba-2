@@ -25,14 +25,14 @@ ETIQUETAS = {
     "transferencia": "Transferencia sugerida", "orden_compra": "Orden de compra para aprobar", "oc_escalada": "OC sin aprobar",
     "sobrestock": "Sobrestock", "stock_muerto": "Stock muerto", "vencimiento": "Vencimiento", "margen": "Margen erosionado",
     "aumento_proveedor": "Aumento de proveedor", "caja": "Anomalía de caja", "inventario": "Diferencia de inventario",
-    "caida_a": "Caída de un producto A",
+    "caida_a": "Caída de un producto A", "fiado": "Deuda vencida de clientes",
 }
 DESTINOS = {
     "quiebre": ["dueno", "comprador", "encargado"], "gondola": ["encargado", "dueno"], "stock_fantasma": ["encargado", "dueno"],
     "transferencia": ["encargado", "dueno"], "orden_compra": ["comprador", "dueno"], "oc_escalada": ["dueno"],
     "sobrestock": ["comprador", "dueno"], "stock_muerto": ["comprador", "dueno"], "vencimiento": ["encargado", "comprador", "dueno"],
     "margen": ["comprador", "dueno"], "aumento_proveedor": ["comprador", "dueno"], "caja": ["dueno"], "inventario": ["dueno", "encargado"],
-    "caida_a": ["comprador", "dueno"],
+    "caida_a": ["comprador", "dueno"], "fiado": ["dueno", "encargado"],
 }
 MINIMO_IMPACTO = Decimal("1000")      # por debajo de esto, no vale la pena molestar (configurable en parámetros)
 
@@ -219,6 +219,7 @@ def _generar(conn, org_id: int, hoy: date) -> dict:
 
     # --- control de caja (últimos 30 días) y diferencias de inventario
     alertas.extend(_caja(conn, hoy))
+    alertas.extend(_fiado(conn, hoy))
     for d in db.filas(conn, """SELECT r.ubicacion_id, u.nombre, count(*) n, -sum(l.diferencia_pesos) monto FROM recuentos_lineas l
                                JOIN recuentos r ON r.id = l.recuento_id JOIN ubicaciones u ON u.id = r.ubicacion_id
                                WHERE r.fecha > %s AND l.diferencia < 0 GROUP BY 1, 2""", (hoy - timedelta(days=7),)):
@@ -278,6 +279,20 @@ def _gondola(conn, metricas, hoy: date, ahora: datetime, minimo: Decimal) -> lis
                                                                              "datos": {"producto_id": m["producto_id"], "ubicacion_id": m["ubicacion_id"]}},
                                 f"gondola:{m['producto_id']}:{m['ubicacion_id']}:{hoy}", m["ubicacion_id"], m["producto_id"], hoy))
     return resultado
+
+
+def _fiado(conn, hoy: date) -> list[dict]:
+    """Cuenta corriente: un aviso con los clientes que deben compras vencidas hace más de 15 días."""
+    from .api_analisis import saldos_fiado
+    deudores = [c for c in saldos_fiado(conn, hoy) if c["vencido"] > 0 and (c["tramos"]["61_90"] + c["tramos"]["mas_90"]) > 0]
+    if not deudores:
+        return []
+    total = sum((c["vencido"] for c in deudores), Decimal(0))
+    nombres = ", ".join(f"{c['nombre']} ({pesos(c['vencido'])})" for c in deudores[:4])
+    return [_nueva("fiado", "normal", f"{len(deudores)} clientes con deuda vencida de cuenta corriente: {pesos(total)}",
+                   f"Deben compras de hace más de 60 días: {nombres}{'…' if len(deudores) > 4 else ''}. Llamalos o dejá de fiarles hasta que paguen.",
+                   total, "en_riesgo", {"etiqueta": "Ver cuentas corrientes", "tipo": "ir", "destino": "/ventas/#medios"},
+                   "fiado", None, None, hoy + timedelta(days=7))]
 
 
 def _caja(conn, hoy: date) -> list[dict]:
