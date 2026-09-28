@@ -401,10 +401,12 @@ def iniciar_programador() -> None:
                     if clave in hechos:
                         continue
                     hechos.add(clave)
+                    from . import odoo_pos
+                    desde = odoo_pos.sincronizar_todas(e["id"])     # primero traer lo nuevo de la caja
                     if ahora.hour == 3:
                         recalcular(e["id"], tipo="nocturno")
-                    elif 7 <= ahora.hour <= 22:
-                        recalcular(e["id"], tipo="incremental")
+                    elif 7 <= ahora.hour <= 22 or desde:
+                        recalcular(e["id"], tipo="incremental", desde=desde)
                     from . import api_avisos
                     api_avisos.enviar_urgentes(e["id"])
                     api_avisos.enviar_resumenes(e["id"], ahora.hour, ahora.date())

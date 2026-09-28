@@ -3,10 +3,14 @@ import { useEffect, useState } from "react";
 import { useSesion } from "@/components/Sesion";
 import { cx } from "@/components/ui";
 import { Catalogo } from "@/components/datos/Catalogo";
+import { Conexiones } from "@/components/datos/Conexiones";
+import { Documentos } from "@/components/datos/Documentos";
 import { Importar } from "@/components/datos/Importar";
 
 const PESTANAS = [
   { id: "importar", nombre: "Importar archivos", permiso: "importar_datos", componente: Importar },
+  { id: "conexiones", nombre: "Conectar la caja", permiso: "gestionar_conexiones", componente: Conexiones },
+  { id: "documentos", nombre: "Leer facturas y listas", permiso: "recepciones", componente: Documentos },
   { id: "catalogo", nombre: "Catálogo", permiso: "gestionar_proveedores", componente: Catalogo },
 ] as const;
 

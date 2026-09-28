@@ -225,3 +225,209 @@ def vincular(producto_id: int, datos: Maestro, request: Request, ctx: db.Context
                 raise HTTPException(status_code=404, detail="No existe ese producto.")
         sesiones.auditar(conn, ctx, ctx.usuario_id, "vincular_maestro", "producto", producto_id, {"maestro_id": datos.maestro_id}, sesiones.ip_de(request))
     return respuesta({"ok": True})
+
+
+# ------------------------------------------------------------------------------ lector de documentos con IA
+def _permiso_documento(ctx, tipo: str) -> None:
+    permisos.exigir(ctx, "gestionar_proveedores" if tipo == "lista_precios" else "recepciones")
+
+
+@api.post("/lector/leer")
+async def leer_documento(request: Request, tipo: str = Form(...), ubicacion_id: int | None = Form(None), archivo: UploadFile = File(...),
+                         ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import lector
+    if tipo not in ("factura", "remito", "lista_precios"):
+        raise HTTPException(status_code=400, detail="Tipo de documento no válido.")
+    _permiso_documento(ctx, tipo)
+    contenido = await archivo.read()
+    if len(contenido) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="El archivo pesa más de 20 MB.")
+    try:
+        with db.transaccion(ctx) as conn:
+            r = lector.leer(conn, ctx, contenido, archivo.filename or "documento.pdf", tipo, ubicacion_id)
+            sesiones.auditar(conn, ctx, ctx.usuario_id, "leer", "documento", r["id"], {"tipo": tipo, "lineas": len(r["lineas"])}, sesiones.ip_de(request))
+    except lector.ErrorLector as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return respuesta(r)
+
+
+@api.get("/lector")
+def documentos_leidos(ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "recepciones")
+    with db.transaccion(ctx) as conn:
+        return respuesta(db.filas(conn, """
+            SELECT d.id, d.tipo, d.estado, d.nombre_archivo, d.created_at, pr.razon_social AS proveedor, u.nombre AS usuario,
+                   d.extraido->>'numero' AS numero, jsonb_array_length(d.extraido->'lineas') AS lineas, d.resultado->>'mensaje' AS mensaje
+            FROM documentos_leidos d LEFT JOIN proveedores pr ON pr.id = d.proveedor_id LEFT JOIN usuarios u ON u.id = d.created_by
+            ORDER BY d.created_at DESC LIMIT 50"""))
+
+
+@api.get("/lector/{documento_id}")
+def documento_leido(documento_id: int, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "recepciones")
+    with db.transaccion(ctx) as conn:
+        d = db.fila(conn, "SELECT id, tipo, estado, nombre_archivo, proveedor_id, ubicacion_id, extraido, resultado, created_at FROM documentos_leidos WHERE id=%s",
+                    (documento_id,))
+        if not d:
+            raise HTTPException(status_code=404, detail="No existe ese documento.")
+        return respuesta(d)
+
+
+class LineaConfirmada(BaseModel):
+    producto_id: int | None = None
+    codigo: str | None = None
+    descripcion: str | None = None
+    cantidad: float | None = None
+    costo_unitario: float | None = None
+    lote: str | None = None
+    vencimiento: str | None = None
+
+
+class ConfirmarDocumento(BaseModel):
+    proveedor_id: int
+    ubicacion_id: int | None = None
+    orden_id: int | None = None
+    lineas: list[LineaConfirmada]
+
+
+@api.post("/lector/{documento_id}/confirmar")
+def confirmar_documento(documento_id: int, datos: ConfirmarDocumento, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import lector
+    with db.transaccion(ctx) as conn:
+        d = db.fila(conn, "SELECT tipo FROM documentos_leidos WHERE id=%s", (documento_id,))
+        if not d:
+            raise HTTPException(status_code=404, detail="No existe ese documento.")
+        _permiso_documento(ctx, d["tipo"])
+        try:
+            r = lector.confirmar(conn, ctx, documento_id, datos.proveedor_id, datos.ubicacion_id, [l.model_dump() for l in datos.lineas], datos.orden_id)
+        except lector.ErrorLector as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "confirmar", "documento", documento_id, {"mensaje": r["mensaje"]}, sesiones.ip_de(request))
+    recalcular_en_segundo_plano(ctx.org_id)
+    return respuesta(r)
+
+
+@api.post("/lector/{documento_id}/descartar")
+def descartar_documento(documento_id: int, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "recepciones")
+    with db.transaccion(ctx) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE documentos_leidos SET estado='descartado' WHERE id=%s AND estado='leido'", (documento_id,))
+    return respuesta({"ok": True})
+
+
+@api.get("/proveedores")
+def proveedores(ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Proveedores con sus órdenes abiertas (para recibir una factura o remito contra su OC)."""
+    permisos.exigir(ctx, "recepciones")
+    with db.transaccion(ctx) as conn:
+        lista = db.filas(conn, "SELECT id, razon_social, cuit FROM proveedores ORDER BY razon_social")
+        abiertas: dict[int, list] = {}
+        for o in db.filas(conn, "SELECT id, numero, proveedor_id, ubicacion_id, total FROM ordenes_compra "
+                                "WHERE estado IN ('aprobada', 'enviada', 'recibida_parcial') ORDER BY created_at DESC"):
+            abiertas.setdefault(o["proveedor_id"], []).append(o)
+        for p in lista:
+            p["ordenes_abiertas"] = abiertas.get(p["id"], [])
+        return respuesta(lista)
+
+
+# ------------------------------------------------------------------------------ conexión con Odoo Punto de Venta
+class CredencialesOdoo(BaseModel):
+    url: str
+    base: str
+    usuario: str
+    api_key: str | None = None           # al editar, vacía = se mantiene la guardada
+
+
+def _credenciales(conn, datos: CredencialesOdoo, plataforma_id: int | None) -> dict:
+    from . import cifrado, odoo_pos  # noqa: F401
+    clave = datos.api_key
+    if not clave and plataforma_id:
+        p = db.fila(conn, "SELECT credenciales_cifradas FROM plataformas WHERE id=%s AND tipo='odoo'", (plataforma_id,))
+        clave = cifrado.descifrar(p["credenciales_cifradas"]).get("api_key") if p else None
+    if not clave:
+        raise HTTPException(status_code=400, detail="Falta la API key de Odoo.")
+    return {**datos.model_dump(), "api_key": clave}
+
+
+@api.get("/conexiones")
+def conexiones(ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        filas = db.filas(conn, """SELECT id, tipo, nombre, activa, config, ultima_sincronizacion, sincronizado_hasta, estado_sincronizacion,
+                                         error_sincronizacion, credenciales_cifradas IS NOT NULL AS tiene_clave
+                                  FROM plataformas WHERE tipo='odoo' ORDER BY id""")
+        return respuesta(filas)
+
+
+@api.post("/conexiones/odoo/probar")
+def probar_odoo(datos: CredencialesOdoo, plataforma_id: int | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Prueba el acceso y detecta almacenes y cajas, con la sucursal sugerida para cada uno. No guarda nada."""
+    from . import odoo_pos
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        try:
+            return respuesta(odoo_pos.detectar(conn, odoo_pos.cliente_de(_credenciales(conn, datos, plataforma_id))))
+        except (ValueError, odoo_pos.OdooError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+
+class ConexionOdoo(CredencialesOdoo):
+    almacenes: dict[int, int | None]      # {almacén de Odoo: sucursal}; None = no se sincroniza
+
+
+@api.post("/conexiones/odoo")
+def guardar_odoo(datos: ConexionOdoo, request: Request, plataforma_id: int | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    from . import odoo_pos
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        ubicaciones = {u["id"] for u in db.filas(conn, "SELECT id FROM ubicaciones")}
+        if any(v and v not in ubicaciones for v in datos.almacenes.values()):
+            raise HTTPException(status_code=400, detail="Alguna sucursal elegida no existe.")
+        try:
+            pid = odoo_pos.guardar(conn, ctx, _credenciales(conn, datos, plataforma_id), datos.almacenes, plataforma_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "guardar", "conexion", pid,
+                         {"url": datos.url, "base": datos.base, "usuario": datos.usuario, "almacenes": datos.almacenes}, sesiones.ip_de(request))
+    return respuesta({"id": pid})
+
+
+_sincronizando: set = set()
+
+
+@api.post("/conexiones/{plataforma_id}/sincronizar")
+def sincronizar_ahora(plataforma_id: int, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Corre en segundo plano (la primera vez trae más de un año de tickets); el estado se ve en la lista de conexiones."""
+    from . import odoo_pos
+    permisos.exigir(ctx, "gestionar_conexiones")
+    if plataforma_id in _sincronizando:
+        return respuesta({"en_curso": True, "mensaje": "Ya se está sincronizando."})
+    with db.transaccion(ctx) as conn:
+        if not db.fila(conn, "SELECT 1 FROM plataformas WHERE id=%s AND tipo='odoo' AND activa", (plataforma_id,)):
+            raise HTTPException(status_code=404, detail="No existe esa conexión.")
+        with conn.cursor() as cur:
+            cur.execute("UPDATE plataformas SET estado_sincronizacion='sincronizando' WHERE id=%s", (plataforma_id,))
+    _sincronizando.add(plataforma_id)
+
+    def correr():
+        try:
+            with db.transaccion(ctx) as conn:
+                r = odoo_pos.sincronizar(conn, ctx, plataforma_id)
+            recalcular_en_segundo_plano(ctx.org_id, r.get("desde"))
+        except Exception as e:
+            odoo_pos.marcar_error(ctx, plataforma_id, e)
+        finally:
+            _sincronizando.discard(plataforma_id)
+    threading.Thread(target=correr, daemon=True).start()
+    return respuesta({"en_curso": True, "mensaje": "Sincronizando: puede tardar unos minutos la primera vez."})
+
+
+@api.delete("/conexiones/{plataforma_id}")
+def desconectar(plataforma_id: int, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Desactiva la conexión y borra la clave guardada. Los datos ya sincronizados quedan."""
+    permisos.exigir(ctx, "gestionar_conexiones")
+    with db.transaccion(ctx) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE plataformas SET activa=false, credenciales_cifradas=NULL, updated_at=now() WHERE id=%s AND tipo='odoo'", (plataforma_id,))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "desconectar", "conexion", plataforma_id, {}, sesiones.ip_de(request))
+    return respuesta({"ok": True})
