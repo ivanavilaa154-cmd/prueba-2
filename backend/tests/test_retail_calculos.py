@@ -194,3 +194,46 @@ def test_prob_poisson_para_anomalias_de_caja():
     assert C.prob_poisson_al_menos(0, 5) == 1.0
     assert abs(C.prob_poisson_al_menos(12, 7.07) - 0.056) < 0.01        # 12 contra 7 esperadas: puede ser azar
     assert C.prob_poisson_al_menos(34, 4.5) < 1e-10                      # 34 contra 4,5: no es azar
+
+
+def test_asociacion_soporte_confianza_lift():
+    # 1.000 tickets; 100 con fernet, 200 con gaseosa, 60 con ambos.
+    a = C.asociacion(60, 100, 200, 1000)
+    assert a["soporte"] == 0.06 and a["confianza"] == 0.6 and abs(a["lift"] - 3.0) < 1e-9
+    assert C.asociacion(20, 100, 200, 1000)["lift"] == 1.0           # independientes
+    assert C.asociacion(0, 0, 10, 100)["lift"] == 0.0
+
+
+def test_elasticidad_recupera_la_pendiente():
+    import math as m
+    puntos = [(p, 100 * p ** -2.0) for p in [0.8, 0.85, 0.9, 0.95, 1.0, 1.02, 1.05, 0.75, 0.9, 1.0, 0.97, 1.03, 0.88]]
+    r = C.elasticidad(puntos)
+    assert abs(r["elasticidad"] + 2.0) < 1e-6 and r["r2"] > 0.99 and r["clase"] == "sensible"
+    assert C.elasticidad([(p, 50 * p ** -0.4) for p, _ in puntos])["clase"] == "poco_sensible"
+    assert C.elasticidad(puntos[:5])["clase"] == "sin_datos"                       # pocas semanas
+    assert C.elasticidad([(1.0, 10 + i) for i in range(20)])["clase"] == "sin_datos"  # el precio no cambió
+    assert abs(C.factor_por_descuento(-2.0, 0.25) - (0.75 ** -2)) < 1e-12 and C.factor_por_descuento(None, 0.2) is None
+
+
+def test_rfm():
+    assert C.quintil(5, [1, 2, 3, 4]) == 5 and C.quintil(0, [1, 2, 3, 4]) == 1 and C.quintil(2.5, [1, 2, 3, 4]) == 3
+    assert C.segmento_rfm(5, 5, 5) == "campeones" and C.segmento_rfm(2, 4, 3) == "en_riesgo" and C.segmento_rfm(1, 1, 1) == "perdidos"
+    assert C.segmento_rfm(5, 1, 2) == "nuevos" and C.segmento_rfm(3, 4, 2) == "leales" and C.segmento_rfm(3, 2, 2) == "ocasionales"
+
+
+def test_elasticidad_controla_el_efecto_de_la_promocion():
+    # Semanas en promo: precio 20 % menor y además ×1,3 por exhibición. Sin controlar, la elasticidad sale exagerada.
+    puntos = []
+    for i in range(30):
+        promo = i % 5 == 0
+        precio = (0.8 if promo else 1.0) * (1 + 0.02 * ((i % 3) - 1))
+        puntos.append((precio, 100 * precio ** -1.5 * (1.3 if promo else 1.0), 1.0 if promo else 0.0))
+    con = C.elasticidad(puntos)
+    sin = C.elasticidad([(p, u) for p, u, _ in puntos])
+    assert abs(con["elasticidad"] + 1.5) < 1e-6 and sin["elasticidad"] < -2.0
+
+
+def test_combinar_estimaciones_por_precision():
+    # Producto con mucho error: se acerca a la categoría; con poco error, se queda cerca de lo propio.
+    assert abs(C.combinar_estimaciones(-4.0, 2.0, -1.0, 0.2) - (-1.0297)) < 1e-3
+    assert abs(C.combinar_estimaciones(-2.0, 0.1, -1.0, 1.0) - (-1.9901)) < 1e-3

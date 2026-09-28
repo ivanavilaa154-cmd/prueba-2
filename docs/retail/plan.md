@@ -37,3 +37,14 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
 - [x] Conectores de Tiendanube y Mercado Libre, solo lectura (5.4).
 - [x] Copiloto con herramientas (13.2) y medición de impacto (13.4).
 - [x] Avisos nuevos: sobreventa online, meta en riesgo, deuda vencida de fiado.
+
+## Fase 3 (28/09/2026)
+
+- [x] Canasta: pares con soporte, confianza y lift, productos arrastre, combos y ubicación en góndola (10.5).
+- [x] Efectividad de promociones: línea base, incremento, canibalización, rebote y neto (10.9).
+- [x] Sensibilidad al precio: semanas sin promoción, precio real y estacionalidad; combinada con su categoría; alimenta remarcación y
+      el descuento de liquidación (10.10).
+- [x] Surtido: marcas, presentaciones, duplicados flojos, qué discontinuar y qué sumar por sucursal (10.12).
+- [x] Clientes (RFM) cuando la caja identifica clientes; si no, explica cómo activarlo (10.14).
+- [ ] Panel para distribuidores y marcas, agregado y anónimo (13.3).
+- [ ] Otras plataformas y delivery; stock publicado: por la regla 4 de CLAUDE.md la actualización en la plataforma la confirma una persona.

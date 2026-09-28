@@ -1,13 +1,18 @@
 "use client";
 // Ventas, rendimiento y análisis retail (sección 10): ganadores, Pareto, inflación, ticket y tráfico.
 import { useEffect, useState } from "react";
+import { Canasta } from "@/components/ventas/Canasta";
+import { Clientes } from "@/components/ventas/Clientes";
 import { Ganadores } from "@/components/ventas/Ganadores";
 import { Impacto } from "@/components/ventas/Impacto";
 import { Inflacion } from "@/components/ventas/Inflacion";
 import { MediosDePago } from "@/components/ventas/MediosDePago";
 import { Metas } from "@/components/ventas/Metas";
 import { Pareto } from "@/components/ventas/Pareto";
+import { Promociones } from "@/components/ventas/Promociones";
 import { Rentabilidad } from "@/components/ventas/Rentabilidad";
+import { Sensibilidad } from "@/components/ventas/Sensibilidad";
+import { Surtido } from "@/components/ventas/Surtido";
 import { Ticket } from "@/components/ventas/Ticket";
 import { cx } from "@/components/ui";
 
@@ -16,6 +21,11 @@ const PESTANAS = [
   { id: "pareto", nombre: "Pareto ABC", componente: Pareto },
   { id: "inflacion", nombre: "Sin inflación", componente: Inflacion },
   { id: "ticket", nombre: "Ticket y tráfico", componente: Ticket },
+  { id: "canasta", nombre: "Canasta", componente: Canasta },
+  { id: "promociones", nombre: "Promociones", componente: Promociones },
+  { id: "sensibilidad", nombre: "Sensibilidad al precio", componente: Sensibilidad },
+  { id: "surtido", nombre: "Surtido", componente: Surtido },
+  { id: "clientes", nombre: "Clientes", componente: Clientes },
   { id: "rentabilidad", nombre: "Rentabilidad del stock", componente: Rentabilidad },
   { id: "medios", nombre: "Medios de pago y fiado", componente: MediosDePago },
   { id: "metas", nombre: "Metas", componente: Metas },
@@ -33,17 +43,15 @@ export default function Ventas() {
   const Actual = PESTANAS.find((p) => p.id === activa)!.componente;
   return (
     <div className="grid grid-cols-1 gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold">Ventas y ganadores</h1>
-          <p className="text-sm text-suave">Qué productos te dejan plata, cómo venden en términos reales y cuándo viene la gente.</p>
-        </div>
-        <div role="tablist" className="-mx-4 flex gap-1 overflow-x-auto px-4">
-          {PESTANAS.map((p) => (
-            <a key={p.id} role="tab" aria-selected={activa === p.id} href={`#${p.id}`}
-              className={cx("whitespace-nowrap rounded-lg px-3 py-1.5 text-sm", activa === p.id ? "bg-acento text-acento-texto" : "text-suave hover:bg-panel-2")}>{p.nombre}</a>
-          ))}
-        </div>
+      <div>
+        <h1 className="text-2xl font-semibold">Ventas y ganadores</h1>
+        <p className="text-sm text-suave">Qué productos te dejan plata, cómo venden en términos reales, quién te compra y cuándo viene la gente.</p>
+      </div>
+      <div role="tablist" aria-label="Análisis de ventas" className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1">
+        {PESTANAS.map((p) => (
+          <a key={p.id} role="tab" aria-selected={activa === p.id} href={`#${p.id}`}
+            className={cx("whitespace-nowrap rounded-lg px-3 py-1.5 text-sm", activa === p.id ? "bg-acento text-acento-texto" : "text-suave hover:bg-panel-2")}>{p.nombre}</a>
+        ))}
       </div>
       <Actual />
     </div>

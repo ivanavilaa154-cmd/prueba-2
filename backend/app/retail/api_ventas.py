@@ -332,7 +332,7 @@ def control_de_caja(periodo_: str | None = Query(None, alias="periodo"), desde: 
                     # chico y 12 anulaciones contra 8 esperadas darían «atípico» sin serlo.
                     cuenta = {"tasa_anulaciones": "anulaciones", "tasa_descuentos": "descuentos_manuales", "tasa_devoluciones": "devoluciones"}[medida]
                     tasa_otros = sum(x[cuenta] for x in otros) / max(1, sum(x["tickets"] or 0 for x in otros))
-                    raro = C.prob_poisson_al_menos(int(c[cuenta]), tasa_otros * (c["tickets"] or 0)) < 0.001
+                    raro = C.prob_poisson_al_menos(int(c[cuenta]), tasa_otros * (c["tickets"] or 0)) < 0.01
                     if z is not None and z >= 2 and float(c[medida]) > promedio * 1.5 and raro:
                         alertas.append({"ubicacion": c["ubicacion"], "cajero": c["cajero"], "medida": nombre, "valor": c[medida],
                                         "promedio_otros": promedio, "z": z,

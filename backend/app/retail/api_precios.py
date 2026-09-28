@@ -142,6 +142,13 @@ def remarcacion(canal: str | None = None, categoria: int | None = None, filtro: 
         elif filtro == "a_remarcar":
             items = [i for i in items if i["estado"] == "subir"]
         items.sort(key=lambda i: (i["estado"] != "subir", -(i["perdida_diaria"] or 0), i["nombre"]))
+        # Sensibilidad al precio (10.10): para decidir cuánto trasladar del aumento.
+        from .api_avanzado import sensibilidades
+        sens = sensibilidades(conn, hoy)
+        for i in items:
+            s_ = sens.get(i["id"])
+            i["sensibilidad"] = s_["clase"] if s_ else "sin_datos"
+            i["elasticidad"] = s_["elasticidad"] if s_ else None
         listas = db.filas(conn, """SELECT lp.id, lp.vigencia_desde, pr.razon_social proveedor, count(l.id) productos,
                                           avg(CASE WHEN l.costo_anterior > 0 THEN l.costo / l.costo_anterior - 1 END) aumento_promedio
                                    FROM listas_precios_proveedor lp JOIN proveedores pr ON pr.id = lp.proveedor_id

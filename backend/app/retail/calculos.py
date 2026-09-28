@@ -494,3 +494,86 @@ def z_atipico(valor: float, otros: list[float]) -> float | None:
     if desvio == 0:
         return None if valor == mean(otros) else math.copysign(10.0, valor - mean(otros))
     return (valor - mean(otros)) / desvio
+
+
+# ------------------------------------------------------------------------------ fase 3: canasta, sensibilidad al precio, clientes
+def asociacion(tickets_ambos: int, tickets_a: int, tickets_b: int, total: int) -> dict:
+    """Regla A → B. Soporte = tickets con A y B ÷ total. Confianza = con A y B ÷ con A («de los que llevan A, cuántos llevan B»).
+    Lift = confianza ÷ (tickets con B ÷ total): cuántas veces más probable es llevar B si se lleva A (1 = independientes)."""
+    if not total or not tickets_a or not tickets_b:
+        return {"soporte": 0.0, "confianza": 0.0, "lift": 0.0}
+    confianza = tickets_ambos / tickets_a
+    return {"soporte": tickets_ambos / total, "confianza": confianza, "lift": confianza / (tickets_b / total)}
+
+
+def elasticidad(puntos: list[tuple], minimo: int = 12, variacion_minima: float = 0.03) -> dict:
+    """Regresión de ln(unidades) sobre ln(precio real) y, si se informa, la parte de la semana vendida en promoción (controla el efecto
+    de exhibición de la promo, que no es precio). La pendiente del precio es la elasticidad (−2 = si el precio baja 10 %, se vende ~20 % más).
+    puntos: (precio real, unidades ajustadas por estacionalidad[, fracción en promoción]). Sin semanas suficientes o sin variación de
+    precio: sin datos."""
+    datos = [(math.log(p[0]), math.log(p[1]), p[2] if len(p) > 2 else 0.0) for p in puntos if p[0] > 0 and p[1] > 0]
+    n = len(datos)
+    if n < minimo:
+        return {"elasticidad": None, "r2": None, "n": n, "clase": "sin_datos"}
+    mx = sum(x for x, _, _ in datos) / n
+    my = sum(y for _, y, _ in datos) / n
+    mz = sum(z for _, _, z in datos) / n
+    sxx = sum((x - mx) ** 2 for x, _, _ in datos)
+    if (sxx / n) ** 0.5 < variacion_minima:
+        return {"elasticidad": None, "r2": None, "n": n, "clase": "sin_datos"}
+    sxy = sum((x - mx) * (y - my) for x, y, _ in datos)
+    szz = sum((z - mz) ** 2 for _, _, z in datos)
+    sxz = sum((x - mx) * (z - mz) for x, _, z in datos)
+    szy = sum((z - mz) * (y - my) for _, y, z in datos)
+    syy = sum((y - my) ** 2 for _, y, _ in datos)
+    det = sxx * szz - sxz * sxz
+    if szz > 1e-9 and abs(det) > 1e-12:
+        b = (sxy * szz - szy * sxz) / det          # mínimos cuadrados con dos variables
+        c = (szy * sxx - sxy * sxz) / det
+        explicado = b * sxy + c * szy
+    else:
+        b = sxy / sxx
+        explicado = b * sxy
+    r2 = explicado / syy if syy else 0.0
+    varianza = max(syy - explicado, 0.0) / max(n - 3, 1)
+    if szz > 1e-9 and abs(det) > 1e-12:
+        sxx_efectiva = sxx * (1 - (sxz * sxz) / (sxx * szz))       # la variación de precio que no se confunde con la promoción
+    else:
+        sxx_efectiva = sxx
+    error = (varianza / sxx_efectiva) ** 0.5 if sxx_efectiva > 0 else float("inf")
+    clase = "poco_sensible" if b > -1.0 else "sensible"
+    return {"elasticidad": round(b, 3), "error": round(error, 4), "r2": round(r2, 3), "n": n, "clase": clase}
+
+
+def combinar_estimaciones(propia: float, error_propio: float, grupo: float, error_grupo: float) -> float:
+    """Promedio ponderado por precisión (1 ÷ error²) de la estimación del producto y la de su categoría: con pocos datos pesa más
+    la categoría; con muchos, el producto (encogimiento empírico)."""
+    wp = 1 / max(error_propio, 1e-6) ** 2
+    wg = 1 / max(error_grupo, 1e-6) ** 2
+    return (propia * wp + grupo * wg) / (wp + wg)
+
+
+def factor_por_descuento(elasticidad_: float | None, descuento: float) -> float | None:
+    """Con la elasticidad del producto: cuánto más se vende con un descuento (precio × (1 − d)) ^ elasticidad."""
+    if elasticidad_ is None or descuento <= 0 or descuento >= 1:
+        return None
+    return (1 - descuento) ** elasticidad_
+
+
+def quintil(valor: float, cortes: list[float]) -> int:
+    """1 a 5 según en qué quinto cae el valor (cortes = percentiles 20, 40, 60, 80)."""
+    return 1 + sum(1 for c in cortes if valor > c)
+
+
+def segmento_rfm(r: int, f: int, m: int) -> str:
+    if r >= 4 and f >= 4:
+        return "campeones"
+    if r <= 2 and f >= 3:
+        return "en_riesgo"
+    if r == 1:
+        return "perdidos"
+    if f >= 4 or (f >= 3 and m >= 4):
+        return "leales"
+    if r >= 4 and f <= 1:
+        return "nuevos"
+    return "ocasionales"

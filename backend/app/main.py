@@ -41,6 +41,7 @@ from .retail import api_analisis as retail_analisis
 from .retail import api_canales as retail_canales
 from .retail import api_copiloto as retail_copiloto
 from .retail import api_impacto as retail_impacto
+from .retail import api_avanzado as retail_avanzado
 from .retail import api_avisos as retail_avisos
 from .retail import api_precios as retail_precios
 from .retail import api_ventas as retail_ventas
@@ -149,6 +150,7 @@ app.include_router(retail_analisis.api)
 app.include_router(retail_canales.api)
 app.include_router(retail_copiloto.api)
 app.include_router(retail_impacto.api)
+app.include_router(retail_avanzado.api)
 app.include_router(retail_rutas.sitio)   # último: sirve las pantallas en /retail/…
 
 

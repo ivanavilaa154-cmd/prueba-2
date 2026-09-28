@@ -50,6 +50,14 @@ CASOS = {
 }
 
 ATRASO = {"Golosinas del Norte": 0.3, "Limpieza Total": 0.2}      # probabilidad de llegar un día tarde; el resto 6 %
+# Canasta: quien lleva un producto de la primera subcategoría a veces suma su «pareja» de la segunda.
+AFINIDADES = {"Vinos y aperitivos": "Gaseosas", "Yerba mate": "Azúcar y endulzantes", "Fideos y arroz": "Condimentos y salsas",
+              "Harinas y panificados": "Fiambres", "Leches": "Galletitas", "Cervezas": "Salchichas"}
+PROB_AFINIDAD = 0.4
+# Elasticidad precio de la demanda por categoría (sensibilidad al precio): ventas × (precio real relativo) ^ elasticidad.
+ELASTICIDAD = {"Bebidas": -2.0, "Golosinas": -1.8, "Congelados": -1.5, "Limpieza": -1.3, "Almacén": -1.2, "Perfumería": -1.0,
+               "Lácteos": -0.9, "Fiambrería": -0.8, "Panadería y rotisería": -0.6, "Cigarrillos": -0.3}
+EFECTO_EXHIBICION = 1.15               # la promoción suma algo por estar exhibida, además del descuento
 TICKETS_BASE = {"Salta Centro": 190, "Salta Norte": 150, "San Salvador de Jujuy": 120}
 PESO_CATEGORIA = {"Bebidas": 1.5, "Almacén": 1.2, "Lácteos": 1.6, "Fiambrería": 1.0, "Limpieza": 0.6, "Perfumería": 0.45,
                   "Golosinas": 1.1, "Cigarrillos": 1.4, "Congelados": 0.55, "Panadería y rotisería": 1.8}
@@ -104,6 +112,7 @@ class _Prod:
     sin_costo: bool = False
     nuevo_desde: date | None = None
     precios: list = field(default_factory=list)   # [(desde, precio)]
+    ajuste: dict = field(default_factory=dict)     # mes → precio relativo (remarcaciones por encima o por debajo de la inflación)
 
 
 def _copy(conn, tabla: str, columnas: list[str], filas: list[tuple]) -> None:
@@ -261,17 +270,25 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
         def precio_en(p: _Prod, d: date) -> float:
             m = _mes(d) if d.day >= p.dia_remarca else _sumar_meses(_mes(d), -1)
             m = min(max(m, meses[0]), meses[-1])
-            return round(p.precio_hoy * ipc[m] / ultimo / 10) * 10 or 10
+            return round(p.precio_hoy * ipc[m] / ultimo * p.ajuste.get(m, 1.0) / 10) * 10 or 10
 
         def costo_en(p: _Prod, d: date) -> float | None:
             if p.sin_costo:
                 return None
-            ref = precio_en(p, d + timedelta(days=5))               # el proveedor aumenta unos días antes
+            d5 = d + timedelta(days=5)                               # el proveedor aumenta unos días antes
+            m = _mes(d5) if d5.day >= p.dia_remarca else _sumar_meses(_mes(d5), -1)
+            m = min(max(m, meses[0]), meses[-1])
+            ref = p.precio_hoy * ipc[m] / ultimo                     # el costo sigue a la inflación, no a las remarcaciones propias
             costo = ref * (1 - p.margen)
             if p.proveedor == aumento["proveedor"] and d >= fecha_aumento:
                 costo *= 1 + aumento["aumento"]
             return round(costo, 2)
 
+        # Cada producto remarca a veces por encima y a veces por debajo de la inflación (±7 %): eso permite medir la sensibilidad al
+        # precio sin depender solo de las promociones. Generador aparte para no alterar el resto de la simulación.
+        rng_precios = random.Random(semilla + 1)
+        for p in prods:
+            p.ajuste = {m: rng_precios.uniform(0.93, 1.07) for m in meses[:-1]} | {meses[-1]: 1.0}
         filas_precios = []
         for p in prods:
             anterior = None
@@ -370,6 +387,17 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
         fantasma = CASOS["stock_fantasma"]
         suma_pesos = sum(p.peso for p in prods)
         items_por_ticket = 3.2
+
+        por_sub = defaultdict(list)
+        for p in prods:
+            por_sub[p.sub].append(p)
+        parejas = {}
+        indice = {p.id: i for i, p in enumerate(prods)}
+        for sub_a, sub_b in AFINIDADES.items():
+            destino = sorted(por_sub.get(sub_b, []), key=lambda x: -x.peso)
+            for i, p in enumerate(sorted(por_sub.get(sub_a, []), key=lambda x: -x.peso)):
+                if destino:
+                    parejas[p.id] = destino[i % min(3, len(destino))]
 
         def vpd_esperada(p: _Prod, s: str) -> float:
             return TICKETS_BASE[s] * escala.tickets * items_por_ticket * p.peso / suma_pesos * 1.12
@@ -510,9 +538,13 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                         w = 0
                     if s == fantasma["ubicacion"] and p.codigo == fantasma["producto"] and d > hoy - timedelta(days=fantasma["dias_sin_venta"]):
                         w = 0             # stock fantasma: el sistema dice que hay, pero no se vende (no está en góndola)
+                    # Precio real relativo: el precio remarca una vez por mes y la inflación corre todos los días.
+                    real = precio_en(p, d) / (p.precio_hoy * ipc[_mes(d)] / ultimo)
                     for ids_, pct, _ in activos_promo:
                         if p.id in ids_:
-                            w *= 1.8
+                            real *= 1 - pct
+                            w *= EFECTO_EXHIBICION
+                    w *= real ** ELASTICIDAD.get(p.categoria, -1.0)
                     pesos.append(w)
                 acumulados = []
                 total_w = 0.0
@@ -540,6 +572,9 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                         if stock[s][p.id] < q:
                             continue      # venta perdida por faltante
                         elegidos[p.id] = (p, elegidos.get(p.id, (p, 0))[1] + q)
+                        pareja = parejas.get(p.id)
+                        if pareja is not None and pesos[indice[pareja.id]] > 0 and rng.random() < PROB_AFINIDAD and stock[s][pareja.id] >= 1:
+                            elegidos[pareja.id] = (pareja, elegidos.get(pareja.id, (pareja, 0))[1] + 1)
                     if not elegidos:
                         continue
                     t_id += 1
@@ -753,6 +788,7 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                         (org_id, json.dumps({m[0]: {"comision": m[2], "acreditacion_dias": m[3]} for m in MEDIOS})))
         _fiado_y_metas(conn, org_id, hoy, rng, sucursales, ubic)
         _online(conn, org_id, hoy, rng, plataformas, ubic)
+        _clientes_identificados(conn, org_id, hoy)
         with conn.cursor() as cur:
             # secuencias
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
@@ -885,6 +921,25 @@ def _online(conn, org_id: int, hoy: date, rng: random.Random, plataformas: dict,
             publicaciones.append((org_id, plataformas[tipo], pid, f"{tipo[:2].upper()}-{pid}", f["codigo_interno"], f["nombre"],
                                   f["precio_online"] or f["precio"], publicado, True))
     _copy(conn, "publicaciones", ["org_id", "plataforma_id", "producto_id", "id_externo", "sku", "titulo", "precio", "stock_publicado", "activa"], publicaciones)
+
+
+def _clientes_identificados(conn, org_id: int, hoy: date) -> None:
+    """Programa de puntos: una de cada cuatro compras en el local se hace con DNI. Hay 800 clientes con frecuencias
+    distintas (pocos muy frecuentes, muchos ocasionales) y algunos habituales que dejaron de venir hace unos 3 meses."""
+    primera = db.fila(conn, "SELECT min(fecha_hora) f FROM tickets WHERE org_id=%s", (org_id,))["f"].date()
+    corte = max(hoy - timedelta(days=95), primera + (hoy - primera) * 0.6)      # demos cortas: proporcional a la historia
+    with conn.cursor() as cur:
+        cur.execute("""
+            WITH t AS (SELECT t.id, t.fecha_hora, ('x' || substr(md5('u' || t.id), 1, 8))::bit(32)::bigint::float8 / 4294967296 u,
+                              ('x' || substr(md5('v' || t.id), 1, 8))::bit(32)::bigint::float8 / 4294967296 v
+                       FROM tickets t JOIN canales c ON c.id = t.canal_id
+                       WHERE t.org_id = %s AND c.codigo = 'fisico' AND t.cliente IS NULL),
+                 x AS (SELECT id, fecha_hora, 1 + floor(800 * power(v, 1.35))::int n FROM t WHERE u < 0.25)
+            UPDATE tickets SET cliente = 'CL-' || lpad(x.n::text, 4, '0') FROM x
+            WHERE tickets.id = x.id AND NOT (x.n %% 11 = 0 AND x.n < 300 AND x.fecha_hora > %s)""", (org_id, datetime.combine(corte, time(0), ZONA)))
+        cur.execute("""INSERT INTO clientes (org_id, identificador, nombre, alta, consentimiento)
+                       SELECT %s, cliente, NULL, min(fecha_hora)::date, true FROM tickets WHERE org_id=%s AND cliente LIKE 'CL-%%'
+                       GROUP BY cliente ON CONFLICT (org_id, identificador) DO NOTHING""", (org_id, org_id))
 
 
 def borrar(org_id: int) -> None:

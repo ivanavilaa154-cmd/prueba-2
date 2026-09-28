@@ -39,3 +39,9 @@ CREATE POLICY aislamiento ON pedidos_online USING ((org_id = app_org() AND app_v
 -- Consultas por rango de fechas (impacto, merma, sucursales).
 CREATE INDEX stock_diario_fecha ON stock_diario (org_id, fecha);
 CREATE INDEX movimientos_stock_fecha ON movimientos_stock (org_id, tipo, fecha);
+
+-- Claves foráneas hacia tickets: sin índice, borrar tickets (regenerar la demo) recorre cada tabla hija por ticket.
+CREATE INDEX IF NOT EXISTS tickets_lineas_ticket ON tickets_lineas (ticket_id);
+CREATE INDEX IF NOT EXISTS pagos_ticket ON pagos (ticket_id);
+CREATE INDEX IF NOT EXISTS anulaciones_ticket ON anulaciones_devoluciones (ticket_id);
+CREATE INDEX IF NOT EXISTS costos_canal_ticket ON costos_canal (ticket_id);

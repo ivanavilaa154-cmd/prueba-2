@@ -224,6 +224,8 @@ def _redondear(precio: Decimal) -> Decimal:
 
 def _vencimientos(conn, ubicaciones: str | None, categoria: int | None, hoy: date, horizonte: int = 45) -> list[dict]:
     salida = []
+    from .api_avanzado import sensibilidades
+    sens = sensibilidades(conn, hoy)
     activas = {(pid, u) for f in db.filas(conn, "SELECT productos, ubicaciones FROM promociones WHERE estado='activa' AND hasta >= %s", (hoy,))
                for pid in f["productos"] for u in (f["ubicaciones"] or [None])}
     for m in _metricas(conn, ubicaciones, categoria, con_explicacion=True):
@@ -246,7 +248,10 @@ def _vencimientos(conn, ubicaciones: str | None, categoria: int | None, hoy: dat
                     "no_llegan": no_llegan, "plata_en_riesgo": (no_llegan * costo).quantize(Decimal("0.01")), "costo": costo, "precio": precio,
                     "en_oferta": (m["producto_id"], m["ubicacion_id"]) in activas or (m["producto_id"], None) in activas, "oferta": None}
             if no_llegan > 0 and precio:
-                d = C.descuento_minimo(float(no_llegan), demanda, dias)
+                # Con la sensibilidad al precio medida del producto se usa su propia escala; si no, la escala por defecto.
+                e = (sens.get(m["producto_id"]) or {}).get("elasticidad")
+                escala = tuple((x, C.factor_por_descuento(e, x)) for x, _ in C.DESCUENTO_VENTAS) if e is not None and e < 0 else C.DESCUENTO_VENTAS
+                d = C.descuento_minimo(float(no_llegan), demanda, dias, escala)
                 vendidas = Decimal(str(l["cantidad"])) - no_llegan
                 sin_oferta = (vendidas * precio).quantize(Decimal("0.01"))
                 if d:
