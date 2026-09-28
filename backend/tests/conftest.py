@@ -32,3 +32,92 @@ def bases_propias_aisladas(tmp_path, monkeypatch):
     monkeypatch.setattr(almacen, "RUTA", tmp_path / "gestion.db")
     monkeypatch.setattr(ops, "RUTA", tmp_path / "ops.db")
     monkeypatch.setattr(ops, "EVIDENCIAS", tmp_path / "evidencias")
+    monkeypatch.delenv("RETAIL_DB_URL", raising=False)   # Retail solo usa la base temporal del fixture `retail`
+
+
+# --- Retail: PostgreSQL temporal ------------------------------------------------------------------
+
+def _binarios_pg() -> Path | None:
+    import shutil
+    import subprocess
+    if shutil.which("pg_config"):
+        try:
+            ruta = Path(subprocess.run(["pg_config", "--bindir"], capture_output=True, text=True, check=True).stdout.strip())
+            if (ruta / "initdb").exists():
+                return ruta
+        except Exception:
+            pass
+    candidatos = sorted(Path("/usr/lib/postgresql").glob("*/bin"), reverse=True)
+    return candidatos[0] if candidatos else None
+
+
+@pytest.fixture(scope="session")
+def retail_pg(tmp_path_factory):
+    """Levanta un PostgreSQL de prueba (initdb en una carpeta temporal) con el usuario retail_app, que no es
+    superusuario: así las políticas RLS se aplican igual que en producción. Carga una plantilla migrada y con la demo."""
+    import os
+    import subprocess
+    import socket
+    import time
+    externo = os.getenv("RETAIL_TEST_ADMIN_URL")   # opcional: un servidor ya levantado (superusuario)
+    bin_ = _binarios_pg()
+    if not externo and not bin_:
+        pytest.skip("No hay PostgreSQL instalado para las pruebas de Retail.")
+    proceso = None
+    if externo:
+        admin = externo
+    else:
+        import tempfile
+        carpeta = Path(tempfile.mkdtemp(prefix="retail-pg-"))
+        como = []
+        if os.geteuid() == 0:   # initdb no corre como root: se usa el usuario postgres del sistema
+            import shutil
+            shutil.chown(carpeta, "postgres")
+            como = ["runuser", "-u", "postgres", "--"]
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            puerto = s.getsockname()[1]
+        datos = carpeta / "datos"
+        subprocess.run(como + [str(bin_ / "initdb"), "-D", str(datos), "-A", "trust", "-U", "postgres", "-E", "UTF8", "--no-sync"],
+                       check=True, capture_output=True)
+        subprocess.run(como + [str(bin_ / "pg_ctl"), "-D", str(datos), "-o", f"-p {puerto} -k {carpeta} -c fsync=off -c listen_addresses=''",
+                               "-l", str(carpeta / "log.txt"), "-w", "start"], check=True, capture_output=True)
+        proceso = (como, bin_, datos)
+        admin = f"postgresql://postgres@/postgres?host={carpeta}&port={puerto}"
+    import psycopg
+    with psycopg.connect(admin, autocommit=True) as c:
+        c.execute("DROP DATABASE IF EXISTS retail_plantilla")
+        c.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='retail_app') THEN "
+                  "CREATE ROLE retail_app LOGIN PASSWORD 'retail_app' NOSUPERUSER NOBYPASSRLS; END IF; END $$")
+        c.execute("CREATE DATABASE retail_plantilla OWNER retail_app")
+    base_app = admin.replace("postgres@", "retail_app:retail_app@", 1)
+    from app.retail import db, semilla
+    anterior = os.environ.get("RETAIL_DB_URL")
+    os.environ["RETAIL_DB_URL"] = base_app.replace("/postgres?", "/retail_plantilla?", 1)
+    try:
+        semilla.cargar()
+    finally:
+        if anterior is None:
+            os.environ.pop("RETAIL_DB_URL", None)
+        else:
+            os.environ["RETAIL_DB_URL"] = anterior
+    yield {"admin": admin, "app": base_app, "contador": [0]}
+    if proceso:
+        como, bin_, datos = proceso
+        subprocess.run(como + [str(bin_ / "pg_ctl"), "-D", str(datos), "-m", "immediate", "stop"], capture_output=True)
+        import shutil
+        shutil.rmtree(datos.parent, ignore_errors=True)
+
+
+@pytest.fixture
+def retail(retail_pg, monkeypatch):
+    """Una base Retail nueva por prueba (copia de la plantilla con la demo), conectada como retail_app."""
+    import psycopg
+    retail_pg["contador"][0] += 1
+    nombre = f"retail_t{retail_pg['contador'][0]}"
+    with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
+        c.execute(f"CREATE DATABASE {nombre} TEMPLATE retail_plantilla OWNER retail_app")
+    monkeypatch.setenv("RETAIL_DB_URL", retail_pg["app"].replace("/postgres?", f"/{nombre}?", 1))
+    yield nombre
+    with psycopg.connect(retail_pg["admin"], autocommit=True) as c:
+        c.execute(f"DROP DATABASE IF EXISTS {nombre} WITH (FORCE)")

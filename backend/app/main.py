@@ -31,6 +31,8 @@ from .gestion import servicio as gestion
 from .pruebas import cuadratura as pruebas_cuadratura
 from .pruebas import rutas as pruebas_rutas
 from .pruebas import sesion as pruebas_sesion
+from .retail import db as retail_db
+from .retail import rutas as retail_rutas
 from .integraciones import gestor, odoo
 from .permisos import AccesoDenegado, Usuario, obtener_usuario, preparar_consulta
 
@@ -63,6 +65,14 @@ async def _ciclo_de_vida(_app):
         agregadas = pruebas_sesion.asegurar_claves_demo()
         if agregadas:
             print(f"Centro de pruebas: se agregaron las claves de ejemplo {', '.join(agregadas)} a backend/.env (cambialas antes de publicar).")
+    # Retail: la base PostgreSQL se migra al arrancar y, si está vacía, se cargan las empresas demo.
+    if retail_db.configurada() and "pytest" not in sys.modules:
+        try:
+            from .retail import semilla
+            if semilla.cargar():
+                print(f"Retail: empresas de demostración cargadas (clave de las cuentas demo: {semilla.CLAVE_DEMO}).")
+        except Exception as e:
+            print(f"Retail: no se pudo preparar la base PostgreSQL ({type(e).__name__}: {e}).")
     # Las bases locales creadas con una versión anterior se completan con las tablas y columnas nuevas.
     from .erp import modelo
     for url in fuente.opciones().values():
@@ -103,6 +113,8 @@ async def _solo_lectura_en_ver_como(request, call_next):
 acceso.registrar(app)
 app.include_router(pruebas_rutas.router)
 app.include_router(pruebas_rutas.api)
+app.include_router(retail_rutas.api)
+app.include_router(retail_rutas.sitio)
 
 
 class PreguntaChat(BaseModel):

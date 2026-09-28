@@ -10,3 +10,6 @@ backend/integraciones_estado.json
 !backend/.env.example
 backend/evidencias/
 backend/.secreto_sesiones
+backend/.pgdata/
+frontend/.next/
+frontend/out/

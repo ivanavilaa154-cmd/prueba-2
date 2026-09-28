@@ -8,6 +8,10 @@ del globo ("Open in Browser").
 **Para conectar Odoo:** en la plataforma, pestaña **1 · Integraciones** → recuadro **Odoo** → completá URL,
 base de datos, usuario y API key → **Probar conexión** → **Guardar** → **Sincronizar ahora**.
 
+**Retail (comercios):** agregá **/retail** al final de la dirección. Cuentas de ejemplo (clave `demo-retail-2026`):
+`dueno@norte.demo` (dueño), `compras@norte.demo` (comprador), `encargado.norte@norte.demo` (encargado de Salta Norte),
+`caja.centro@norte.demo` (cajero), `dueno@esquina.demo` (otra empresa) y `admin@plataforma.demo` (plataforma).
+
 **Para cerrarla:** cerrá esta pestaña. El Codespace se apaga solo a los 30 minutos sin uso y no consume
 horas mientras está apagado. Para volver, entrá a https://github.com/codespaces y abrilo de nuevo:
 la conexión con Odoo queda guardada.

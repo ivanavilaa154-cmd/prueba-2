@@ -2,6 +2,8 @@
 
 Marcar con [x] lo terminado. Trabajar una fase por vez.
 
+> **Retail (comercios minoristas):** plan propio en `docs/retail/plan.md`, especificación en `docs/retail/prompt_maestro.md`.
+
 ## Fase 0 — Base del proyecto (incluida en este esqueleto)
 
 - [x] Estructura del repositorio, CLAUDE.md y documentación

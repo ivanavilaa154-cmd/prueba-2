@@ -22,6 +22,9 @@ from . import almacen, incidencias
 SUITES = [
     {"id": "unitarios", "nombre": "Unitarios", "descripcion": "Conector de solo lectura, simulador de crédito, acceso y chat.",
      "args": ["tests/test_conector.py", "tests/test_credito.py", "tests/test_acceso.py", "tests/test_chat.py"]},
+    {"id": "retail", "nombre": "Retail: empresas, roles y aislamiento",
+     "descripcion": "Ingreso, bloqueo, segundo factor, límites de aprobación y aislamiento por empresa y sucursal (RLS) en PostgreSQL.",
+     "args": ["tests/test_retail_base.py"]},
     {"id": "mapeo", "nombre": "Mapeo e integración (compilador de mappings)",
      "descripcion": "Lectura de Odoo con un Odoo simulado: mapeo de cada tabla, impuestos, moneda, permisos, cortes y control contra el reporte.",
      "args": ["tests/test_integraciones.py"]},

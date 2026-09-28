@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* Modo oscuro por clase (.dark en <html>), elegido por la persona o por el sistema. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --fondo: #f5f6f8;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --texto: #18202b;
+  --suave: #5a6574;
+  --borde: #dde1e7;
+  --acento: #1d63d8;
+  --acento-texto: #ffffff;
+  --ok: #1e7b43;
+  --alerta: #9a6200;
+  --peligro: #c0322b;
+  --gris: #6b7280;
+}
+.dark {
+  --fondo: #0e1319;
+  --panel: #161c24;
+  --panel-2: #1d2530;
+  --texto: #e5eaf0;
+  --suave: #98a3b1;
+  --borde: #2a3440;
+  --acento: #5b8ff5;
+  --acento-texto: #0b1220;
+  --ok: #4cc27c;
+  --alerta: #e0a93a;
+  --peligro: #ff7a70;
+  --gris: #9aa3ad;
+}
+
+@theme inline {
+  --color-fondo: var(--fondo);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-texto: var(--texto);
+  --color-suave: var(--suave);
+  --color-borde: var(--borde);
+  --color-acento: var(--acento);
+  --color-acento-texto: var(--acento-texto);
+  --color-ok: var(--ok);
+  --color-alerta: var(--alerta);
+  --color-peligro: var(--peligro);
+  --color-gris: var(--gris);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.cifra { font-variant-numeric: tabular-nums; }

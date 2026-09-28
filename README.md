@@ -144,6 +144,16 @@ recibe 403, por la dirección o por la API. Cada acción queda en la auditoría 
 Lo que depende de `docs/16_cuadratura_con_origen.md` (descubrimiento automático de la definición, DQ-25 a DQ-27,
 controles de origen para facturación, tesorería y stock) aparece en pantalla como pendiente.
 
+## Retail: comercios con sucursales (en construcción)
+
+Módulo para autoservicios, minimercados y supermercados regionales (especificación en `docs/retail/prompt_maestro.md`, avance en `docs/retail/plan.md`). Se abre en **`/retail`**, con su propio ingreso por usuario (email y clave, con segundo factor opcional).
+
+- Multi-empresa estricto: base PostgreSQL con Row Level Security forzada por empresa y por sucursal. Un encargado solo ve sus sucursales; nadie ve datos de otra empresa (lo prueban `tests/test_retail_base.py` por la API y con SQL directo).
+- Roles: dueño, comprador, encargado de sucursal, cajero, distribuidor (fase 3) y administración de la plataforma. Límites de aprobación por rol o por persona.
+- Parte 1 lista: empresas, sucursales y depósitos, canales (física, e-commerce, delivery, mayorista), usuarios, límites, auditoría, filtro global, modo claro/oscuro y uso desde el celular.
+- Pantallas en Next.js (`frontend/`), exportadas a `backend/app/web/retail/` con `cd frontend && npm run build`.
+- En Codespaces, `tools/codespaces/postgres.sh` crea la base sola. Cuentas demo con la clave `demo-retail-2026`: `dueno@norte.demo`, `compras@norte.demo`, `encargado.norte@norte.demo`, `caja.centro@norte.demo`, `dueno@esquina.demo`, `admin@plataforma.demo`.
+
 ## Integraciones: de dónde toma los datos
 
 En la pestaña **Integraciones** del preview local (`uvicorn app.main:app`, http://localhost:8000) se elige
@@ -249,5 +259,8 @@ Usuarios de demo: `u1` dueño, `u2` vendedora (cartera del vendedor 1), `u3` com
 | `backend/app/actividades/` | Motor de actividades (reglas ACT-01 a ACT-08 y tareas) |
 | `backend/app/gestion/` | Procesos, objetivos, métricas y ciclo de reevaluación |
 | `backend/app/pruebas/` | Centro de pruebas: cuadratura, muestras, suites, pruebas guiadas, incidencias y revisión |
+| `backend/app/retail/` | Retail: base PostgreSQL con RLS, ingreso, roles, límites, auditoría y API `/retail/api` |
+| `frontend/` | Pantallas de Retail (Next.js + TypeScript + Tailwind), exportadas a `backend/app/web/retail/` |
+| `docs/retail/` | Especificación y plan de Retail |
 | `docs/cerebro-ia/` | Especificación completa "Cerebro IA" (KPIs, actividades, procesos y objetivos) |
 | `docs/` | Arquitectura, plan por fases, preguntas de prueba, primer mensaje |

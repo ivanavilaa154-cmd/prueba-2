@@ -77,7 +77,8 @@ async def middleware(request: Request, call_next):
     if _exigida() and not _clave():
         mensaje = "Falta configurar PANEL_CLAVE en el servidor: la plataforma no se abre sin contraseña."
         return JSONResponse({"detail": mensaje}, status_code=503) if ruta != "/" else _pagina_login(mensaje, 503)
-    if not _clave() or ruta in LIBRES or sesion_valida(request.cookies.get(COOKIE)):
+    # Retail tiene su propio ingreso por usuario (email + clave), así que no pide además la clave del panel.
+    if not _clave() or ruta in LIBRES or ruta == "/retail" or ruta.startswith("/retail/") or sesion_valida(request.cookies.get(COOKIE)):
         return await call_next(request)
     if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
         return RedirectResponse("/login", status_code=303)
