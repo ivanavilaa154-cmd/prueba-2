@@ -8,17 +8,17 @@ Valores por defecto (configurables): ARS, America/Argentina/Buenos_Aires, semana
 
 - [x] **Parte 1 — Base multi-empresa:** empresas, sucursales/depósitos, canales, plataformas, usuarios, roles, sucursales por usuario, límites de aprobación, ingreso con email y clave (+ segundo factor opcional), sesiones, auditoría, RLS por empresa y sucursal, pantallas de ingreso, estructura de navegación y Configuración.
 - [x] Parte 2 — Modelo de datos completo y demo NOA (3 sucursales + depósito, ~400 productos, 12 proveedores, 13 meses de tickets, lotes, online, IPC).
-- [ ] Parte 3 — Importación de archivos con asistente de mapeo e idempotencia.
-- [ ] Parte 4 — Conector Odoo Punto de Venta (detección de sucursales y puntos de venta).
-- [ ] Parte 5 — Lector de facturas, remitos y listas con IA.
-- [ ] Parte 6 — Catálogo y normalización (código → alias → similitud → confirmación).
+- [x] Parte 3 — Importación de archivos con asistente de mapeo e idempotencia.
+- [x] Parte 4 — Conector Odoo Punto de Venta (detección de sucursales y puntos de venta).
+- [x] Parte 5 — Lector de facturas, remitos y listas con IA.
+- [x] Parte 6 — Catálogo y normalización (código → alias → similitud → confirmación).
 - [x] Parte 7 — Tablas analíticas y cálculo nocturno/incremental.
 - [x] Parte 8 — Qué me falta y qué comprar (sección 6), con recuento guiado.
 - [x] Parte 9 — Reposición, transferencias y OC con aprobaciones (sección 7).
 - [x] Parte 10 — Remarcación (sección 11).
 - [x] Parte 11 — Ganadores, Pareto, inflación, ticket y tráfico, control de caja.
 - [x] Parte 12 — Alertas, bandeja, emails y resumen diario; Inicio con datos reales.
-- [ ] Parte 13 — Verificación de los criterios de aceptación y tiempos de carga.
+- [x] Parte 13 — Verificación de los criterios de aceptación y tiempos de carga (`docs/retail/aceptacion.md`). Quedan para la Fase 2 la ganancia por canal completa y el copiloto de Retail.
 
 ## Orden de trabajo acordado (28/09/2026)
 
