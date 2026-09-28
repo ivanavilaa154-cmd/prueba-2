@@ -42,6 +42,7 @@ CASOS = {
     "vence_pronto": {"subcategoria": "Yogures", "ubicacion": "Salta Norte", "dias": 6, "exceso": 60},
     "aumento_sin_remarcar": {"proveedor": "Lácteos del Valle", "aumento": 0.12, "hace_dias": 6},
     "cajero_anomalo": {"ubicacion": "Salta Norte", "cajero": "Cajero N3"},
+    "precio_distinto": {"productos": ["P0005", "P0006"], "ubicacion": "San Salvador de Jujuy", "recargo": 0.12, "hace_dias": 20},
 }
 
 TICKETS_BASE = {"Salta Centro": 190, "Salta Norte": 150, "San Salvador de Jujuy": 120}
@@ -188,7 +189,7 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
         # ---------------------------------------------------------------- catálogo
         catalogo = catalogo_demo.productos()
         if escala.productos:
-            fijos = {c["producto"] for c in CASOS.values() if "producto" in c}
+            fijos = {c["producto"] for c in CASOS.values() if "producto" in c} | {x for c in CASOS.values() for x in c.get("productos", [])}
             paso = max(1, len(catalogo) // escala.productos)
             catalogo = [p for i, p in enumerate(catalogo) if i % paso == 0 or p["codigo"] in fijos]
         cat_ids: dict[tuple, int] = {}
@@ -282,6 +283,14 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                 filas_precios.append((org_id, p.id, None, None, f"{pr:.2f}", desde, hasta, "demo"))
                 if p.categoria in ("Bebidas", "Almacén", "Perfumería", "Limpieza") and desde >= hoy - timedelta(days=escala.online_dias):
                     filas_precios.append((org_id, p.id, None, canales["ecommerce"], f"{round(pr * 1.08 / 10) * 10:.2f}", desde, hasta, "demo"))
+        # Caso conocido: en una sucursal se remarcaron a mano algunos productos (precio distinto al resto).
+        pd_caso = CASOS["precio_distinto"]
+        for cod in pd_caso["productos"]:
+            if cod in por_codigo and pd_caso["ubicacion"] in ubic:
+                p = por_codigo[cod]
+                filas_precios.append((org_id, p.id, ubic[pd_caso["ubicacion"]], None,
+                                      f"{round(float(precio_en(p, hoy)) * (1 + pd_caso['recargo']) / 10) * 10:.2f}",
+                                      hoy - timedelta(days=pd_caso["hace_dias"]), None, "demo"))
         _copy(conn, "precios", ["org_id", "producto_id", "ubicacion_id", "canal_id", "precio", "desde", "hasta", "origen"], filas_precios)
 
         filas_pp = []

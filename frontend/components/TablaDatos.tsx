@@ -106,7 +106,7 @@ export function TablaDatos<T extends object>({ filas, columnas, idFila, nombreAr
           <Boton variante="fantasma" onClick={exportarCSV} disabled={!total}>CSV</Boton>
         </div>
       </div>
-      <div className="-mx-4 overflow-x-auto sm:mx-0">
+      <div className="relative -mx-4 overflow-x-auto sm:mx-0">
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             {table.getHeaderGroups().map((g) => (

@@ -188,3 +188,9 @@ def test_gmroi_rotacion_y_atipicos():
     assert C.rotacion_anual(Decimal("900"), Decimal("1000"), 90) == Decimal("3.65")
     assert C.z_atipico(10, [1, 1, 1, 1]) == 10.0
     assert C.z_atipico(3, [1, 2, 3]) == pytest.approx((3 - 2) / 0.816496580927726)
+
+
+def test_prob_poisson_para_anomalias_de_caja():
+    assert C.prob_poisson_al_menos(0, 5) == 1.0
+    assert abs(C.prob_poisson_al_menos(12, 7.07) - 0.056) < 0.01        # 12 contra 7 esperadas: puede ser azar
+    assert C.prob_poisson_al_menos(34, 4.5) < 1e-10                      # 34 contra 4,5: no es azar

@@ -328,7 +328,12 @@ def control_de_caja(periodo_: str | None = Query(None, alias="periodo"), desde: 
                     z = C.z_atipico(float(c[medida]), [float(x[medida]) for x in otros])
                     c[f"z_{medida}"] = z
                     promedio = sum(float(x[medida]) for x in otros) / len(otros) if otros else 0
-                    if z is not None and z >= 2 and float(c[medida]) > promedio * 1.5:
+                    # Además del desvío, que la cantidad no pueda explicarse por azar: con pocos cajeros el desvío de los demás es
+                    # chico y 12 anulaciones contra 8 esperadas darían «atípico» sin serlo.
+                    cuenta = {"tasa_anulaciones": "anulaciones", "tasa_descuentos": "descuentos_manuales", "tasa_devoluciones": "devoluciones"}[medida]
+                    tasa_otros = sum(x[cuenta] for x in otros) / max(1, sum(x["tickets"] or 0 for x in otros))
+                    raro = C.prob_poisson_al_menos(int(c[cuenta]), tasa_otros * (c["tickets"] or 0)) < 0.001
+                    if z is not None and z >= 2 and float(c[medida]) > promedio * 1.5 and raro:
                         alertas.append({"ubicacion": c["ubicacion"], "cajero": c["cajero"], "medida": nombre, "valor": c[medida],
                                         "promedio_otros": promedio, "z": z,
                                         "monto": c["monto_anulado"] if medida == "tasa_anulaciones" else c["monto_descuentos"] if medida == "tasa_descuentos" else c["monto_devuelto"]})

@@ -89,7 +89,7 @@ export function Vacio({ titulo, children }: { titulo: string; children?: ReactNo
 
 export function Tabla({ columnas, children }: { columnas: string[]; children: ReactNode }) {
   return (
-    <div className="-mx-4 overflow-x-auto sm:mx-0">
+    <div className="relative -mx-4 overflow-x-auto sm:mx-0">
       <table className="w-full min-w-[560px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-borde text-left text-xs uppercase tracking-wide text-suave">

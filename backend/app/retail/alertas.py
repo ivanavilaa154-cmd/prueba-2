@@ -294,7 +294,9 @@ def _caja(conn, hoy: date) -> list[dict]:
         for f in g:
             otros = [float(x["tasa"]) for x in g if x is not f]
             z = C.z_atipico(float(f["tasa"]), otros)
-            if z is not None and z >= 2 and otros and float(f["tasa"]) > 1.5 * (sum(otros) / len(otros)):
+            base = sum(x["anul"] for x in g if x is not f) / max(1, sum(x["tickets"] for x in g if x is not f))
+            raro = C.prob_poisson_al_menos(int(f["anul"]), base * f["tickets"]) < 0.001      # que no sea azar
+            if z is not None and z >= 2 and otros and float(f["tasa"]) > 1.5 * (sum(otros) / len(otros)) and raro:
                 resultado.append(_nueva("caja", "urgente", f"{f['cajero']} anula mucho más que el resto en {f['ubicacion']}",
                                         f"{num(f['tasa'])} % de sus tickets anulados en 30 días contra {num(sum(otros) / len(otros))} % del resto "
                                         f"({pesos(f['monto'])}). Revisá esos tickets.", f["monto"], "en_riesgo",

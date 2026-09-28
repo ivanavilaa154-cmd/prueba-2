@@ -472,6 +472,20 @@ def descuento_minimo(sobrante: float, vendido_sin_oferta: float, dias: int, esca
 
 
 # ------------------------------------------------------------------------------ anomalías (control de caja)
+def prob_poisson_al_menos(observado: int, esperado: float) -> float:
+    """P(X ≥ observado) con X ~ Poisson(esperado): qué tan raro es ver tantos casos si el cajero fuera como los demás."""
+    if observado <= 0:
+        return 1.0
+    if esperado <= 0:
+        return 0.0
+    termino = math.exp(-esperado)
+    acumulado = termino
+    for k in range(1, observado):
+        termino *= esperado / k
+        acumulado += termino
+    return max(0.0, 1.0 - acumulado)
+
+
 def z_atipico(valor: float, otros: list[float]) -> float | None:
     """Cuántos desvíos estándar se aleja un cajero/turno del resto. None si no hay con qué comparar."""
     if len(otros) < 2:
