@@ -38,3 +38,28 @@ def test_admin_y_dueno_de_su_empresa(retail_demo):
     assert _login("dueno@norte.demo", CLAVE_DEMO)[1] != 200
     assert _login("admin@plataforma.demo", CLAVE_DEMO)[1] != 200
     assert _login("yo@ejemplo.com", CLAVE)[1] == 200
+
+
+def test_solo_cuentas_reales_borra_la_demo(retail_demo):
+    from app.retail import demo_panel
+    demo_panel.cargar()
+    with db.transaccion(superadmin=True) as conn:
+        cuentas.administrador(conn, "yo@ejemplo.com", "Yo", CLAVE)          # una cuenta propia creada antes: no se toca
+        otra = cuentas.empresa_con_dueno(conn, "Mi Otra Empresa", None, "otra@ejemplo.com", "Otra", CLAVE)
+    r = cuentas.dejar_solo_reales()
+    assert set(r["creadas"]) == {cuentas.ADMIN[0], cuentas.PULPO["email"]}
+    assert "Autoservicios del Norte" in r["borradas"] and "Distribuidora Andina" in r["borradas"]
+    with db.transaccion(superadmin=True) as conn:
+        empresas = {o["nombre"] for o in db.filas(conn, "SELECT nombre FROM organizaciones")}
+        assert empresas == {"Pulpo Azul", "Mi Otra Empresa"}
+        assert not db.filas(conn, "SELECT 1 FROM usuarios WHERE email LIKE '%%.demo'")
+        assert not db.filas(conn, "SELECT 1 FROM tickets") and not db.filas(conn, "SELECT 1 FROM productos")
+    admin, st = _login(cuentas.ADMIN[0], cuentas.ADMIN[2])
+    assert st == 200 and {e["nombre"] for e in admin.get("/retail/api/plataforma/empresas").json()} == {"Pulpo Azul", "Mi Otra Empresa"}
+    dueno, st = _login(cuentas.PULPO["email"], cuentas.PULPO["clave"])
+    assert st == 200 and dueno.get("/retail/api/yo").json()["empresa"]["nombre"] == "Pulpo Azul"
+    assert _login("yo@ejemplo.com", CLAVE)[1] == 200 and otra
+    # Idempotente: una clave cambiada no se pisa al volver a arrancar.
+    assert dueno.post("/retail/api/yo/clave", json={"actual": cuentas.PULPO["clave"], "nueva": "Otra-clave-2026"}).status_code == 200
+    assert cuentas.dejar_solo_reales() == {"creadas": [], "borradas": []}
+    assert _login(cuentas.PULPO["email"], "Otra-clave-2026")[1] == 200

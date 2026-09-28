@@ -152,7 +152,7 @@ Módulo para autoservicios, minimercados y supermercados regionales (especificac
 - Roles: dueño, comprador, encargado de sucursal, cajero, distribuidor (fase 3) y administración de la plataforma. Límites de aprobación por rol o por persona.
 - Parte 1 lista: empresas, sucursales y depósitos, canales (física, e-commerce, delivery, mayorista), usuarios, límites, auditoría, filtro global, modo claro/oscuro y uso desde el celular.
 - Pantallas en Next.js (`frontend/`), exportadas a `backend/app/web/retail/` con `cd frontend && npm run build`.
-- En Codespaces, `tools/codespaces/postgres.sh` crea la base sola. Cuentas demo con la clave `demo-retail-2026`: `dueno@norte.demo`, `compras@norte.demo`, `encargado.norte@norte.demo`, `caja.centro@norte.demo`, `dueno@esquina.demo`, `admin@plataforma.demo`.
+- En Codespaces, `tools/codespaces/postgres.sh` crea la base sola y arranca con solo dos cuentas (`RETAIL_CUENTAS=reales`): `admin@retail-ia.local` (clave inicial `Admin-Retail-2026`, ve todas las empresas) y `dueno@pulpoazul.local` (clave inicial `PulpoAzul-2026`, dueño de Pulpo Azul). Sin esa línea en `backend/.env` se carga la demo, con las cuentas `@*.demo` y la clave `demo-retail-2026`.
 
 ## Integraciones: de dónde toma los datos
 

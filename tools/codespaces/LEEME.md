@@ -8,14 +8,12 @@ del globo ("Open in Browser").
 **Para conectar Odoo:** en la plataforma, pestaña **1 · Integraciones** → recuadro **Odoo** → completá URL,
 base de datos, usuario y API key → **Probar conexión** → **Guardar** → **Sincronizar ahora**.
 
-**Retail (comercios):** agregá **/retail** al final de la dirección. Cuentas de ejemplo (clave `demo-retail-2026`):
-`dueno@norte.demo` (dueño), `compras@norte.demo` (comprador), `encargado.norte@norte.demo` (encargado de Salta Norte),
-`caja.centro@norte.demo` (cajero), `dueno@esquina.demo` (otra empresa) y `admin@plataforma.demo` (plataforma).
+**Retail (comercios):** agregá **/retail** al final de la dirección. Hay dos cuentas:
+- Administración de la plataforma (ve todas las empresas): `admin@retail-ia.local` · clave inicial `Admin-Retail-2026`
+- Dueño de Pulpo Azul (ve todo, solo de su empresa): `dueno@pulpoazul.local` · clave inicial `PulpoAzul-2026`
 
-**Tus cuentas reales (administración + dueño de tu empresa):** en la terminal de abajo escribí
-`cd backend && python -m app.retail.cuentas` y respondé lo que pregunta. Crea tu cuenta de administración (ve todas las
-empresas) y la empresa con su dueño (por ejemplo **Pulpo Azul**, que ve todo pero solo de su empresa). Las claves las escribís
-vos y no se muestran. Al final te ofrece desactivar las cuentas de ejemplo `@*.demo`.
+Cambiá las dos claves la primera vez que entres (arriba a la derecha → Configuración → Mi cuenta). Las empresas y cuentas de
+ejemplo se borran solas al arrancar; para volver a la demo, borrá la línea `RETAIL_CUENTAS=reales` de `backend/.env`.
 
 **Para cerrarla:** cerrá esta pestaña. El Codespace se apaga solo a los 30 minutos sin uso y no consume
 horas mientras está apagado. Para volver, entrá a https://github.com/codespaces y abrilo de nuevo:

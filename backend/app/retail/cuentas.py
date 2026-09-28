@@ -2,6 +2,10 @@
 
 Uso (en la terminal, dentro de backend/):  python -m app.retail.cuentas
 
+Modo «solo cuentas reales» (RETAIL_CUENTAS=reales en backend/.env, lo pone el Codespace): al arrancar se crean, si no existen,
+la cuenta de administración y la empresa Pulpo Azul con su dueño (claves iniciales abajo: cambialas en Mi cuenta), y se
+borran las empresas y cuentas de ejemplo. Las empresas que crees vos no se tocan nunca.
+
 Pregunta todo en pantalla; las claves se escriben sin mostrarse y nunca quedan en el código ni en el repositorio.
 1. Tu cuenta de administración de la plataforma (ve y administra todas las empresas). Si el email ya existe, le cambia la clave.
 2. Una empresa con su dueño (ve todo, pero solo de su empresa). Por ejemplo «Pulpo Azul», que después conecta su Odoo.
@@ -14,6 +18,65 @@ import sys
 
 from . import db, seguridad, sesiones
 from .rutas import EmpresaNueva, crear_empresa
+
+
+ADMIN = ("admin@retail-ia.local", "Administración", "Admin-Retail-2026")
+PULPO = {"empresa": "Pulpo Azul", "email": "dueno@pulpoazul.local", "nombre": "Dueño Pulpo Azul", "clave": "PulpoAzul-2026"}
+
+
+def _empresas_demo() -> list[str]:
+    from . import demo, demo_panel
+    return [demo.EMPRESA, "Minimercado La Esquina", demo_panel.DISTRIBUIDOR] + [c[0] for c in demo_panel.COMERCIOS]
+
+
+def borrar_empresas(conn, org_ids: list[int]) -> None:
+    """Borra todo lo de esas empresas: cada tabla de empresa tiene org_id. Varias pasadas porque unas tablas dependen de otras."""
+    if not org_ids:
+        return
+    tablas = [f["table_name"] for f in db.filas(conn, """
+        SELECT c.table_name FROM information_schema.columns c JOIN information_schema.tables t USING (table_schema, table_name)
+        WHERE c.table_schema = 'public' AND c.column_name = 'org_id' AND t.table_type = 'BASE TABLE' ORDER BY 1""")]
+    pendientes = list(tablas)
+    for _ in range(len(tablas) + 1):
+        trabadas = []
+        for tabla in pendientes:
+            with conn.cursor() as cur:
+                cur.execute("SAVEPOINT borrar")
+                try:
+                    cur.execute(f'DELETE FROM "{tabla}" WHERE org_id = ANY(%s)', (org_ids,))
+                    cur.execute("RELEASE SAVEPOINT borrar")
+                except Exception:
+                    cur.execute("ROLLBACK TO SAVEPOINT borrar")
+                    trabadas.append(tabla)
+        if not trabadas:
+            break
+        pendientes = trabadas
+    else:
+        raise RuntimeError(f"No se pudieron borrar: {', '.join(pendientes)}")
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM organizaciones WHERE id = ANY(%s)", (org_ids,))
+
+
+def dejar_solo_reales() -> dict:
+    """Idempotente: crea lo que falte (sin tocar claves ya cambiadas) y borra lo de ejemplo."""
+    resultado = {"creadas": [], "borradas": []}
+    with db.transaccion(superadmin=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(4243)")
+        if not db.fila(conn, "SELECT 1 FROM usuarios WHERE lower(email)=lower(%s)", (ADMIN[0],)):
+            administrador(conn, *ADMIN)
+            resultado["creadas"].append(ADMIN[0])
+        if not db.fila(conn, "SELECT 1 FROM organizaciones WHERE lower(nombre)=lower(%s)", (PULPO["empresa"],)):
+            empresa_con_dueno(conn, PULPO["empresa"], None, PULPO["email"], PULPO["nombre"], PULPO["clave"])
+            resultado["creadas"].append(PULPO["email"])
+        demo = db.filas(conn, "SELECT id, nombre FROM organizaciones WHERE nombre = ANY(%s)", (_empresas_demo(),))
+        if demo:
+            sesiones.auditar(conn, None, None, "borrar", "empresas_demo", None, {"empresas": [o["nombre"] for o in demo]})
+        borrar_empresas(conn, [o["id"] for o in demo])
+        resultado["borradas"] = [o["nombre"] for o in demo]
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM usuarios WHERE email LIKE '%%.demo'")          # la administración de ejemplo no tiene empresa
+    return resultado
 
 
 def _pedir(texto: str, defecto: str | None = None, obligatorio: bool = True) -> str:

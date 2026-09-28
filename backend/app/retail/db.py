@@ -65,9 +65,17 @@ def asegurar_lista() -> None:
         if actual in _preparada:
             return
         try:
-            from . import semilla
-            if semilla.cargar():
-                print(f"Retail: empresas de demostración cargadas (clave de las cuentas demo: {semilla.CLAVE_DEMO}).")
+            import sys
+            if os.getenv("RETAIL_CUENTAS", "").strip().lower() == "reales" and "pytest" not in sys.modules:
+                from . import cuentas
+                migrar()
+                r = cuentas.dejar_solo_reales()
+                if r["creadas"] or r["borradas"]:
+                    print(f"Retail: solo cuentas reales (creadas: {', '.join(r['creadas']) or '—'}; borradas: {', '.join(r['borradas']) or '—'}).")
+            else:
+                from . import semilla
+                if semilla.cargar():
+                    print(f"Retail: empresas de demostración cargadas (clave de las cuentas demo: {semilla.CLAVE_DEMO}).")
         except Exception as e:
             _ultimo_error["texto"] = f"{type(e).__name__}: {str(e)[:200]}"
             raise BaseNoConfigurada("La base de Retail todavía no responde (se está preparando o se detuvo). "

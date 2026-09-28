@@ -24,6 +24,8 @@ python -m pip install -q -r requirements.txt >/dev/null 2>&1 || true
 [ -f .env ] || cp .env.example .env
 # Claves del Centro de pruebas: si el .env es de una versión anterior, se agregan las de ejemplo.
 grep -q "^CLAVE_U5=" .env || printf "\n# Claves del Centro de pruebas (cambialas antes de publicar)\nCLAVE_U4=operador-demo\nCLAVE_U5=tester-demo\n" >> .env
+# Retail con cuentas reales: tu administración y Pulpo Azul; las empresas y cuentas de ejemplo se borran (ver app/retail/cuentas.py).
+grep -q "^RETAIL_CUENTAS=" .env || printf "\n# Retail: solo cuentas reales (borrá esta línea para volver a la demo)\nRETAIL_CUENTAS=reales\n" >> .env
 # Base de Retail (PostgreSQL local): se instala la primera vez y se levanta en cada inicio.
 # Va en segundo plano para que la plataforma abra enseguida aunque la primera vez tarde unos minutos en instalarse.
 # Lo que pasa queda en backend/postgres-inicio.log.
