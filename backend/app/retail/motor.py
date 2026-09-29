@@ -94,15 +94,13 @@ def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = N
         _foto_stock(conn, org_id, hoy)
         _agregar(conn, org_id, desde if desde else (None if tipo == "nocturno" else hoy - timedelta(days=3)))
         t_agg = _time.time() - t0
+        prueba = None
+        if tipo == "nocturno":             # primera vez: prueba sobre el pasado, así el error (y su corrección) se miden desde el día uno
+            from . import pronosticos
+            prueba = pronosticos.prueba_sobre_el_pasado(conn, org_id, hoy)
         resumen = _metricas(conn, org_id, hoy)
+        resumen["prueba_pasado"] = prueba
         resumen["segundos_agregados"] = round(t_agg, 2)
-    # Primera vez (o semanas sin registro): prueba sobre el pasado para medir el error de los pronósticos desde el primer día.
-    if tipo == "nocturno":
-        t1 = _time.time()
-        from . import pronosticos
-        with db.transaccion(ctx) as conn:
-            resumen["prueba_pasado"] = pronosticos.prueba_sobre_el_pasado(conn, org_id, hoy)
-        resumen["segundos_prueba_pasado"] = round(_time.time() - t1, 2)
     # Reposición y alertas en su propia transacción (usan las métricas recién guardadas).
     try:
         from . import reposicion
@@ -233,6 +231,10 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
         ult = [vs.get(hoy - timedelta(days=i), 0.0) for i in range(1, 29)]
         cat_vpd[clave] = sum(ult) / 28 / max(1, len(cat_productos[clave]))
 
+    # ---- corrección de sesgo por categoría × sucursal, medida con los pronósticos anteriores
+    from . import pronosticos
+    sesgo = pronosticos.factores_sesgo(conn, hoy)
+
     # ---- métricas por producto × ubicación
     filas = []
     periodos = []
@@ -270,6 +272,9 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                 base = r_vpd.vpd
             factores = C.calcular_factores(vs, sin, hoy, feriados, cat_factores.get(catk), desde=primera)
             pron = C.pronostico(base, factores, hoy, 120, feriados)
+            f_sesgo = sesgo.get(catk, 1.0)                    # aprende de su error medido (Salud de los pronósticos)
+            if f_sesgo != 1.0:
+                pron = [x * f_sesgo for x in pron]
             h = C.horizonte(hoy, prov["dias_visita"] if prov else None, prov["demora_entrega_dias"] if prov else None)
             regla = _regla(reglas, pid, p["categoria_id"], p["padre_id"], uid)
             dias_stock = C.dias_de_stock(disponible, pron)
@@ -294,7 +299,7 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
             p_quiebre = None if u["tipo"] == "deposito" or p7 <= 0 else \
                 C.prob_quiebre(disponible + transito, demanda_llegada, desvio7 * math.sqrt(dias_llegada / 7))
             if u["tipo"] != "deposito" and vs:
-                registro.append((pid, uid, p7, p7_min, p7_max))
+                registro.append((pid, uid, p7, p7_min, p7_max, f_sesgo))
             # La merma histórica de los perecederos baja el pedido (sección 9: merma).
             f_merma = C.factor_merma(merma90.get(clave, 0.0), vendido90.get(clave, 0.0)) if p["perecedero"] else 1.0
             pron_h *= f_merma
@@ -343,7 +348,7 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                 "pronostico_7d": round(p7, 2), "pronostico_7d_rango": [round(p7_min, 2), round(p7_max, 2)], "desvio_semanal": round(desvio7, 3),
                 "pronostico_horizonte_rango": [round(x * f_merma, 2) for x in C.banda(sum(pron[:h.horizonte]), desvio7, h.horizonte)],
                 "prob_quiebre": None if p_quiebre is None else round(p_quiebre, 4), "dias_hasta_llegada": dias_llegada,
-                "producto_nuevo": bool(alta),
+                "producto_nuevo": bool(alta), "correccion_sesgo": round(f_sesgo, 3),
                 "pronostico_horizonte": round(pron_h, 2), "horizonte": h.horizonte, "proxima_oportunidad": h.proxima_oportunidad,
                 "llegada_proxima": h.llegada_proxima, "supuesto_proveedor": h.supuesto,
                 "proveedor": prov["razon_social"] if prov else None, "demora": prov["demora_entrega_dias"] if prov else None,
@@ -372,7 +377,6 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                                                  "proveedor_id", "semaforo", "clase_abc", "tendencia", "dias_sin_venta", "capital", "gmroi",
                                                  "rotacion", "riesgo_vencimiento", "confianza", "ventas_en_riesgo", "explicacion",
                                                  "calculado_at", "pronostico_7d", "pronostico_7d_min", "pronostico_7d_max", "prob_quiebre"], filas)
-    from . import pronosticos
     pronosticos.registrar(conn, org_id, hoy, registro)
     db.copiar(conn, "periodos_sin_stock", ["org_id", "producto_id", "ubicacion_id", "desde", "hasta"], periodos)
     return {"metricas": len(filas), "semaforo": dict(conteo), "periodos_sin_stock": len(periodos)}

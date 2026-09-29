@@ -39,11 +39,12 @@ def modelo(ventas: dict[date, float], cierres: dict[date, float], hoy: date, fer
 
 
 def registrar(conn, org_id: int, hoy: date, filas: list[tuple], origen: str = "diario") -> None:
-    """filas: (producto_id, ubicacion_id, pronóstico, mínimo, máximo)."""
+    """filas: (producto_id, ubicacion_id, pronóstico, mínimo, máximo[, factor de corrección aplicado])."""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM pronosticos_registro WHERE org_id=%s AND fecha=%s", (org_id, hoy))
-    db.copiar(conn, "pronosticos_registro", ["org_id", "producto_id", "ubicacion_id", "fecha", "pronostico", "minimo", "maximo", "origen"],
-              [(org_id, pid, uid, hoy, round(p, 3), round(mi, 3), round(ma, 3), origen) for pid, uid, p, mi, ma in filas])
+    db.copiar(conn, "pronosticos_registro", ["org_id", "producto_id", "ubicacion_id", "fecha", "pronostico", "minimo", "maximo", "origen", "factor"],
+              [(org_id, f[0], f[1], hoy, round(f[2], 3), round(f[3], 3), round(f[4], 3), origen, round(f[5], 4) if len(f) > 5 else 1)
+               for f in filas])
 
 
 def prueba_sobre_el_pasado(conn, org_id: int, hoy: date, semanas: int = SEMANAS_PRUEBA) -> int:
@@ -76,16 +77,15 @@ def prueba_sobre_el_pasado(conn, org_id: int, hoy: date, semanas: int = SEMANAS_
     return total
 
 
-def salud(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> dict:
-    """Error de los pronósticos ya vencidos (los que cubren semanas completas hasta ayer).
-    Se traen el registro, la venta diaria y los días sin stock del período de una vez y se cruzan en memoria (rápido)."""
+def evaluados(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> list[dict]:
+    """Pronósticos ya vencidos con lo que se vendió en su semana y los días sin stock. Se traen el registro, la venta diaria y los
+    días sin stock del período de una vez y se cruzan en memoria (rápido)."""
     hasta, desde = hoy - timedelta(days=7), hoy - timedelta(days=7 * (semanas + 1))
     registro = db.filas(conn, """SELECT r.producto_id, r.ubicacion_id, r.fecha, r.origen, r.pronostico::float pron, r.minimo::float mi,
-                                        r.maximo::float ma
+                                        r.maximo::float ma, r.factor::float factor
                                  FROM pronosticos_registro r WHERE r.fecha <= %s AND r.fecha > %s""", (hasta, desde))
     if not registro:
-        return {"global": {"wape": None, "sesgo": None, "cobertura": None, "n": 0, "real": 0}, "semanas": [], "por_categoria": [],
-                "por_ubicacion": [], "peores": [], "evaluados": 0, "excluidos_por_quiebre": 0, "origen_prueba": 0}
+        return []
     fin = max(r["fecha"] for r in registro) + timedelta(days=6)
     inicio = min(r["fecha"] for r in registro)
     venta: dict = defaultdict(float)
@@ -95,7 +95,7 @@ def salud(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> dict:
     sin_stock = {(f["producto_id"], f["ubicacion_id"], f["fecha"]) for f in db.filas(
         conn, "SELECT producto_id, ubicacion_id, fecha FROM stock_diario WHERE NOT con_stock AND fecha BETWEEN %s AND %s", (inicio, fin))}
     info = {f["id"]: f for f in db.filas(conn, """
-        SELECT p.id, p.nombre, p.codigo_interno, coalesce(cp.nombre, c.nombre, 'Sin categoría') categoria,
+        SELECT p.id, p.nombre, p.codigo_interno, coalesce(cp.nombre, c.nombre, 'Sin categoría') categoria, coalesce(c.padre_id, c.id) categoria_id,
                (SELECT precio FROM precios x WHERE x.producto_id = p.id AND x.ubicacion_id IS NULL AND x.canal_id IS NULL
                 ORDER BY x.desde DESC LIMIT 1)::float precio
         FROM productos p LEFT JOIN categorias c ON c.id = p.categoria_id LEFT JOIN categorias cp ON cp.id = c.padre_id
@@ -109,7 +109,41 @@ def salud(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> dict:
         filas.append({**r, "vendido": sum(venta.get((pid, uid, d), 0.0) for d in dias),
                       "dias_sin": sum(1 for d in dias if (pid, uid, d) in sin_stock), "nombre": p.get("nombre"),
                       "codigo_interno": p.get("codigo_interno"), "categoria": p.get("categoria", "Sin categoría"),
-                      "precio": p.get("precio"), "ubicacion": ubic.get(uid)})
+                      "categoria_id": p.get("categoria_id"), "precio": p.get("precio"), "ubicacion": ubic.get(uid)})
+    return filas
+
+
+# Corrección del sesgo: si una categoría en una sucursal viene sobreestimando, sus pronósticos se ajustan (con topes y de a poco).
+SESGO_PESO = 30            # cuántas semanas-producto hacen falta para confiar a medias en lo medido
+SESGO_TOPES = (0.8, 1.25)
+
+
+def factores_sesgo(conn, hoy: date) -> dict:
+    """{(categoría, sucursal): factor}. factor = vendido ÷ pronóstico sin corregir de las últimas semanas (sin semanas con quiebre),
+    acercado a 1 según cuánta evidencia hay: 1 + (razón − 1) × n ÷ (n + SESGO_PESO), con topes 0,8 y 1,25."""
+    g: dict = defaultdict(lambda: [0.0, 0.0, 0])
+    for f in evaluados(conn, hoy):
+        if f["dias_sin"] > 1:
+            continue
+        x = g[(f["categoria_id"], f["ubicacion_id"])]
+        x[0] += f["vendido"]
+        x[1] += f["pron"] / (f["factor"] or 1)
+        x[2] += 1
+    salida = {}
+    for clave, (real, pron, n) in g.items():
+        if n < 8 or pron <= 0 or real <= 0:
+            continue
+        factor = 1 + (real / pron - 1) * n / (n + SESGO_PESO)
+        salida[clave] = min(SESGO_TOPES[1], max(SESGO_TOPES[0], factor))
+    return salida
+
+
+def salud(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> dict:
+    """Error de los pronósticos ya vencidos (los que cubren semanas completas hasta ayer)."""
+    filas = evaluados(conn, hoy, semanas)
+    if not filas:
+        return {"global": {"wape": None, "sesgo": None, "cobertura": None, "n": 0, "real": 0}, "semanas": [], "por_categoria": [],
+                "por_ubicacion": [], "peores": [], "evaluados": 0, "excluidos_por_quiebre": 0, "origen_prueba": 0, "correcciones": []}
     validas = [f for f in filas if f["dias_sin"] <= 1]
     excluidas = len(filas) - len(validas)
 
@@ -137,7 +171,11 @@ def salud(conn, hoy: date, semanas: int = SEMANAS_PRUEBA) -> dict:
                        "real_semanal": round(sum(x["vendido"] for x in v) / len(v), 1),
                        "sesgo": (sum(x["pron"] - x["vendido"] for x in v) / max(sum(x["vendido"] for x in v), 1))})
     peores.sort(key=lambda x: -x["error_pesos"])
-    return {"global": resumen(validas), "semanas": semanal, "por_categoria": por("categoria")[:20], "por_ubicacion": por("ubicacion"),
+    nombres_cat = {f["categoria_id"]: f["categoria"] for f in filas}
+    nombres_ub = {f["ubicacion_id"]: f["ubicacion"] for f in filas}
+    correcciones = sorted(({"categoria": nombres_cat.get(c), "ubicacion": nombres_ub.get(u), "factor": round(v, 3)}
+                           for (c, u), v in factores_sesgo(conn, hoy).items() if abs(v - 1) >= 0.02), key=lambda x: x["factor"])
+    return {"correcciones": correcciones, "global": resumen(validas), "semanas": semanal, "por_categoria": por("categoria")[:20], "por_ubicacion": por("ubicacion"),
             "peores": peores[:20], "evaluados": len(validas), "excluidos_por_quiebre": excluidas,
             "origen_prueba": sum(1 for f in validas if f["origen"] == "prueba_pasado")}
 

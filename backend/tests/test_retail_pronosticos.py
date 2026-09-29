@@ -36,3 +36,16 @@ def test_salud_de_los_pronosticos(retail_demo):
     assert r["datos"]["productos"] > 0 and r["avisos"]                      # la demo chica tiene 120 días: avisa que falta historia
     with db.transaccion(superadmin=True) as conn:
         assert db.fila(conn, "SELECT count(*) n FROM pronosticos_registro WHERE origen='diario'")["n"] > 0
+
+
+def test_correccion_de_sesgo_con_topes(retail_demo):
+    from app.retail import motor, pronosticos
+    from app.retail.api_comprar import _hoy_datos
+    with db.transaccion(motor.contexto_sistema(1)) as conn:
+        f = pronosticos.factores_sesgo(conn, _hoy_datos(conn))
+    assert f and all(0.8 <= v <= 1.25 for v in f.values())
+    r = cliente().get("/retail/api/modelos/salud").json()
+    assert all(0.8 <= c["factor"] <= 1.25 for c in r["correcciones"])
+    # El cálculo de hoy ya usó la corrección y la dejó registrada.
+    with db.transaccion(motor.contexto_sistema(1)) as conn:
+        assert db.fila(conn, "SELECT count(*) n FROM pronosticos_registro WHERE origen='diario' AND factor <> 1")["n"] > 0

@@ -293,6 +293,9 @@ class NuevaOferta(BaseModel):
     origen: str = "vencimiento"                       # vencimiento, sobrestock, liquidacion
     tipo: str = "descuento_pct"                       # descuento_pct, segunda_unidad
     unidades_objetivo: float | None = None
+    exhibicion: str = "gondola"                       # puntera, isla, gondola
+    escalera: list[float] = Field(default_factory=list, max_length=5)   # descuentos siguientes si no llega a vaciar a tiempo
+    capacidad_exhibicion: int | None = Field(default=None, ge=1, le=10000)   # unidades que entran en la puntera o isla
 
 
 @api.post("/ofertas")
@@ -313,10 +316,18 @@ def crear_oferta(datos: NuevaOferta, request: Request, ctx: db.Contexto = Depend
         d = Decimal(str(datos.descuento))
         precio_oferta = _redondear(p["precio"] * (1 - d)) if datos.tipo == "descuento_pct" else _redondear(p["precio"] * (1 - d / 2))
         nombre = (f"{p['nombre']}: {datos.descuento:.0%} off" if datos.tipo == "descuento_pct" else f"{p['nombre']}: 2.ª unidad al {datos.descuento:.0%} off")
+        if datos.exhibicion not in ("puntera", "isla", "gondola"):
+            raise HTTPException(status_code=400, detail="La exhibición es puntera, isla o góndola.")
+        escalera = sorted({round(x, 3) for x in datos.escalera if datos.descuento < x < 0.9})
+        stock_inicial = db.fila(conn, "SELECT coalesce(sum(cantidad - reservado), 0)::float s FROM stock_actual WHERE producto_id=%s "
+                                      "AND (%s::bigint IS NULL OR ubicacion_id=%s)", (datos.producto_id, datos.ubicacion_id, datos.ubicacion_id))["s"]
         o = db.fila(conn, "INSERT INTO promociones (org_id, nombre, tipo, parametros, productos, ubicaciones, desde, hasta, origen, estado, created_by) "
                           "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'activa',%s) RETURNING id",
                     (ctx.org_id, nombre, datos.tipo, db_json({"descuento": datos.descuento, "precio_normal": p["precio"], "precio_oferta": precio_oferta,
-                                                              "costo": p["costo"], "unidades_objetivo": datos.unidades_objetivo}),
+                                                              "costo": p["costo"], "unidades_objetivo": datos.unidades_objetivo,
+                                                              "exhibicion": datos.exhibicion, "escalera": escalera, "stock_inicial": stock_inicial,
+                                                              "capacidad_exhibicion": datos.capacidad_exhibicion,
+                                                              "historial": [{"fecha": str(hoy), "descuento": datos.descuento, "precio": str(precio_oferta)}]}),
                      [datos.producto_id], [datos.ubicacion_id] if datos.ubicacion_id else [], hoy, datos.hasta, datos.origen, ctx.usuario_id))
         sesiones.auditar(conn, ctx, ctx.usuario_id, "crear", "promocion", o["id"], {"nombre": nombre, "hasta": str(datos.hasta)}, sesiones.ip_de(request))
         return respuesta({"id": o["id"], "nombre": nombre, "precio_oferta": precio_oferta})
