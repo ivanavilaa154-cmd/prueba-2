@@ -48,6 +48,7 @@ from .retail import api_suscripcion as retail_suscripcion
 from .retail import api_modelos as retail_modelos
 from .retail import api_predicciones as retail_predicciones
 from .retail import api_liquidaciones as retail_liquidaciones
+from .retail import api_vistas as retail_vistas
 from .retail import api_avisos as retail_avisos
 from .retail import api_precios as retail_precios
 from .retail import api_ventas as retail_ventas
@@ -167,6 +168,7 @@ app.include_router(retail_suscripcion.api)
 app.include_router(retail_modelos.api)
 app.include_router(retail_predicciones.api)
 app.include_router(retail_liquidaciones.api)
+app.include_router(retail_vistas.api)
 app.include_router(retail_rutas.sitio)   # último: sirve las pantallas en /retail/…
 
 

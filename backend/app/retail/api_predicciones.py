@@ -336,86 +336,91 @@ def flujo_de_caja(dias: int = 90, ctx: db.Contexto = Depends(sesiones.contexto))
     permisos.exigir(ctx, "ver_costos")
     dias = max(30, min(dias, 120))
     with db.transaccion(ctx) as conn:
-        hoy = _hoy_datos(conn)
-        cfg = parametro(conn, "flujo_caja") or {}
-        cfg = cfg if isinstance(cfg, dict) else json.loads(cfg)
-        saldo = float(cfg.get("saldo_inicial") or 0)
-        minimo = float(cfg.get("minimo_aceptable") or 0)
-        feriados = _feriados(conn)
-        infl = inflacion_mensual(conn)
-        # Ventas pronosticadas (total de la empresa) y su margen promedio.
-        serie = {f["fecha"]: f["f"] for f in db.filas(conn, "SELECT fecha, sum(facturacion)::float f FROM agg_producto_ubicacion_dia "
-                                                             "WHERE fecha >= %s AND fecha < %s GROUP BY 1", (hoy - timedelta(days=400), hoy))}
-        p = pronostico_serie(serie, hoy, dias, feriados, infl)
-        margen = db.fila(conn, "SELECT coalesce(sum(ganancia) / nullif(sum(facturacion), 0), 0.3)::float m FROM agg_producto_ubicacion_dia "
-                               "WHERE fecha >= %s AND fecha < %s", (hoy - timedelta(days=90), hoy))["m"]
-        # Mezcla de medios de pago y plazos de acreditación.
-        mezcla = {f["medio"]: (float(f["monto"]), f["plazo"]) for f in db.filas(conn, """
-            SELECT p.medio, sum(p.monto) monto, round(avg(p.plazo_acreditacion_dias)) plazo FROM pagos p JOIN tickets t ON t.id = p.ticket_id
-            WHERE t.fecha_hora >= %s AND p.monto > 0 GROUP BY 1""", (hoy - timedelta(days=90),))}
-        total_mezcla = sum(v[0] for v in mezcla.values()) or 1.0
-        comisiones = parametro(conn, "comisiones_medios") or {}
-        comisiones = comisiones if isinstance(comisiones, dict) else json.loads(comisiones)
-        entradas, salidas = defaultdict(float), defaultdict(float)
-        detalle = defaultdict(lambda: defaultdict(float))
-        for d in p["dias"]:
-            for medio, (monto, plazo) in mezcla.items():
-                if medio == "cuenta_corriente":
-                    continue                                       # el fiado entra cuando se cobra (abajo)
-                cfg_m = comisiones.get(medio, {})
-                plazo_m = int(cfg_m.get("acreditacion_dias", plazo or 0))
-                neto = d["pronostico"] * monto / total_mezcla * (1 - float(cfg_m.get("comision", 0)))
-                dia = d["fecha"] + timedelta(days=plazo_m)
-                entradas[dia] += neto
-                detalle[dia]["cobro_ventas"] += neto
-        # Cobros de fiado: saldo pendiente por vencimiento, con la probabilidad de cobro de cada cliente.
-        for c in riesgo_clientes(conn, hoy):
-            dia = max(hoy, c["vence"]) if c.get("vence") else hoy + timedelta(days=30)
-            esperado = float(c["saldo"]) * (1 - c["prob_no_cobro"])
-            entradas[dia] += esperado
-            detalle[dia]["cobro_fiado"] += esperado
-        # Pagos a proveedores: OC ya aprobadas o enviadas (según condiciones de pago) y compras futuras para reponer lo que se vende.
-        for f in db.filas(conn, """SELECT o.estado, o.fecha_esperada, o.total::float total, pr.condiciones_pago FROM ordenes_compra o
-                                   JOIN proveedores pr ON pr.id = o.proveedor_id
-                                   WHERE o.estado IN ('aprobada', 'enviada', 'recibida_parcial')"""):
-            dia = (f["fecha_esperada"] or hoy) + timedelta(days=_plazo_pago(f["condiciones_pago"]))
-            if f["estado"] == "recibida_parcial" and dia < hoy:       # ya venció: se pagó con la mercadería que llegó
-                continue
-            dia = max(hoy, dia)
-            salidas[dia] += f["total"]
-            detalle[dia]["pago_proveedores"] += f["total"]
-        plazo_prov = db.fila(conn, "SELECT round(avg(coalesce(substring(condiciones_pago from '(\\d+)')::int, 0))) p FROM proveedores WHERE activo")["p"] or 0
-        for d in p["dias"][7:]:                                   # la primera semana ya está cubierta por las OC pendientes
-            dia = d["fecha"] + timedelta(days=int(plazo_prov))
-            compra = d["pronostico"] * (1 - margen)
-            salidas[dia] += compra
-            detalle[dia]["compras_futuras"] += compra
-        for g in cfg.get("gastos_fijos", []):
-            d = hoy
-            while d <= hoy + timedelta(days=dias):
-                if d.day == min(int(g["dia"]), calendar.monthrange(d.year, d.month)[1]):
-                    salidas[d] += float(g["monto"])
-                    detalle[d]["gastos_fijos"] += float(g["monto"])
-                d += timedelta(days=1)
-        linea, acumulado, bajo_minimo = [], saldo, None
-        var_acum = 0.0
-        for i in range(dias):
-            d = hoy + timedelta(days=i)
-            acumulado += entradas.get(d, 0.0) - salidas.get(d, 0.0)
-            var_acum += (p["desvio_7d"] * math.sqrt(1 / 7) * (1 - margen)) ** 2 if i < len(p["dias"]) else 0
-            margen_saldo = C.Z_BANDA * math.sqrt(var_acum)
-            linea.append({"fecha": d, "entradas": round(entradas.get(d, 0.0), 2), "salidas": round(salidas.get(d, 0.0), 2),
-                          "saldo": round(acumulado, 2), "saldo_min": round(acumulado - margen_saldo, 2), "saldo_max": round(acumulado + margen_saldo, 2)})
-            if bajo_minimo is None and acumulado - margen_saldo < minimo:
-                bajo_minimo = d
-        resumen = defaultdict(float)
-        for v in detalle.values():
-            for k, x in v.items():
-                resumen[k] += x
-        return respuesta({"hoy": hoy, "dias": dias, "configurado": bool(cfg), "saldo_inicial": saldo, "minimo_aceptable": minimo,
-                          "gastos_fijos": cfg.get("gastos_fijos", []), "linea": linea, "primer_dia_bajo_minimo": bajo_minimo,
-                          "totales": {k: round(v, 2) for k, v in resumen.items()}, "margen_promedio": round(margen, 4),
-                          "saldo_final": round(acumulado, 2)})
+        return respuesta(calcular_flujo(conn, dias))
+
+
+def calcular_flujo(conn, dias: int = 90) -> dict:
+    """Saldo proyectado día a día: cobros de ventas y fiado, pagos de OC, compras para reponer y gastos fijos."""
+    hoy = _hoy_datos(conn)
+    cfg = parametro(conn, "flujo_caja") or {}
+    cfg = cfg if isinstance(cfg, dict) else json.loads(cfg)
+    saldo = float(cfg.get("saldo_inicial") or 0)
+    minimo = float(cfg.get("minimo_aceptable") or 0)
+    feriados = _feriados(conn)
+    infl = inflacion_mensual(conn)
+    # Ventas pronosticadas (total de la empresa) y su margen promedio.
+    serie = {f["fecha"]: f["f"] for f in db.filas(conn, "SELECT fecha, sum(facturacion)::float f FROM agg_producto_ubicacion_dia "
+                                                         "WHERE fecha >= %s AND fecha < %s GROUP BY 1", (hoy - timedelta(days=400), hoy))}
+    p = pronostico_serie(serie, hoy, dias, feriados, infl)
+    margen = db.fila(conn, "SELECT coalesce(sum(ganancia) / nullif(sum(facturacion), 0), 0.3)::float m FROM agg_producto_ubicacion_dia "
+                           "WHERE fecha >= %s AND fecha < %s", (hoy - timedelta(days=90), hoy))["m"]
+    # Mezcla de medios de pago y plazos de acreditación.
+    mezcla = {f["medio"]: (float(f["monto"]), f["plazo"]) for f in db.filas(conn, """
+        SELECT p.medio, sum(p.monto) monto, round(avg(p.plazo_acreditacion_dias)) plazo FROM pagos p JOIN tickets t ON t.id = p.ticket_id
+        WHERE t.fecha_hora >= %s AND p.monto > 0 GROUP BY 1""", (hoy - timedelta(days=90),))}
+    total_mezcla = sum(v[0] for v in mezcla.values()) or 1.0
+    comisiones = parametro(conn, "comisiones_medios") or {}
+    comisiones = comisiones if isinstance(comisiones, dict) else json.loads(comisiones)
+    entradas, salidas = defaultdict(float), defaultdict(float)
+    detalle = defaultdict(lambda: defaultdict(float))
+    for d in p["dias"]:
+        for medio, (monto, plazo) in mezcla.items():
+            if medio == "cuenta_corriente":
+                continue                                       # el fiado entra cuando se cobra (abajo)
+            cfg_m = comisiones.get(medio, {})
+            plazo_m = int(cfg_m.get("acreditacion_dias", plazo or 0))
+            neto = d["pronostico"] * monto / total_mezcla * (1 - float(cfg_m.get("comision", 0)))
+            dia = d["fecha"] + timedelta(days=plazo_m)
+            entradas[dia] += neto
+            detalle[dia]["cobro_ventas"] += neto
+    # Cobros de fiado: saldo pendiente por vencimiento, con la probabilidad de cobro de cada cliente.
+    for c in riesgo_clientes(conn, hoy):
+        dia = max(hoy, c["vence"]) if c.get("vence") else hoy + timedelta(days=30)
+        esperado = float(c["saldo"]) * (1 - c["prob_no_cobro"])
+        entradas[dia] += esperado
+        detalle[dia]["cobro_fiado"] += esperado
+    # Pagos a proveedores: OC ya aprobadas o enviadas (según condiciones de pago) y compras futuras para reponer lo que se vende.
+    for f in db.filas(conn, """SELECT o.estado, o.fecha_esperada, o.total::float total, pr.condiciones_pago FROM ordenes_compra o
+                               JOIN proveedores pr ON pr.id = o.proveedor_id
+                               WHERE o.estado IN ('aprobada', 'enviada', 'recibida_parcial')"""):
+        dia = (f["fecha_esperada"] or hoy) + timedelta(days=_plazo_pago(f["condiciones_pago"]))
+        if f["estado"] == "recibida_parcial" and dia < hoy:       # ya venció: se pagó con la mercadería que llegó
+            continue
+        dia = max(hoy, dia)
+        salidas[dia] += f["total"]
+        detalle[dia]["pago_proveedores"] += f["total"]
+    plazo_prov = db.fila(conn, "SELECT round(avg(coalesce(substring(condiciones_pago from '(\\d+)')::int, 0))) p FROM proveedores WHERE activo")["p"] or 0
+    for d in p["dias"][7:]:                                   # la primera semana ya está cubierta por las OC pendientes
+        dia = d["fecha"] + timedelta(days=int(plazo_prov))
+        compra = d["pronostico"] * (1 - margen)
+        salidas[dia] += compra
+        detalle[dia]["compras_futuras"] += compra
+    for g in cfg.get("gastos_fijos", []):
+        d = hoy
+        while d <= hoy + timedelta(days=dias):
+            if d.day == min(int(g["dia"]), calendar.monthrange(d.year, d.month)[1]):
+                salidas[d] += float(g["monto"])
+                detalle[d]["gastos_fijos"] += float(g["monto"])
+            d += timedelta(days=1)
+    linea, acumulado, bajo_minimo = [], saldo, None
+    var_acum = 0.0
+    for i in range(dias):
+        d = hoy + timedelta(days=i)
+        acumulado += entradas.get(d, 0.0) - salidas.get(d, 0.0)
+        var_acum += (p["desvio_7d"] * math.sqrt(1 / 7) * (1 - margen)) ** 2 if i < len(p["dias"]) else 0
+        margen_saldo = C.Z_BANDA * math.sqrt(var_acum)
+        linea.append({"fecha": d, "entradas": round(entradas.get(d, 0.0), 2), "salidas": round(salidas.get(d, 0.0), 2),
+                      "saldo": round(acumulado, 2), "saldo_min": round(acumulado - margen_saldo, 2), "saldo_max": round(acumulado + margen_saldo, 2)})
+        if bajo_minimo is None and acumulado - margen_saldo < minimo:
+            bajo_minimo = d
+    resumen = defaultdict(float)
+    for v in detalle.values():
+        for k, x in v.items():
+            resumen[k] += x
+    return ({"hoy": hoy, "dias": dias, "configurado": bool(cfg), "saldo_inicial": saldo, "minimo_aceptable": minimo,
+                      "gastos_fijos": cfg.get("gastos_fijos", []), "linea": linea, "primer_dia_bajo_minimo": bajo_minimo,
+                      "totales": {k: round(v, 2) for k, v in resumen.items()}, "margen_promedio": round(margen, 4),
+                      "saldo_final": round(acumulado, 2)})
 
 
 # ------------------------------------------------------------------------------ (41) riesgo de cobro

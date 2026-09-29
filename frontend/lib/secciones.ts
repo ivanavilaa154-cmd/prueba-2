@@ -10,6 +10,8 @@ export const SECCIONES_DISTRIBUIDOR: Seccion[] = [
 
 export const SECCIONES: Seccion[] = [
   { ruta: "/", nombre: "Inicio", que_hace: "Resumen del día, tarjetas clave y acciones con botón." },
+  { ruta: "/tablero/", nombre: "Mi tablero",
+    que_hace: "Vista por rol (Dirección, Comercial, Sucursal, Marketing, Finanzas): indicadores, avisos por plata en juego y pronóstico con rango." },
   { ruta: "/comprar/", nombre: "Comprar y reponer",
     que_hace: "Qué te falta, cuándo se agota cada producto y cuánto comprar, con semáforo y explicación del cálculo." },
   { ruta: "/transferencias/", nombre: "Transferencias y OC",
