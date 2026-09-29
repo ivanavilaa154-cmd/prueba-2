@@ -84,6 +84,7 @@ def comprar(ubicaciones: str | None = None, canal: str | None = None, categoria:
                    coalesce(cp.nombre, c.nombre) AS categoria, c.nombre AS subcategoria, coalesce(cp.id, c.id) AS categoria_id,
                    m.disponible AS stock, m.vpd, m.pronostico_diario, m.dias_stock, m.fecha_quiebre, m.cantidad_sugerida, m.semaforo,
                    m.clase_abc, m.confianza, m.ventas_en_riesgo, m.capital, m.dias_sin_venta, m.tendencia,
+                   m.pronostico_7d, m.pronostico_7d_min, m.pronostico_7d_max, m.prob_quiebre,
                    pr.id AS proveedor_id, pr.razon_social AS proveedor, pp.costo, pp.unidades_por_bulto,
                    (m.explicacion->>'stock_negativo')::boolean AS stock_negativo, (m.explicacion->>'sin_costo')::boolean AS sin_costo,
                    m.explicacion->>'supuesto_proveedor' AS supuesto

@@ -51,7 +51,9 @@ def sugerencia(e: dict, cantidad: float, hoy: date, unidad: str = "unidades") ->
             vuelve = e.get("proxima_oportunidad", 0)
             partes.append(f"{prov} {'pasa hoy' if vuelve == 0 else 'vuelve ' + dia(hoy, vuelve)} y tarda "
                           f"{e.get('demora')} día{'s' if e.get('demora') != 1 else ''} en entregar")
-    cubrir = f"lo que pidas tiene que alcanzar {e.get('horizonte')} días ({num(e.get('pronostico_horizonte'))} {unidad} según el pronóstico)"
+    rango = e.get("pronostico_horizonte_rango")
+    entre = f", entre {num(rango[0], 0)} y {num(rango[1], 0)} con 80 % de confianza" if rango else ""
+    cubrir = f"lo que pidas tiene que alcanzar {e.get('horizonte')} días ({num(e.get('pronostico_horizonte'))} {unidad} según el pronóstico{entre})"
     if e.get("stock_seguridad"):
         cubrir += f" más {num(e['stock_seguridad'])} de seguridad"
     partes.append(cubrir)
@@ -73,6 +75,8 @@ def sugerencia(e: dict, cantidad: float, hoy: date, unidad: str = "unidades") ->
         texto += f" Se redondeó hacia arriba al múltiplo de compra ({e['multiplo']} por bulto)."
     if e.get("recortada_por_maximo"):
         texto += " Se recortó para no pasar el stock máximo configurado."
+    if e.get("prob_quiebre") is not None and e["prob_quiebre"] >= 0.05:
+        texto += (f" Sin pedir, la probabilidad de quedarte sin stock antes de la próxima entrega es {round(e['prob_quiebre'] * 100)} %.")
     return texto
 
 

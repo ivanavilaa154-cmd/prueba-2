@@ -43,6 +43,7 @@ PANTALLAS: dict[str, list[str]] = {
     "Sucursales · matriz": ["/sucursales/matriz"],
     "Sucursales · precios y ajustes": ["/sucursales/precios-distintos", "/sucursales/ajustes"],
     "Avisos": ["/avisos?estado=abiertas"],
+    "Salud de los pronósticos": ["/modelos/salud"],
     "Datos · importar": ["/importar/tipos", "/importar/lotes"],
     "Datos · catálogo": ["/catalogo/pendientes"],
     "Datos · documentos": ["/lector", "/proveedores"],

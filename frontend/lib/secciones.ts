@@ -30,6 +30,8 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Anulaciones, devoluciones, descuentos manuales y valores atípicos por cajero y turno." },
   { ruta: "/proveedores/", modulo: "avanzado", nombre: "Proveedores",
     que_hace: "Días de visita, demoras, pedidos mínimos, nivel de servicio y rentabilidad por proveedor." },
+  { ruta: "/modelos/", nombre: "Salud de los pronósticos",
+    que_hace: "Cuánto se equivoca cada pronóstico, hacia qué lado y si el rango de confianza se cumple; calidad de los datos." },
   { ruta: "/avisos/", nombre: "Avisos",
     que_hace: "Bandeja de avisos con prioridad, impacto en pesos, explicación y acción, más el resumen diario por email." },
   { ruta: "/copiloto/", modulo: "avanzado", nombre: "Copiloto",

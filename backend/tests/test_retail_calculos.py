@@ -1,5 +1,6 @@
 """Retail · cálculos de las secciones 6, 7, 10 y 11 contra cuentas hechas a mano (incluye los casos de borde de la sección 18:
 producto nuevo sin historial, stock negativo, ventas con devoluciones, producto sin costo, proveedor sin días configurados)."""
+import math
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -237,3 +238,39 @@ def test_combinar_estimaciones_por_precision():
     # Producto con mucho error: se acerca a la categoría; con poco error, se queda cerca de lo propio.
     assert abs(C.combinar_estimaciones(-4.0, 2.0, -1.0, 0.2) - (-1.0297)) < 1e-3
     assert abs(C.combinar_estimaciones(-2.0, 0.1, -1.0, 1.0) - (-1.9901)) < 1e-3
+
+
+# --- rango de confianza y riesgo de quiebre (predicciones, parte A) ---------------------------------------------------------
+def test_semanas_con_stock_saltea_semanas_con_quiebre():
+    from app.retail import calculos as C
+    hoy = date(2026, 9, 28)
+    ventas = {hoy - timedelta(days=i): 2.0 for i in range(1, 57)}
+    sin = {hoy - timedelta(days=d) for d in (8, 9, 10)}                 # la 2ª semana tuvo 3 días sin stock
+    tot = C.semanas_con_stock(ventas, sin, hoy)
+    assert len(tot) == 7 and all(t == 14.0 for t in tot)
+
+
+def test_banda_y_desvio():
+    from app.retail import calculos as C
+    # Semanas muy parejas: manda el piso de Poisson (√media).
+    assert C.desvio_semanal([70, 70, 70, 70], 70) == pytest.approx(math.sqrt(70) * math.sqrt(1.25))
+    # Semanas que varían mucho: manda lo observado (desvío muestral), más la incertidumbre del promedio.
+    assert C.desvio_semanal([40, 100, 40, 100], 70) == pytest.approx(34.641 * math.sqrt(1.25), rel=1e-3)
+    # Poca historia: rango ancho (50 % de la media).
+    assert C.desvio_semanal([70], 70) == pytest.approx(35)
+    inf, sup = C.banda(120, 12, 7)
+    assert inf == pytest.approx(120 - 1.2816 * 12) and sup == pytest.approx(120 + 1.2816 * 12)
+    inf28, sup28 = C.banda(480, 12, 28)                                 # 4 semanas: el margen se duplica (√4), no se cuadruplica
+    assert sup28 - 480 == pytest.approx(2 * (sup - 120))
+    assert C.banda(3, 10, 7)[0] == 0.0
+
+
+def test_prob_quiebre_y_error():
+    from app.retail import calculos as C
+    assert C.prob_quiebre(100, 50, 10) < 0.001                          # sobra stock
+    assert C.prob_quiebre(0, 5, 2) == 1.0
+    assert C.prob_quiebre(50, 50, 10) == pytest.approx(0.48, abs=0.02)  # stock justo: ~50 %
+    assert C.prob_quiebre(10, 0, 3) == 0.0
+    e = C.error_pronostico([(10, 12), (20, 16), (5, 5)])
+    assert e["wape"] == pytest.approx((2 + 4 + 0) / 33) and e["sesgo"] == pytest.approx((35 - 33) / 33)
+    assert C.error_pronostico([(3, 0)])["wape"] is None

@@ -13,6 +13,7 @@ Nocturno: recalcula todo. Incremental: re-agrega los últimos días y recalcula 
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time as _time
 from collections import defaultdict
@@ -95,6 +96,13 @@ def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = N
         t_agg = _time.time() - t0
         resumen = _metricas(conn, org_id, hoy)
         resumen["segundos_agregados"] = round(t_agg, 2)
+    # Primera vez (o semanas sin registro): prueba sobre el pasado para medir el error de los pronósticos desde el primer día.
+    if tipo == "nocturno":
+        t1 = _time.time()
+        from . import pronosticos
+        with db.transaccion(ctx) as conn:
+            resumen["prueba_pasado"] = pronosticos.prueba_sobre_el_pasado(conn, org_id, hoy)
+        resumen["segundos_prueba_pasado"] = round(_time.time() - t1, 2)
     # Reposición y alertas en su propia transacción (usan las métricas recién guardadas).
     try:
         from . import reposicion
@@ -228,6 +236,7 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
     # ---- métricas por producto × ubicación
     filas = []
     periodos = []
+    registro = []
     ahora = datetime.now()
     conteo = defaultdict(int)
     for uid, u in ubicaciones.items():
@@ -276,6 +285,16 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                 elif regla["stock_maximo_dias"] is not None:
                     maximo = float(regla["stock_maximo_dias"]) * (sum(pron[:28]) / 28)
             pron_h = sum(pron[:h.horizonte])
+            # Rango del 80 % y probabilidad de quiebre antes de la próxima llegada (predicciones, parte A).
+            desvio7 = C.desvio_semanal(C.semanas_con_stock(vs, sin, hoy), sum(pron[:7]))
+            p7 = sum(pron[:7])
+            p7_min, p7_max = C.banda(p7, desvio7, 7)
+            dias_llegada = max(1, h.llegada_proxima)
+            demanda_llegada = sum(pron[:dias_llegada])
+            p_quiebre = None if u["tipo"] == "deposito" or p7 <= 0 else \
+                C.prob_quiebre(disponible + transito, demanda_llegada, desvio7 * math.sqrt(dias_llegada / 7))
+            if u["tipo"] != "deposito" and vs:
+                registro.append((pid, uid, p7, p7_min, p7_max))
             # La merma histórica de los perecederos baja el pedido (sección 9: merma).
             f_merma = C.factor_merma(merma90.get(clave, 0.0), vendido90.get(clave, 0.0)) if p["perecedero"] else 1.0
             pron_h *= f_merma
@@ -321,6 +340,10 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                              "estacional_mes": round(factores.estacional.get(hoy.month, 1.0), 3) if factores.estacional else None,
                              "tendencia": round(factores.tendencia, 3), "origen": factores.origen},
                 "pronostico_14d": [round(x, 2) for x in pron[:14]],
+                "pronostico_7d": round(p7, 2), "pronostico_7d_rango": [round(p7_min, 2), round(p7_max, 2)], "desvio_semanal": round(desvio7, 3),
+                "pronostico_horizonte_rango": [round(x * f_merma, 2) for x in C.banda(sum(pron[:h.horizonte]), desvio7, h.horizonte)],
+                "prob_quiebre": None if p_quiebre is None else round(p_quiebre, 4), "dias_hasta_llegada": dias_llegada,
+                "producto_nuevo": bool(alta),
                 "pronostico_horizonte": round(pron_h, 2), "horizonte": h.horizonte, "proxima_oportunidad": h.proxima_oportunidad,
                 "llegada_proxima": h.llegada_proxima, "supuesto_proveedor": h.supuesto,
                 "proveedor": prov["razon_social"] if prov else None, "demora": prov["demora_entrega_dias"] if prov else None,
@@ -339,7 +362,8 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                            None if dias_stock is None else round(min(dias_stock, 99999), 2), quiebre, h.horizonte, round(ss, 3),
                            sug.cantidad, prov["proveedor_id"] if prov else None, sem, abc[pid][0], tendencia, dias_sin_venta,
                            capital, None if gm is None else round(gm, 4), None if rot is None else round(rot, 4), riesgo_venc,
-                           r_vpd.confianza, riesgo_ventas, json.dumps(explicacion, default=str), ahora))
+                           r_vpd.confianza, riesgo_ventas, json.dumps(explicacion, default=str), ahora,
+                           round(p7, 3), round(p7_min, 3), round(p7_max, 3), None if p_quiebre is None else round(p_quiebre, 4)))
     with conn.cursor() as cur:
         cur.execute("DELETE FROM metricas_producto_actual WHERE org_id=%s", (org_id,))
         cur.execute("DELETE FROM periodos_sin_stock WHERE org_id=%s", (org_id,))
@@ -347,7 +371,9 @@ def _metricas(conn, org_id: int, hoy: date) -> dict:
                                                  "dias_stock", "fecha_quiebre", "horizonte_dias", "stock_seguridad", "cantidad_sugerida",
                                                  "proveedor_id", "semaforo", "clase_abc", "tendencia", "dias_sin_venta", "capital", "gmroi",
                                                  "rotacion", "riesgo_vencimiento", "confianza", "ventas_en_riesgo", "explicacion",
-                                                 "calculado_at"], filas)
+                                                 "calculado_at", "pronostico_7d", "pronostico_7d_min", "pronostico_7d_max", "prob_quiebre"], filas)
+    from . import pronosticos
+    pronosticos.registrar(conn, org_id, hoy, registro)
     db.copiar(conn, "periodos_sin_stock", ["org_id", "producto_id", "ubicacion_id", "desde", "hasta"], periodos)
     return {"metricas": len(filas), "semaforo": dict(conteo), "periodos_sin_stock": len(periodos)}
 

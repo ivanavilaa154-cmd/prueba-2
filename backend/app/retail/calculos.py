@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
-from statistics import mean, pstdev
+from statistics import mean, pstdev, stdev
 
 # ------------------------------------------------------------------------------ parámetros por defecto (configurables)
 VENTANA_VPD = 28                  # días hacia atrás para la venta promedio diaria
@@ -577,3 +577,59 @@ def segmento_rfm(r: int, f: int, m: int) -> str:
     if r >= 4 and f <= 1:
         return "nuevos"
     return "ocasionales"
+
+
+# ------------------------------------------------------------------------------ rango de confianza y riesgo (predicciones, parte A)
+Z_BANDA = 1.2816                  # rango del 80 %: 1 de cada 10 veces se vende menos y 1 de cada 10, más
+
+
+def semanas_con_stock(ventas: dict[date, float], sin_stock: set[date], hoy: date, semanas: int = 8, max_dias_sin: int = 1) -> list[float]:
+    """Totales de las últimas `semanas` semanas completas (hasta ayer), salteando las que tuvieron más de `max_dias_sin` días sin
+    stock: esas semanas subestiman la demanda y agrandarían la variación sin motivo."""
+    fin = hoy - timedelta(days=1)
+    totales = []
+    for k in range(semanas):
+        dias = [fin - timedelta(days=7 * k + i) for i in range(7)]
+        if sum(1 for d in dias if d in sin_stock) > max_dias_sin:
+            continue
+        totales.append(max(0.0, sum(ventas.get(d, 0.0) for d in dias)))
+    return totales
+
+
+def desvio_semanal(totales: list[float], media_semanal: float) -> float:
+    """Desvío de la venta de una semana. Se toma el mayor entre lo observado (cuánto variaron las semanas) y el piso de un
+    proceso de Poisson (√media): con pocas semanas o poca venta lo observado subestima la incertidumbre."""
+    piso = math.sqrt(max(media_semanal, 0.0))
+    if len(totales) < 3:
+        return max(piso, 0.5 * media_semanal)          # poca historia (o producto nuevo): rango ancho
+    # Desvío muestral × √(1 + 1/n): suma a la variación de la demanda la incertidumbre de estimar su promedio con n semanas.
+    return max(piso, stdev(totales)) * math.sqrt(1 + 1 / len(totales))
+
+
+def banda(pronostico: float, desvio_7d: float, dias: int, z: float = Z_BANDA) -> tuple[float, float]:
+    """Rango del pronóstico de `dias` días: pronóstico ± z × desvío semanal × √(días/7) (la variación crece con la raíz del plazo).
+    Nunca menor a cero."""
+    margen = z * desvio_7d * math.sqrt(max(dias, 1) / 7)
+    return max(0.0, pronostico - margen), pronostico + margen
+
+
+def prob_quiebre(disponible: float, demanda_esperada: float, desvio: float) -> float:
+    """Probabilidad de que la venta del período supere el stock disponible (aproximación normal): P(D > disponible)."""
+    if demanda_esperada <= 0:
+        return 0.0
+    if disponible <= 0:
+        return 1.0
+    if desvio <= 0:
+        return 1.0 if demanda_esperada > disponible else 0.0
+    zq = (disponible + 0.5 - demanda_esperada) / desvio              # corrección de continuidad: se venden unidades enteras
+    return max(0.0, min(1.0, 0.5 * math.erfc(zq / math.sqrt(2))))
+
+
+def error_pronostico(pares: list[tuple[float, float]]) -> dict:
+    """Error de un conjunto de (pronóstico, real):
+    WAPE = Σ|real − pronóstico| ÷ Σ real (error porcentual ponderado por volumen; 0 = perfecto);
+    sesgo = Σ(pronóstico − real) ÷ Σ real (positivo: sobreestima; negativo: subestima)."""
+    real = sum(r for _, r in pares)
+    if real <= 0:
+        return {"wape": None, "sesgo": None, "n": len(pares), "real": real}
+    return {"wape": sum(abs(r - p) for p, r in pares) / real, "sesgo": sum(p - r for p, r in pares) / real, "n": len(pares), "real": real}

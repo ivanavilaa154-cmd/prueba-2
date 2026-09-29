@@ -5,13 +5,13 @@ caso de liquidaciones y hoja de ruta. Estado: ✔ hecho · ◐ parcial · ✕ fa
 
 | # | Predicción | Prioridad | Estado | Dónde está hoy / qué falta |
 |---|---|---|---|---|
-| 1 | Venta por producto y sucursal | Alta | ◐ | Pronóstico diario (Comprar y reponer). Falta banda de confianza y medir el error (WAPE, sesgo). |
+| 1 | Venta por producto y sucursal | Alta | ✔ | Pronóstico con rango del 80 % (Comprar y reponer) y error medido cada semana (Salud de los pronósticos). |
 | 2 | Venta total por sucursal y canal | Alta | ◐ | Metas con proyección de cierre. Falta pronóstico diario por sucursal × canal (calendario de calor). |
 | 3 | Estacionalidad y eventos | Alta | ◐ | Factores de estacionalidad, feriados y fechas comerciales en el cálculo. Falta la curva anual visible. |
-| 4 | Demanda de productos nuevos | Media | ◐ | Se mezcla con la categoría. Falta rango bajo/medio/alto para el primer pedido. |
+| 4 | Demanda de productos nuevos | Media | ✔ | Se mezcla con la categoría y su rango es más ancho (poca historia). |
 | 5 | Canibalización y sustitución | Media | ◐ | Dentro de efectividad de promociones. Falta tabla de pares afectados por quiebres. |
 | 6 | Venta del canal online | Media | ◐ | Resultado por canal. Falta pronóstico. |
-| 7 | Riesgo de quiebre | Alta | ◐ | Semáforo y fecha de quiebre. Falta probabilidad (con la banda). |
+| 7 | Riesgo de quiebre | Alta | ✔ | Probabilidad de quedarse sin stock antes de la próxima entrega (Comprar y reponer). |
 | 8 | Pedido sugerido a proveedor | Alta | ✔ | Comprar y reponer, OC sugeridas. |
 | 9 | Sobrestock y días de cobertura | Alta | ✔ | Plata parada. |
 | 10 | Productos que van a vencer | Alta | ✔ | Vencimientos y ofertas. |
@@ -43,7 +43,7 @@ caso de liquidaciones y hoja de ruta. Estado: ✔ hecho · ◐ parcial · ✕ fa
 | 42 | Margen con inflación | Alta | ✔ | Precios (margen erosionado, costo de reposición). |
 | 43 | Cierre contra presupuesto | Media | ✔ | Metas (proyección y semáforo). |
 
-Además: **Salud de los modelos** (error y sesgo de cada pronóstico) ✕, **vistas por rol** ◐ (hoy por sección), **Liquidaciones activas** ◐
+Además: **Salud de los modelos** ✔ (WAPE, sesgo y cobertura del rango por categoría, sucursal y producto; prueba sobre el pasado de 8 semanas), **vistas por rol** ◐ (hoy por sección), **Liquidaciones activas** ◐
 (ofertas, carteles y cierre; faltan ubicación puntera/isla/góndola, escalera, proyección de vaciado, reposición de puntera, control de
 ejecución con foto y precio cartel vs caja).
 
@@ -61,3 +61,9 @@ ejecución con foto y precio cartel vs caja).
   comunes (KPIs, alertas por impacto, pronóstico con banda, detalle y simulador).
 - **E. Distribución (33–39)** en el Panel ERP, con los pedidos y clientes de Odoo.
 - **F. Con datos nuevos**: competencia (16), clientes (19–21), góndola (24), lanzamientos (26), colas (30), frío (32).
+
+## Avance
+
+- **A. Base de confianza — hecha (29/09/2026).** Con la demo completa: WAPE 35 %, el rango del 80 % contiene lo real el 74 % de las
+  veces y el pronóstico sobreestima un 6,5 % (Golosinas 27 %, Limpieza 23 %). Siguiente mejora natural: que el pronóstico corrija solo
+  el sesgo que mide (por categoría y sucursal).

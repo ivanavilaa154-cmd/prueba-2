@@ -17,6 +17,7 @@ type Fila = {
   stock: string; vpd: string; dias_stock: string | null; fecha_quiebre: string | null; dia_quiebre: string | null; cantidad_sugerida: string;
   bultos: number; semaforo: string; clase_abc: string; proveedor: string | null; proveedor_id: number | null; monto_sugerido: string;
   ventas_en_riesgo: string | null; confianza: string; stock_negativo: boolean; sin_costo: boolean; tipo_ubicacion: string;
+  pronostico_7d: string | null; pronostico_7d_min: string | null; pronostico_7d_max: string | null; prob_quiebre: string | null;
 };
 type Respuesta = {
   tarjetas: { productos_en_rojo: number; productos_en_amarillo: number; plata_a_comprar: string; ventas_en_riesgo: string };
@@ -69,6 +70,12 @@ export default function Comprar() {
     { id: "categoria", titulo: "Categoría", valor: (f) => f.categoria, ocultarEnCelular: true },
     { id: "stock", titulo: "Stock", valor: (f) => Number(f.stock), render: (f) => numero(f.stock, 0), derecha: true },
     { id: "vpd", titulo: "Venta/día", valor: (f) => Number(f.vpd), render: (f) => numero(f.vpd, 1), derecha: true },
+    { id: "pron7", titulo: "Venta 7 días", valor: (f) => (f.pronostico_7d === null ? null : Number(f.pronostico_7d)),
+      render: (f) => (f.pronostico_7d === null ? "—" : <span title="Rango con 80 % de confianza">{numero(f.pronostico_7d, 0)}<br />
+        <span className="text-xs text-suave">{numero(f.pronostico_7d_min, 0)}–{numero(f.pronostico_7d_max, 0)}</span></span>), derecha: true, ocultarEnCelular: true },
+    { id: "riesgo", titulo: "Riesgo de quiebre", valor: (f) => (f.prob_quiebre === null ? null : Number(f.prob_quiebre)),
+      render: (f) => (f.prob_quiebre === null ? "—" : <span className={Number(f.prob_quiebre) >= 0.5 ? "font-semibold text-peligro" : Number(f.prob_quiebre) >= 0.2 ? "text-alerta" : ""}>
+        {Number(f.prob_quiebre) >= 0.5 ? "▲ " : ""}{numero(Number(f.prob_quiebre) * 100, 0)} %</span>), derecha: true },
     { id: "dias", titulo: "Días de stock", valor: (f) => (f.dias_stock === null ? null : Number(f.dias_stock)), render: (f) => (f.dias_stock === null ? "—" : numero(f.dias_stock, 0)), derecha: true },
     { id: "quiebre", titulo: "Se agota", valor: (f) => f.fecha_quiebre, render: (f) => (f.fecha_quiebre ? <span>{fechaCorta(f.fecha_quiebre).slice(0, 5)} <span className="text-suave">{f.dia_quiebre?.slice(0, 3)}</span></span> : "—") },
     { id: "sugerido", titulo: "Sugerido", valor: (f) => Number(f.cantidad_sugerida), render: (f) => (Number(f.cantidad_sugerida) > 0
@@ -193,6 +200,8 @@ export default function Comprar() {
         <ComoSeCalcula>
           <p>Para cada producto en cada sucursal: venta promedio diaria de los últimos 28 días sin contar los días sin stock; pronóstico con el patrón de la semana, inicio de mes, feriados, estacionalidad y tendencia; días de stock = disponible ÷ pronóstico; horizonte = hasta que llegue el pedido siguiente (días de visita del proveedor + demora).</p>
           <p>Sugerido = pronóstico del horizonte + stock de seguridad − disponible − en tránsito − ya pedido, redondeado al bulto. Tocá un producto para ver su cuenta completa.</p>
+          <p>Venta 7 días: el pronóstico con su rango del 80 % (lo real cae dentro 8 de cada 10 veces; lo medimos en <a className="text-acento underline" href="../modelos/">Salud de los pronósticos</a>).
+            Riesgo de quiebre: probabilidad de que la venta supere lo disponible (más lo que está en camino) antes de la próxima entrega.</p>
           <p>Semáforo: <Semaforo valor="rojo" /> se agota antes de que pueda llegar la próxima reposición · <Semaforo valor="amarillo" /> incluirlo en el próximo pedido · <Semaforo valor="verde" /> cubierto · <Semaforo valor="gris" /> más de 30 días de stock.</p>
         </ComoSeCalcula>
       )}
