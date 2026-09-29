@@ -4,10 +4,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from . import copiloto, db, sesiones
+from . import copiloto, db, sesiones, suscripcion
 from .rutas import respuesta
 
-api = APIRouter(prefix="/retail/api", tags=["retail"])
+api = APIRouter(prefix="/retail/api", tags=["retail"], dependencies=[Depends(suscripcion.modulo("avanzado"))])   # plan (13.6)
 
 
 class Pregunta(BaseModel):

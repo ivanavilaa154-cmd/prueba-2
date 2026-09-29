@@ -20,12 +20,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import calculos as C
+from . import calculos as C, suscripcion
 from . import db, pdf, permisos, sesiones
 from .api_comprar import _hoy_datos, lista_ids
 from .rutas import respuesta
 
-api = APIRouter(prefix="/retail/api", tags=["retail"])
+api = APIRouter(prefix="/retail/api", tags=["retail"], dependencies=[Depends(suscripcion.modulo("avanzado"))])   # plan (13.6)
 DEFECTOS = {"umbral_sobrestock_dias": 30, "umbral_muerto_dias": 90}
 TRAMOS_VENCIMIENTO = ((7, "menos de 7 días"), (15, "7 a 15 días"), (30, "15 a 30 días"))
 

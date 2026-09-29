@@ -18,12 +18,12 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 
-from . import db, permisos, sesiones
+from . import db, permisos, sesiones, suscripcion
 from .api_comprar import _hoy_datos
 from .api_plata import parametro
 from .rutas import respuesta
 
-api = APIRouter(prefix="/retail/api", tags=["retail"])
+api = APIRouter(prefix="/retail/api", tags=["retail"], dependencies=[Depends(suscripcion.modulo("avanzado"))])   # plan (13.6)
 
 
 def _indicadores(conn, d: date, h: date) -> dict:

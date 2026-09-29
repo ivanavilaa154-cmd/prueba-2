@@ -127,7 +127,10 @@ def contexto(request: Request) -> db.Contexto:
         raise HTTPException(status_code=401, detail="Ingresá con tu email y tu clave.")
     if s["pendiente_2fa"]:
         raise HTTPException(status_code=401, detail="Falta el código del segundo factor.")
-    return contexto_de_sesion(s)
+    ctx = contexto_de_sesion(s)
+    from . import suscripcion
+    suscripcion.exigir_escritura(request, ctx)          # suscripción vencida → solo lectura (13.6)
+    return ctx
 
 
 def sesion_actual(request: Request) -> dict | None:

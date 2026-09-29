@@ -65,4 +65,6 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
       queda sin empresa); supresión de los datos de un cliente final; copia de seguridad diaria de la base (se guardan 7, probada
       restaurando en una base nueva). Ya estaban: cifrado de credenciales, segundo factor, RLS con pruebas y auditoría.
 - [x] Un solo ingreso para el Panel ERP y Retail (cuentas de administración y dueño) y uso del Odoo del Panel ERP en una empresa.
-- [ ] Planes y facturación (13.6).
+- [x] Planes y facturación (13.6): planes Inicial (1 sucursal, operación diaria), Crecimiento (5, + gestión avanzada) y Cadena (sin
+      límite, todo), editables por la plataforma; prueba de 30 días con todo; al vencer, solo lectura sin perder datos; pagos
+      registrados por la plataforma. Pendiente de decisión: precios y cobro automático con Mercado Pago (necesita la cuenta).

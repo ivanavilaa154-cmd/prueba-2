@@ -21,12 +21,12 @@ from statistics import quantiles
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from . import calculos as C
+from . import calculos as C, suscripcion
 from . import catalogo, db, permisos, sesiones
 from .api_comprar import _hoy_datos
 from .rutas import respuesta
 
-api = APIRouter(prefix="/retail/api", tags=["retail"])
+api = APIRouter(prefix="/retail/api", tags=["retail"], dependencies=[Depends(suscripcion.modulo("completo"))])   # plan (13.6)
 MINIMO_TICKETS_CANASTA = 500
 _cache_sensibilidad: dict = {}
 

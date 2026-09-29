@@ -44,6 +44,8 @@ HORARIO = {"lunes_a_sabado": "08:00-21:30", "domingo": "09:00-13:00"}
 def _cargar_empresa(conn, datos: dict) -> int:
     org, _ = crear_empresa(conn, datos["empresa"], None)
     org_id = org["id"]
+    with conn.cursor() as cur:        # demostración: plan completo, sin vencimiento
+        cur.execute("UPDATE organizaciones SET plan='cadena', pagado_hasta='2099-12-31' WHERE id=%s", (org_id,))
     ids = {}
     with conn.cursor() as cur:
         cur.execute("UPDATE usuarios SET hash_clave=%s WHERE org_id=%s", (seguridad.hash_clave(CLAVE_DEMO), org_id))

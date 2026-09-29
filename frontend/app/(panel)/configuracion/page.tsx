@@ -12,6 +12,7 @@ import { Precios } from "@/components/config/Precios";
 import { Sucursales } from "@/components/config/Sucursales";
 import { Usuarios } from "@/components/config/Usuarios";
 import { TusDatos } from "@/components/config/TusDatos";
+import { Plan } from "@/components/config/Plan";
 
 const PESTANAS = [
   { id: "empresa", nombre: "Empresa", permiso: null, componente: Empresa },
@@ -23,6 +24,7 @@ const PESTANAS = [
   { id: "medios", nombre: "Medios de pago", permiso: "ver_ventas", componente: MediosPago },
   { id: "auditoria", nombre: "Auditoría", permiso: "ver_auditoria", componente: Auditoria },
   { id: "datos", nombre: "Tus datos", permiso: "configurar_empresa", componente: TusDatos },
+  { id: "plan", nombre: "Plan", permiso: "configurar_empresa", componente: Plan },
   { id: "cuenta", nombre: "Mi cuenta", permiso: null, componente: Cuenta },
 ] as const;
 

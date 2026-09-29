@@ -8,6 +8,7 @@ import { ROLES } from "@/lib/formato";
 import { SECCIONES, SECCIONES_DISTRIBUIDOR } from "@/lib/secciones";
 import { cx } from "./ui";
 import { FiltroGlobal } from "./FiltroGlobal";
+import { NoIncluido } from "./NoIncluido";
 import { useSesion } from "./Sesion";
 
 function alternarTema() {
@@ -20,7 +21,7 @@ function alternarTema() {
 }
 
 export function Marco({ children }: { children: ReactNode }) {
-  const { yo } = useSesion();
+  const { yo, incluye } = useSesion();
   const ruta = usePathname();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
@@ -41,15 +42,18 @@ export function Marco({ children }: { children: ReactNode }) {
     setPrivacidad((p) => (p ? { ...p, aceptada: true } : p));
   }
 
+  const seccion = SECCIONES.find((s) => s.ruta !== "/" && ruta.startsWith(s.ruta));
+  const bloqueada = Boolean(seccion?.modulo && !incluye(seccion.modulo));
   const activa = (r: string) => (r === "/" ? ruta === "/" : ruta.startsWith(r));
   const menu = (
     <nav aria-label="Secciones" className="grid gap-0.5 p-2">
       {(yo.usuario.rol === "distribuidor" ? SECCIONES_DISTRIBUIDOR : SECCIONES).map((s) => (
         <Link key={s.ruta} href={s.ruta} onClick={() => setMenuAbierto(false)}
           className={cx("flex items-center justify-between rounded-lg px-3 py-2 text-sm",
-            activa(s.ruta) ? "bg-acento/12 font-semibold text-acento" : "text-texto hover:bg-panel-2")}>
+            activa(s.ruta) ? "bg-acento/12 font-semibold text-acento" : s.modulo && !incluye(s.modulo) ? "text-suave hover:bg-panel-2" : "text-texto hover:bg-panel-2")}>
           <span>{s.nombre}</span>
           {s.llega && <span className="text-[10px] uppercase tracking-wide text-suave">pronto</span>}
+          {s.modulo && !incluye(s.modulo) && <span className="text-[10px] uppercase tracking-wide text-suave" title="No incluido en tu plan">🔒 plan</span>}
         </Link>
       ))}
       {yo.usuario.es_superadmin && (
@@ -94,6 +98,14 @@ export function Marco({ children }: { children: ReactNode }) {
         </div>
       )}
       <div className="min-w-0">
+        {yo.suscripcion && !yo.usuario.es_superadmin && (!yo.suscripcion.al_dia || yo.suscripcion.por_vencer) && (
+          <div className={cx("px-4 py-2 text-sm", yo.suscripcion.al_dia ? "bg-alerta/15" : "bg-peligro/15")}>
+            {yo.suscripcion.al_dia
+              ? `${yo.suscripcion.en_prueba ? "Tu período de prueba" : "Tu suscripción"} vence en ${yo.suscripcion.dias_restantes} día${yo.suscripcion.dias_restantes === 1 ? "" : "s"}.`
+              : "La suscripción venció: la cuenta quedó en solo lectura (tus datos están intactos)."}{" "}
+            <Link className="underline" href="/configuracion/#plan">Ver tu plan</Link>
+          </div>
+        )}
         {privacidad?.baja && (
           <div className="bg-peligro/15 px-4 py-2 text-sm">
             Esta empresa pidió la baja: el {new Date(privacidad.baja.se_borra).toLocaleDateString("es-AR")} se borran todos sus datos.{" "}
@@ -132,7 +144,7 @@ export function Marco({ children }: { children: ReactNode }) {
           </div>
           {yo.empresa && yo.usuario.rol !== "distribuidor" && <FiltroGlobal />}
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-5 sm:py-6">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 py-5 sm:py-6">{bloqueada ? <NoIncluido /> : children}</main>
       </div>
     </div>
   );

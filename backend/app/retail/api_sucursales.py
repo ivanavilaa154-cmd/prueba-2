@@ -11,14 +11,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from . import calculos as C
+from . import calculos as C, suscripcion
 from . import db, permisos, sesiones
 from .api_comprar import _hoy_datos, lista_ids
 from .api_plata import estado_stock, parametro, red_de_venta
 from .api_ventas import periodo
 from .rutas import respuesta
 
-api = APIRouter(prefix="/retail/api", tags=["retail"])
+api = APIRouter(prefix="/retail/api", tags=["retail"], dependencies=[Depends(suscripcion.modulo("avanzado"))])   # plan (13.6)
 
 
 def _ubicaciones(conn) -> list[dict]:

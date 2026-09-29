@@ -145,6 +145,8 @@ def migrar() -> list[str]:
     aplicadas = []
     with conectar() as conn, conn.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(4242)")
+        # Las migraciones que corrigen datos existentes necesitan ver todas las empresas (las tablas tienen RLS forzada).
+        cur.execute("SELECT set_config('app.superadmin', '1', true)")
         cur.execute("CREATE TABLE IF NOT EXISTS esquema_migraciones (version text PRIMARY KEY, aplicada timestamptz NOT NULL DEFAULT now())")
         cur.execute("SELECT version FROM esquema_migraciones")
         hechas = {f["version"] for f in cur.fetchall()}

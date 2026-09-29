@@ -76,8 +76,8 @@ def _distribuidor(conn) -> int:
     if org:
         return org["id"]
     from .semilla import CLAVE_DEMO
-    org = db.fila(conn, "INSERT INTO organizaciones (nombre, cuit, tipo, modelo_abastecimiento) VALUES (%s,%s,'distribuidor','centralizado') "
-                        "RETURNING id", (DISTRIBUIDOR, CUIT_DISTRIBUIDOR))
+    org = db.fila(conn, "INSERT INTO organizaciones (nombre, cuit, tipo, modelo_abastecimiento, plan, pagado_hasta) "
+                        "VALUES (%s,%s,'distribuidor','centralizado','cadena','2099-12-31') RETURNING id", (DISTRIBUIDOR, CUIT_DISTRIBUIDOR))
     with conn.cursor() as cur:
         for codigo, etiqueta in ETIQUETA_CANAL.items():
             cur.execute("INSERT INTO canales (org_id, codigo, nombre, activo) VALUES (%s,%s,%s,%s)",

@@ -66,4 +66,8 @@ export type Yo = {
   canales: Canal[];
   plataformas: Plataforma[];
   datos: { productos: number; proveedores: number; sin_mapear: number; origen: string | null; calculado_at: string | null } | null;
+  suscripcion: Suscripcion | null;
 };
+// Plan de la empresa (13.6): módulos incluidos, prueba y vencimiento.
+export type Suscripcion = { plan: string; plan_nombre: string; en_prueba: boolean; hasta: string | null; al_dia: boolean; dias_restantes: number | null;
+  por_vencer: boolean; max_sucursales: number | null; sucursales: number; modulos: string[]; precio_mensual: string | null };

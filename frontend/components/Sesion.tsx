@@ -11,6 +11,7 @@ type Valor = {
   yo: Yo;
   recargar: () => Promise<void>;
   puede: (permiso: string) => boolean;
+  incluye: (modulo: string) => boolean;
   filtro: Filtro;
   setFiltro: (f: Filtro) => void;
 };
@@ -73,6 +74,7 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
   const valor = useMemo<Valor | null>(() => yo && {
     yo, recargar, filtro, setFiltro,
     puede: (p: string) => yo.permisos.includes(p),
+    incluye: (m: string) => yo.usuario.es_superadmin || !yo.suscripcion || yo.suscripcion.modulos.includes(m),
   }, [yo, recargar, filtro, setFiltro]);
 
   if (error) {

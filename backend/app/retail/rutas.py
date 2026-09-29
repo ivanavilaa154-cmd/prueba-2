@@ -102,6 +102,14 @@ def salir(request: Request):
     return r
 
 
+def suscripcion_de(ctx: db.Contexto) -> dict | None:
+    if not ctx.org_id:
+        return None
+    from . import suscripcion
+    with db.transaccion(ctx) as conn:
+        return suscripcion.estado(conn, ctx.org_id)
+
+
 @api.get("/yo")
 def yo(ctx: db.Contexto = Depends(sesiones.contexto)):
     with db.transaccion(ctx) as conn:
@@ -120,7 +128,7 @@ def yo(ctx: db.Contexto = Depends(sesiones.contexto)):
         "usuario": {"id": ctx.usuario_id, "nombre": ctx.nombre, "email": ctx.email, "rol": ctx.rol,
                     "es_superadmin": ctx.es_superadmin, "segundo_factor": bool(segundo and segundo["activo"]),
                     "todas_ubicaciones": ctx.todas_ubicaciones},
-        "empresa": org, "permisos": sorted(permisos.permisos_de(ctx)),
+        "empresa": org, "permisos": sorted(permisos.permisos_de(ctx)), "suscripcion": suscripcion_de(ctx),
         "ubicaciones": ubicaciones, "canales": canales, "plataformas": plataformas, "datos": datos,
     })
 
@@ -262,6 +270,9 @@ def crear_ubicacion(datos: Ubicacion, request: Request, ctx: db.Contexto = Depen
     with db.transaccion(ctx) as conn:
         if db.fila(conn, "SELECT 1 FROM ubicaciones WHERE lower(nombre)=lower(%s)", (datos.nombre.strip(),)):
             raise HTTPException(status_code=400, detail="Ya hay una sucursal o depósito con ese nombre.")
+        if not ctx.es_superadmin:
+            from . import suscripcion
+            suscripcion.exigir_sucursal_nueva(conn, ctx.org_id, datos.tipo)
         nueva = db.fila(conn, "INSERT INTO ubicaciones (org_id, nombre, tipo, direccion, localidad, horarios, codigo_externo, activa, created_by) "
                               "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",
                         (ctx.org_id, datos.nombre.strip(), datos.tipo, datos.direccion, datos.localidad, json.dumps(datos.horarios),
