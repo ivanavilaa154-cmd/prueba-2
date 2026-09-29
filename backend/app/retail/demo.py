@@ -39,6 +39,8 @@ CASOS = {
     "faltante_conocido": {"producto": "P0002", "ubicacion": "Salta Centro", "desde_dias": 13, "hasta_dias": 6},
     "stock_fantasma": {"producto": "P0014", "ubicacion": "Salta Norte", "dias_sin_venta": 6, "stock": 24},
     "producto_nuevo": {"producto": "P0383", "dias": 5},
+    # Lanzamientos (predicción 26): uno que despega, uno que no y uno en duda. Días desde el lanzamiento y fuerza de venta relativa.
+    "lanzamientos": {"productos": ["P0304", "P0314", "P0321"], "dias": [70, 45, 20], "fuerza": [1.6, 0.25, 0.9]},
     "sin_costo": {"producto": "P0120"},
     "stock_negativo": {"producto": "P0200", "ubicacion": "San Salvador de Jujuy", "stock": -3},
     "sobrestock": {"producto": "P0067", "ubicacion": "San Salvador de Jujuy", "dias": 120},
@@ -255,6 +257,10 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
             por_codigo[CASOS["sin_costo"]["producto"]].sin_costo = True
         if CASOS["producto_nuevo"]["producto"] in por_codigo:
             por_codigo[CASOS["producto_nuevo"]["producto"]].nuevo_desde = hoy - timedelta(days=CASOS["producto_nuevo"]["dias"])
+        for codigo, dias, fuerza in zip(*(CASOS["lanzamientos"][k] for k in ("productos", "dias", "fuerza"))):
+            if codigo in por_codigo:
+                por_codigo[codigo].nuevo_desde = hoy - timedelta(days=dias)
+                por_codigo[codigo].peso *= fuerza
         # El faltante conocido tiene que ser un producto de venta frecuente.
         if CASOS["faltante_conocido"]["producto"] in por_codigo:
             por_codigo[CASOS["faltante_conocido"]["producto"]].peso = max(p.peso for p in prods) * 0.6
@@ -790,6 +796,7 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
         _fiado_y_metas(conn, org_id, hoy, rng, sucursales, ubic)
         _online(conn, org_id, hoy, rng, plataformas, ubic)
         _clientes_identificados(conn, org_id, hoy)
+        _competencia_y_gondola(conn, org_id, hoy, rng, prods, ubic)
         with conn.cursor() as cur:
             # secuencias
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
@@ -929,6 +936,29 @@ def _online(conn, org_id: int, hoy: date, rng: random.Random, plataformas: dict,
         cur.execute("UPDATE plataformas SET config = config || '{\"demo\": true}' WHERE id = ANY(%s)", (list(ids_plat),))
     from . import stock_publicado
     stock_publicado.proponer(conn)
+
+
+COMPETIDORES = ["Súper La Estrella", "Mayorista del Norte"]      # nombres inventados
+
+
+def _competencia_y_gondola(conn, org_id: int, hoy: date, rng: random.Random, prods: list, ubic: dict) -> None:
+    """Relevamientos de precios de dos competidores (predicción 16) y el espacio en góndola de tres categorías de Salta Centro (24)."""
+    vendidos = sorted((p for p in prods if not p.nuevo_desde), key=lambda p: -p.peso)[:30]
+    filas = []
+    for i, p in enumerate(vendidos):
+        for comp in COMPETIDORES:
+            factor = 0.82 if i == 0 and comp == COMPETIDORES[1] else rng.uniform(0.9, 1.08)    # el primero: el mayorista lo tiene mucho más barato
+            filas.append((org_id, p.id, comp, round(p.precio_hoy * factor, 2), hoy - timedelta(days=rng.randint(3, 40)), "manual"))
+    _copy(conn, "precios_competencia", ["org_id", "producto_id", "competidor", "precio", "fecha", "fuente"], filas)
+    if "Salta Centro" not in ubic:
+        return
+    filas = []
+    for p in prods:
+        if p.categoria in ("Golosinas", "Bebidas", "Limpieza") and not p.nuevo_desde:
+            # Los frentes no siguen a la venta (como pasa cuando el espacio se armó una vez y no se revisó): hay de más y de menos.
+            frentes = rng.choice([1, 2, 2, 3, 3, 4, 6])
+            filas.append((org_id, p.id, ubic["Salta Centro"], frentes, round(frentes * 0.22, 3)))
+    _copy(conn, "espacio_gondola", ["org_id", "producto_id", "ubicacion_id", "frentes", "metros"], filas)
 
 
 def _clientes_identificados(conn, org_id: int, hoy: date) -> None:

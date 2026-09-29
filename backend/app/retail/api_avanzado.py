@@ -13,11 +13,12 @@ Fórmulas (también en «¿Cómo se calcula esto?»):
 """
 from __future__ import annotations
 
+import math
 import time as _time
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from statistics import quantiles
+from statistics import median, pstdev, quantiles
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -353,6 +354,126 @@ def clientes(ctx: db.Contexto = Depends(sesiones.contexto)):
             intervalo = (a["ultima"] - a["primera"]).days / (a["tickets"] - 1) if a and a["tickets"] > 1 else None
             if a and a["tickets"] >= 6 and intervalo is not None and r >= max(45, 3 * intervalo):
                 dejaron.append({"cliente": f["cliente"], "dias_sin_comprar": r, "compras_antes": a["tickets"], "gasto_antes": a["gasto"]})
+        valor, proximas = valor_y_proxima_compra(conn, hoy)
+        for x in lista:
+            x.update(valor.get(x["cliente"], {}))
         return respuesta({"activo": True, "clientes": len(filas), "segmentos": [{"segmento": k, "nombre": SEGMENTOS[k], **segs[k]} for k in SEGMENTOS],
                           "mayor_valor": sorted(lista, key=lambda x: -x["gasto_180d"])[:20],
+                          "valor_de_vida": sorted((x for x in lista if x.get("valor_12m") is not None), key=lambda x: -x["valor_12m"])[:20],
+                          "proximas_compras": proximas, "retencion_mensual": valor.get("_retencion"),
+                          "valor_12m_total": round(sum(x.get("valor_12m") or 0 for x in lista), 2),
                           "dejaron_de_venir": sorted(dejaron, key=lambda x: -x["gasto_antes"])[:30], "lista": lista})
+
+
+def valor_y_proxima_compra(conn, hoy: date) -> tuple[dict, list[dict]]:
+    """(19) Valor de vida a 12 meses y (20) próxima compra de cada cliente identificado.
+
+    Próxima compra: última compra + la mediana de sus intervalos, con rango del 10 al 90 % de esos intervalos (al menos 3 compras).
+    Probabilidad de que siga activo: 1 si todavía no pasó su intervalo habitual; después cae a la mitad por cada intervalo de atraso.
+    Valor a 12 meses: ganancia mensual promedio del último año × probabilidad de seguir activo × suma de la retención mensual de la
+    empresa (medida: de los que compraban hace 2 a 8 meses, cuántos volvieron en los últimos 60 días) a lo largo de 12 meses."""
+    compras = defaultdict(list)
+    for f in db.filas(conn, """SELECT t.cliente, (t.fecha_hora AT TIME ZONE o.zona_horaria)::date dia, sum(t.total)::float total
+                               FROM tickets t JOIN organizaciones o ON o.id = t.org_id
+                               WHERE t.cliente IS NOT NULL AND t.estado = 'confirmado' AND t.fecha_hora > %s GROUP BY 1, 2""",
+                      (hoy - timedelta(days=365),)):
+        compras[f["cliente"]].append((f["dia"], f["total"]))
+    margen = db.fila(conn, "SELECT coalesce(sum(ganancia) / nullif(sum(facturacion), 0), 0.25)::float m FROM agg_producto_ubicacion_dia WHERE fecha >= %s",
+                     (hoy - timedelta(days=365),))["m"]
+    antes = {c for c, xs in compras.items() if any(hoy - timedelta(days=240) <= d < hoy - timedelta(days=60) for d, _ in xs)}
+    volvieron = sum(1 for c in antes if any(d >= hoy - timedelta(days=60) for d, _ in compras[c]))
+    retencion_60 = volvieron / len(antes) if antes else 0.8
+    r_mes = min(0.99, max(0.3, retencion_60 ** 0.5))
+    factor_12 = sum(r_mes ** m for m in range(1, 13))
+    valor, proximas = {"_retencion": round(r_mes, 3)}, []
+    for c, xs in compras.items():
+        xs.sort()
+        dias = [d for d, _ in xs]
+        primera = dias[0]
+        meses = max(1.0, (hoy - primera).days / 30.4)
+        gasto_mes = sum(t for _, t in xs) / meses
+        sin = (hoy - dias[-1]).days
+        intervalos = [(b - a).days for a, b in zip(dias, dias[1:]) if (b - a).days > 0]
+        if len(intervalos) >= 2:
+            tipico = median(intervalos)
+            q = quantiles(intervalos, n=10) if len(intervalos) >= 3 else [min(intervalos)] * 9
+            desde, hasta = dias[-1] + timedelta(days=round(q[0])), dias[-1] + timedelta(days=round(q[-1] if len(intervalos) >= 3 else max(intervalos)))
+            activo = 1.0 if sin <= tipico else 0.5 ** ((sin - tipico) / max(tipico, 7))
+            esperada = max(hoy, dias[-1] + timedelta(days=round(tipico)))
+            if activo >= 0.25 and esperada <= hoy + timedelta(days=14):
+                proximas.append({"cliente": c, "ultima_compra": dias[-1], "cada_dias": round(tipico), "proxima": esperada,
+                                 "entre": max(hoy, desde), "y": max(hoy, hasta), "ticket_promedio": round(sum(t for _, t in xs) / len(xs), 2),
+                                 "atrasada": sin > tipico})
+        else:
+            activo = 1.0 if sin <= 60 else 0.5 ** ((sin - 60) / 60)
+        valor[c] = {"valor_12m": round(gasto_mes * margen * activo * factor_12, 2), "prob_activo": round(activo, 3),
+                    "compras_por_mes": round(len(xs) / meses, 2)}
+    proximas.sort(key=lambda x: (not x["atrasada"], x["proxima"], -x["ticket_promedio"]))   # primero las atrasadas: a quién recordarle
+    return valor, proximas[:40]
+
+
+# ------------------------------------------------------------------------------ (26) éxito de un lanzamiento
+@api.get("/lanzamientos")
+def lanzamientos(ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Productos lanzados en los últimos 120 días: cuánto van a vender a los 90 días (con rango) y la probabilidad de que vendan como un
+    producto normal de su categoría (al menos el 40 % de los productos de la categoría venden menos que eso)."""
+    permisos.exigir(ctx, "ver_ventas")
+    with db.transaccion(ctx) as conn:
+        hoy = _hoy_datos(conn)
+        inicio = db.fila(conn, "SELECT min(fecha) f FROM agg_producto_ubicacion_dia")["f"]
+        if not inicio:
+            return respuesta({"lanzamientos": [], "hoy": hoy})
+        nuevos = db.filas(conn, """SELECT a.producto_id, min(a.fecha) primera FROM agg_producto_ubicacion_dia a GROUP BY 1
+                                   HAVING min(a.fecha) >= %s AND min(a.fecha) > %s AND min(a.fecha) <= %s""",
+                          (hoy - timedelta(days=120), inicio + timedelta(days=30), hoy - timedelta(days=7)))
+        if not nuevos:
+            return respuesta({"lanzamientos": [], "hoy": hoy})
+        ids = [n["producto_id"] for n in nuevos]
+        info = {f["id"]: f for f in db.filas(conn, """SELECT p.id, p.nombre, p.codigo_interno codigo, coalesce(cp.id, c.id) cat_id, coalesce(cp.nombre, c.nombre, 'Sin categoría') categoria
+                                                     FROM productos p LEFT JOIN categorias c ON c.id = p.categoria_id LEFT JOIN categorias cp ON cp.id = c.padre_id
+                                                     WHERE p.id = ANY(%s)""", (ids,))}
+        diario = defaultdict(dict)
+        for f in db.filas(conn, """SELECT producto_id, fecha, sum(unidades)::float u, sum(facturacion)::float v FROM agg_producto_ubicacion_dia
+                                   WHERE producto_id = ANY(%s) GROUP BY 1, 2""", (ids,)):
+            diario[f["producto_id"]][f["fecha"]] = (f["u"], f["v"])
+        # Venta diaria de los productos establecidos de cada categoría (últimos 28 días).
+        cat_vpd = defaultdict(list)
+        for f in db.filas(conn, """SELECT coalesce(cp.id, c.id) cat_id, a.producto_id, sum(a.unidades)::float / 28 vpd
+                                   FROM agg_producto_ubicacion_dia a JOIN productos p ON p.id = a.producto_id
+                                   LEFT JOIN categorias c ON c.id = p.categoria_id LEFT JOIN categorias cp ON cp.id = c.padre_id
+                                   WHERE a.fecha >= %s AND a.fecha < %s AND NOT (a.producto_id = ANY(%s)) GROUP BY 1, 2""",
+                          (hoy - timedelta(days=28), hoy, ids)):
+            cat_vpd[f["cat_id"]].append(f["vpd"])
+        salida = []
+        for n in nuevos:
+            p, primera = info.get(n["producto_id"]), n["primera"]
+            if not p:
+                continue
+            dias = (hoy - primera).days
+            serie = [diario[p["id"]].get(primera + timedelta(days=i), (0.0, 0.0)) for i in range(dias)]
+            ultimos = [u for u, _ in serie[-14:]]
+            vpd = sum(ultimos) / len(ultimos)
+            previos = [u for u, _ in serie[-28:-14]]
+            tendencia = (vpd / (sum(previos) / len(previos))) if previos and sum(previos) else 1.0
+            proyectada = vpd * max(0.7, min(1.3, 1 + 0.5 * (tendencia - 1)))       # venta diaria esperada al día 90
+            desvio = math.sqrt((pstdev(ultimos) / math.sqrt(len(ultimos))) ** 2 + (0.2 * proyectada) ** 2)
+            referencia = cat_vpd.get(p["cat_id"], [])
+            objetivo = quantiles(referencia, n=10)[3] if len(referencia) >= 5 else None
+            prob = None if objetivo is None else (0.5 * math.erfc((objetivo - proyectada) / (desvio * math.sqrt(2))) if desvio else float(proyectada >= objetivo))
+            vendidas = sum(u for u, _ in serie)
+            restan = max(0, 90 - dias)
+            total_90 = vendidas + proyectada * restan
+            margen_90 = C.Z_BANDA * desvio * restan
+            veredicto = ("sin_referencia" if prob is None else "va_bien" if prob >= 0.6 else "en_duda" if prob >= 0.3 else "no_despega")
+            salida.append({
+                "producto_id": p["id"], "producto": p["nombre"], "codigo": p["codigo"], "categoria": p["categoria"], "lanzado": primera, "dias": dias,
+                "vendidas": round(vendidas, 1), "facturado": round(sum(v for _, v in serie), 2), "venta_diaria": round(vpd, 2),
+                "tendencia": round(tendencia, 2), "venta_diaria_90": round(proyectada, 2), "objetivo_categoria": round(objetivo, 2) if objetivo else None,
+                "unidades_90": round(total_90), "unidades_90_min": round(max(vendidas, total_90 - margen_90)), "unidades_90_max": round(total_90 + margen_90),
+                "prob_exito": round(prob, 3) if prob is not None else None, "veredicto": veredicto,
+                "accion": {"va_bien": "Asegurar stock y sumarlo a las sucursales donde no está",
+                           "en_duda": "Darle exhibición o una promo de prueba y volver a mirar en 2 semanas",
+                           "no_despega": "No reponer; pedir al proveedor cambio o devolución",
+                           "sin_referencia": "Seguir mirando: su categoría tiene pocos productos para comparar"}[veredicto]})
+        salida.sort(key=lambda x: x["lanzado"], reverse=True)
+        return respuesta({"hoy": hoy, "lanzamientos": salida})

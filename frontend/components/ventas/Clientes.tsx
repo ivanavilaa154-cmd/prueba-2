@@ -1,13 +1,16 @@
 "use client";
-// Clientes (10.14): segmentación RFM, clientes de mayor valor y los que dejaron de venir. Solo si la caja identifica clientes.
+// Clientes (10.14): segmentación RFM, clientes de mayor valor y los que dejaron de venir; valor de vida a 12 meses (19) y próxima
+// compra (20). Solo si la caja identifica clientes.
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fechaCorta, numero, plata, plataCorta } from "@/lib/formato";
 import { Aviso, ComoSeCalcula, Tabla, Tarjeta } from "@/components/ui";
 
-type Cli = { cliente: string; ultima_compra: string; dias_sin_comprar: number; compras_180d: number; gasto_180d: string; rfm: string; segmento: string };
+type Cli = { cliente: string; ultima_compra: string; dias_sin_comprar: number; compras_180d: number; gasto_180d: string; rfm: string; segmento: string;
+  valor_12m?: number; prob_activo?: number; compras_por_mes?: number };
+type Proxima = { cliente: string; ultima_compra: string; cada_dias: number; proxima: string; entre: string; y: string; ticket_promedio: number; atrasada: boolean };
 type R = { activo: boolean; como_activar?: string; clientes: number; segmentos: { segmento: string; nombre: string; clientes: number; gasto: string }[];
-  mayor_valor: Cli[]; dejaron_de_venir: { cliente: string; dias_sin_comprar: number; compras_antes: number; gasto_antes: string }[] };
+  mayor_valor: Cli[]; valor_de_vida: Cli[]; proximas_compras: Proxima[]; retencion_mensual: number; valor_12m_total: number; dejaron_de_venir: { cliente: string; dias_sin_comprar: number; compras_antes: number; gasto_antes: string }[] };
 const NOMBRES: Record<string, string> = { campeones: "Campeones", leales: "Leales", nuevos: "Nuevos", ocasionales: "Ocasionales", en_riesgo: "En riesgo", perdidos: "Perdidos" };
 
 export function Clientes() {
@@ -33,6 +36,27 @@ export function Clientes() {
           </ComoSeCalcula>
         </div>
       </Tarjeta>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Tarjeta titulo="Valor de vida · próximos 12 meses">
+          <p className="mb-2 text-sm text-suave">Ganancia que se espera de cada cliente en un año: {plataCorta(r.valor_12m_total)} entre todos. Retención mensual medida: {numero(r.retencion_mensual * 100)} %.</p>
+          <Tabla columnas={["Cliente", "Valor 12 meses", "Sigue activo", "Compras por mes"]}>
+            {r.valor_de_vida.map((c) => <tr key={c.cliente}><td>{c.cliente}</td><td className="whitespace-nowrap text-right font-semibold">{plata(c.valor_12m)}</td>
+              <td className="text-right">{numero((c.prob_activo ?? 0) * 100)} %</td><td className="text-right">{numero(c.compras_por_mes, 1)}</td></tr>)}
+          </Tabla>
+        </Tarjeta>
+        <Tarjeta titulo="Próxima compra">
+          <p className="mb-2 text-sm text-suave">Quién debería volver en las próximas 2 semanas y cuándo, según su ritmo. Primero los atrasados: son a quienes conviene recordarles.</p>
+          <Tabla columnas={["Cliente", "Esperada", "Rango", "Cada", "Compra promedio"]}>
+            {r.proximas_compras.map((c) => <tr key={c.cliente}><td>{c.cliente}{c.atrasada && <span className="ml-1 text-xs text-alerta">▲ atrasado</span>}</td>
+              <td className="whitespace-nowrap">{fechaCorta(c.proxima)}</td><td className="whitespace-nowrap text-suave">{fechaCorta(c.entre)} – {fechaCorta(c.y)}</td>
+              <td className="whitespace-nowrap text-right">{c.cada_dias} días</td><td className="whitespace-nowrap text-right">{plata(c.ticket_promedio)}</td></tr>)}
+          </Tabla>
+        </Tarjeta>
+      </div>
+      <ComoSeCalcula>
+        <p>Próxima compra: la última compra más la mediana de sus intervalos; el rango va del 10 % al 90 % de esos intervalos (hace falta que haya comprado 3 veces).</p>
+        <p>Valor de vida: ganancia mensual promedio del último año × probabilidad de que siga activo (baja a la mitad por cada intervalo de atraso) × la retención mensual de tus clientes sumada en 12 meses.</p>
+      </ComoSeCalcula>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Tarjeta titulo="Dejaron de venir">
           <p className="mb-2 text-sm text-suave">Eran habituales y ya pasó el triple de su tiempo normal entre compras.</p>

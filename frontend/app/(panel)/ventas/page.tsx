@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { Canasta } from "@/components/ventas/Canasta";
 import { Clientes } from "@/components/ventas/Clientes";
+import { Competencia } from "@/components/ventas/Competencia";
+import { Gondola } from "@/components/ventas/Gondola";
+import { Lanzamientos } from "@/components/ventas/Lanzamientos";
 import { Ganadores } from "@/components/ventas/Ganadores";
 import { Impacto } from "@/components/ventas/Impacto";
 import { Inflacion } from "@/components/ventas/Inflacion";
@@ -28,6 +31,9 @@ const PESTANAS: { id: string; nombre: string; componente: () => React.ReactNode;
   { id: "sensibilidad", modulo: "completo", nombre: "Sensibilidad al precio", componente: Sensibilidad },
   { id: "surtido", modulo: "completo", nombre: "Surtido", componente: Surtido },
   { id: "clientes", modulo: "completo", nombre: "Clientes", componente: Clientes },
+  { id: "lanzamientos", modulo: "completo", nombre: "Lanzamientos", componente: Lanzamientos },
+  { id: "competencia", modulo: "completo", nombre: "Competencia", componente: Competencia },
+  { id: "gondola", modulo: "completo", nombre: "Góndola", componente: Gondola },
   { id: "rentabilidad", modulo: "avanzado", nombre: "Rentabilidad del stock", componente: Rentabilidad },
   { id: "medios", modulo: "avanzado", nombre: "Medios de pago y fiado", componente: MediosDePago },
   { id: "metas", modulo: "avanzado", nombre: "Metas", componente: Metas },

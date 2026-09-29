@@ -68,3 +68,13 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
 - [x] Planes y facturación (13.6): planes Inicial (1 sucursal, operación diaria), Crecimiento (5, + gestión avanzada) y Cadena (sin
       límite, todo), editables por la plataforma; prueba de 30 días con todo; al vencer, solo lectura sin perder datos; pagos
       registrados por la plataforma. Pendiente de decisión: precios y cobro automático con Mercado Pago (necesita la cuenta).
+
+## Predicciones con IA (29/09/2026) — detalle en `predicciones.md`
+
+- [x] A. Rango del 80 % en todos los pronósticos, registro contra lo real, Salud de los pronósticos y corrección automática del sesgo.
+- [x] B. Pronósticos por sucursal × canal, curva anual, afluencia y cajas por turno, simulador de promociones, flujo de caja y riesgo de cobro.
+- [x] C. Liquidaciones activas: ubicación, escalera, vaciado, reposición de puntera y control con foto.
+- [x] D. Mi tablero: vistas por rol (Dirección, Comercial, Sucursal, Marketing, Finanzas).
+- [x] E. Panel ERP → Distribución (33 a 39) con los datos de Odoo.
+- [x] F. Valor de vida y próxima compra, lanzamientos, competencia y góndola (estas dos, con datos cargados por CSV).
+- [ ] Sin datos todavía: cupones y campañas (21), colas en tiempo real (30), sensores de frío (32).
