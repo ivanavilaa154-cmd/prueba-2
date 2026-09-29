@@ -173,3 +173,32 @@ def test_error_de_odoo_queda_en_la_conexion(odoo_falso, monkeypatch):
     assert estado["estado_sincronizacion"] == "error" and "conectar" in estado["error_sincronizacion"]
     assert c.delete(f"/retail/api/conexiones/{pid}").status_code == 200
     assert _q("SELECT credenciales_cifradas FROM plataformas WHERE id=%s", (pid,))[0]["credenciales_cifradas"] is None
+
+
+def test_usa_el_odoo_del_panel_erp_y_crea_sucursales(odoo_falso, monkeypatch):
+    """La administración entra a una empresa sin sucursales y usa el Odoo que ya está conectado en el Panel ERP."""
+    from app.integraciones import gestor
+    from app.retail import cuentas
+    monkeypatch.setattr(gestor, "config_odoo", lambda con_clave=False: {"url": "https://odoo.test", "db": "comercio",
+                                                                        "usuario": "integracion@comercio.com", "api_key": CLAVE})
+    with db.transaccion(superadmin=True) as conn:
+        cuentas.administrador(conn, "yo@ejemplo.com", "Yo", "Clave-segura-2026")
+        org = cuentas.empresa_con_dueno(conn, "Pulpo Azul", None, "dueno@pulpo.test", "Dueño", "Clave-segura-2026")
+    # El dueño no puede usar la conexión de toda la instalación.
+    d = TestClient(app)
+    d.post("/retail/api/sesion", json={"email": "dueno@pulpo.test", "clave": "Clave-segura-2026"})
+    assert d.get("/retail/api/conexiones/odoo/panel").json()["disponible"] is False
+    assert d.post("/retail/api/conexiones/odoo/desde-panel").status_code == 403
+    a = TestClient(app)
+    a.post("/retail/api/sesion", json={"email": "yo@ejemplo.com", "clave": "Clave-segura-2026"})
+    a.post("/retail/api/plataforma/entrar", json={"org_id": org})
+    assert a.get("/retail/api/conexiones/odoo/panel").json()["disponible"]
+    r = a.post("/retail/api/conexiones/odoo/desde-panel")
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["sucursales_creadas"]) == ["Galpón Tucumán", "Salta Centro"]
+    with db.transaccion(superadmin=True) as conn:
+        ubic = {u["nombre"]: u for u in db.filas(conn, "SELECT nombre, tipo, codigo_externo FROM ubicaciones WHERE org_id=%s", (org,))}
+        plat = db.filas(conn, "SELECT config FROM plataformas WHERE org_id=%s AND tipo='odoo'", (org,))
+    assert ubic["Salta Centro"]["codigo_externo"] == "odoo:almacen:1" and ubic["Salta Centro"]["tipo"] == "ambos"
+    assert len(plat) == 1 and set(plat[0]["config"]["almacenes"]) == {"1", "2"}
+    assert CLAVE not in str(a.get("/retail/api/conexiones").json())

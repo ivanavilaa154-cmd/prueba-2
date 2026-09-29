@@ -115,6 +115,22 @@ export function Conexiones() {
 
   const cargar = useCallback(() => api<Conexion[]>("/conexiones").then(setLista).catch(() => {}), []);
   useEffect(() => { cargar(); }, [cargar]);
+  const [panel, setPanel] = useState<{ disponible: boolean; url: string | null; base: string | null } | null>(null);
+  useEffect(() => { api<{ disponible: boolean; url: string | null; base: string | null }>("/conexiones/odoo/panel").then(setPanel).catch(() => {}); }, []);
+  async function usarPanel() {
+    setOcupado(true);
+    setMensaje(null);
+    try {
+      const r = await api<{ mensaje: string; sucursales_creadas: string[]; conteos: { tickets: number; productos: number } }>("/conexiones/odoo/desde-panel", { metodo: "POST" });
+      setMensaje({ tipo: "ok", texto: `${r.mensaje} Odoo tiene ${numero(r.conteos.tickets)} tickets y ${numero(r.conteos.productos)} productos a la venta.`
+        + (r.sucursales_creadas.length ? ` Sucursales creadas: ${r.sucursales_creadas.join(", ")}.` : "") });
+      cargar();
+    } catch (e) {
+      setMensaje({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo conectar." });
+    } finally {
+      setOcupado(false);
+    }
+  }
   useEffect(() => {        // mientras sincroniza, refrescar el estado
     if (!lista.some((c) => c.estado_sincronizacion === "sincronizando")) return;
     const t = setInterval(cargar, 4000);
@@ -173,6 +189,15 @@ export function Conexiones() {
   return (
     <div className="grid grid-cols-1 gap-4">
       {mensaje && <Aviso tipo={mensaje.tipo}>{mensaje.texto}</Aviso>}
+      {panel?.disponible && !activas.some((c) => c.tipo === "odoo") && (
+        <Tarjeta titulo="Usar el Odoo que ya conectaste en el Panel ERP">
+          <p className="text-sm text-suave">
+            El Panel ERP ya está conectado a Odoo ({panel.url} · base {panel.base}). Con un clic esta empresa usa esa misma conexión: se detectan
+            sus almacenes y cajas, se crea una sucursal por cada almacén y empieza a traer tickets, productos y stock. La clave no se muestra ni se copia al navegador.
+          </p>
+          <div className="mt-3"><Boton disabled={ocupado} onClick={usarPanel}>{ocupado ? "Conectando…" : "Usar esta conexión"}</Boton></div>
+        </Tarjeta>
+      )}
       {activas.length > 0 && (
         <Tarjeta titulo="Conexiones activas">
           <Tabla columnas={["Conexión", "Estado", "Última sincronización", ""]}>

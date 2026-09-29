@@ -393,6 +393,63 @@ def guardar_odoo(datos: ConexionOdoo, request: Request, plataforma_id: int | Non
     return respuesta({"id": pid})
 
 
+def _odoo_del_panel() -> dict | None:
+    """Credenciales de Odoo que ya cargaste en el Panel ERP (Integraciones), en el formato de Retail. Nunca salen del servidor."""
+    from ..integraciones import gestor
+    c = gestor.config_odoo(con_clave=True)
+    if not (c.get("url") and c.get("db") and c.get("usuario") and c.get("api_key")):
+        return None
+    return {"url": c["url"], "base": c["db"], "usuario": c["usuario"], "api_key": c["api_key"]}
+
+
+@api.get("/conexiones/odoo/panel")
+def odoo_del_panel(ctx: db.Contexto = Depends(sesiones.contexto)):
+    """¿Hay un Odoo conectado en el Panel ERP que esta empresa pueda usar? Solo para la administración de la plataforma:
+    esa conexión es de toda la instalación y no se le ofrece a cualquier empresa."""
+    permisos.exigir(ctx, "gestionar_conexiones")
+    datos = _odoo_del_panel() if ctx.es_superadmin else None
+    return respuesta({"disponible": bool(datos), "url": datos["url"] if datos else None, "base": datos["base"] if datos else None})
+
+
+@api.post("/conexiones/odoo/desde-panel")
+def conectar_desde_panel(request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Usa el Odoo del Panel ERP para esta empresa: detecta almacenes y cajas, crea una sucursal por cada almacén que todavía
+    no tenga (sucursal si tiene cajas, depósito si no), guarda la conexión y empieza a sincronizar."""
+    from . import odoo_pos
+    permisos.exigir(ctx, "gestionar_conexiones")
+    if not ctx.es_superadmin:
+        raise HTTPException(status_code=403, detail="Solo la administración de la plataforma puede usar la conexión del Panel ERP.")
+    datos = _odoo_del_panel()
+    if not datos:
+        raise HTTPException(status_code=400, detail="El Panel ERP todavía no tiene Odoo conectado (Panel ERP → Integraciones → Odoo).")
+    with db.transaccion(ctx) as conn:
+        try:
+            det = odoo_pos.detectar(conn, odoo_pos.cliente_de(datos))
+        except (ValueError, odoo_pos.OdooError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        con_cajas = {x["almacen_id"] for x in det["cajas"]}
+        existente = db.fila(conn, "SELECT id FROM plataformas WHERE tipo='odoo' ORDER BY id LIMIT 1")
+        mapa, creadas = {}, []
+        for a in det["almacenes"]:
+            uid = a["ubicacion_sugerida"]
+            if not uid:
+                nombre = a["nombre"]
+                if db.fila(conn, "SELECT 1 FROM ubicaciones WHERE lower(nombre)=lower(%s)", (nombre,)):
+                    nombre = f"{nombre} ({a['codigo'] or a['id']})"
+                uid = db.fila(conn, "INSERT INTO ubicaciones (org_id, nombre, tipo, created_by) VALUES (%s,%s,%s,%s) RETURNING id",
+                              (ctx.org_id, nombre, "ambos" if a["id"] in con_cajas else "deposito", ctx.usuario_id))["id"]
+                creadas.append(nombre)
+            mapa[a["id"]] = uid
+        if not mapa:
+            raise HTTPException(status_code=400, detail="Odoo no informó ningún almacén: revisá que el usuario pueda leer Inventario.")
+        pid = odoo_pos.guardar(conn, ctx, datos, mapa, existente["id"] if existente else None)
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "guardar", "conexion", pid,
+                         {"origen": "panel_erp", "url": datos["url"], "base": datos["base"], "sucursales_creadas": creadas}, sesiones.ip_de(request))
+    r = sincronizar_ahora(pid, ctx)
+    return respuesta({"id": pid, "version": det["version"], "conteos": det["conteos"], "sucursales_creadas": creadas,
+                      "almacenes": len(mapa), "mensaje": "Conectado. Empezó la sincronización: la primera vez trae el último año de tickets y puede tardar unos minutos."})
+
+
 _sincronizando: set = set()
 
 
