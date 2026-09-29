@@ -103,7 +103,7 @@ def respaldar(carpeta: Path | None = None) -> Path:
     binario = _pg_dump()
     if not binario:
         raise RuntimeError("No está instalado pg_dump: no se puede hacer la copia de seguridad.")
-    destino = carpeta / f"retail-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.dump"
+    destino = carpeta / f"retail-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')}.dump"
     # Las tablas tienen RLS forzada: la copia se hace con las políticas activas y como administración de la plataforma
     # (app.superadmin=1), que ve todas las empresas. Sin esto pg_dump se niega a leerlas.
     entorno = {**os.environ, "PGOPTIONS": "-c app.superadmin=1"}
