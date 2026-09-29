@@ -8,15 +8,17 @@ del globo ("Open in Browser").
 **Para conectar Odoo:** en la plataforma, pestaña **1 · Integraciones** → recuadro **Odoo** → completá URL,
 base de datos, usuario y API key → **Probar conexión** → **Guardar** → **Sincronizar ahora**.
 
-**Retail (comercios):** agregá **/retail** al final de la dirección. Hay dos cuentas:
+**Ingreso (uno solo para todo):** al abrir la plataforma aparece la pantalla de ingreso. Con la misma cuenta entrás al
+**Panel ERP** (tablero, chat y decisiones) y a **Retail** (comercios); arriba de cada uno hay un enlace al otro.
 - Administración de la plataforma (ve todas las empresas): `admin@retail-ia.local` · clave inicial `Admin-Retail-2026`
 - Dueño de Pulpo Azul (ve todo, solo de su empresa): `dueno@pulpoazul.local` · clave inicial `PulpoAzul-2026`
 
-¿No te deja entrar? En la terminal escribí `cd backend && python -m app.retail.cuentas --reales`: deja las dos cuentas listas
-y muestra con qué entrar. Entrá siempre por la dirección con **/retail** al final.
+Cambiá las dos claves la primera vez que entres (en Retail: Configuración → Mi cuenta).
 
-Cambiá las dos claves la primera vez que entres (arriba a la derecha → Configuración → Mi cuenta). Las empresas y cuentas de
-ejemplo se borran solas al arrancar; para volver a la demo, borrá la línea `RETAIL_CUENTAS=reales` de `backend/.env`.
+**¿No aparece la página?** La plataforma tiene que estar corriendo: en la terminal de abajo escribí
+`bash tools/codespaces/iniciar.sh` y esperá el mensaje «Abriendo la plataforma…»; después, en la pestaña **PORTS**, abrí el
+puerto **8000** (ícono del globo). No cierres esa terminal ni aprietes Ctrl+C mientras la usás.
+¿No te deja entrar? En otra terminal: `cd backend && python -m app.retail.cuentas --reales` (deja las dos cuentas listas).
 
 **Para cerrarla:** cerrá esta pestaña. El Codespace se apaga solo a los 30 minutos sin uso y no consume
 horas mientras está apagado. Para volver, entrá a https://github.com/codespaces y abrilo de nuevo:

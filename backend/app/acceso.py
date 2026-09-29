@@ -6,8 +6,11 @@
 - En la computadora propia (sin esas variables) funciona sin contraseña.
 
 La sesión es una cookie firmada con la contraseña: cambiarla cierra todas las
-sesiones. Todavía es una sola contraseña para todo el panel; los usuarios con
-rol propio llegan en la Fase 3.
+sesiones.
+
+Cuentas unificadas (Retail con cuentas reales: RETAIL_CUENTAS=reales o un Codespace): el panel ERP usa los mismos usuarios
+que Retail. Se entra una sola vez en /retail/ingresar/ y con esa sesión se abre también el panel ERP; pueden hacerlo la
+administración de la plataforma y el dueño de cada empresa.
 """
 from __future__ import annotations
 
@@ -72,7 +75,55 @@ button {{ font:inherit; border:0; border-radius:8px; padding:9px; background:var
 </form></body></html>""")
 
 
+def unificadas() -> bool:
+    try:
+        from .retail import db as retail_db
+        return retail_db.modo_cuentas() == "reales" and retail_db.configurada()
+    except Exception:
+        return False
+
+
+def _usuario_retail(request: Request) -> dict | None:
+    from .retail import db as retail_db, sesiones as retail_sesiones
+    s = retail_sesiones.sesion_actual(request)
+    if not s or s["pendiente_2fa"]:
+        return None
+    with retail_db.transaccion(usuario_id=s["usuario_id"]) as conn:
+        u = retail_db.fila(conn, "SELECT id, rol, es_superadmin, activo FROM usuarios WHERE id=%s", (s["usuario_id"],))
+    return u if u and u["activo"] and (u["es_superadmin"] or u["rol"] == "dueno") else None
+
+
+def _al_ingreso(ruta: str) -> RedirectResponse:
+    from urllib.parse import quote
+    return RedirectResponse(f"/retail/ingresar/?volver={quote(ruta)}", status_code=303)
+
+
+async def _middleware_unificado(request: Request, call_next):
+    ruta = request.url.path
+    if ruta in ("/salud",) or ruta == "/retail" or ruta.startswith("/retail/"):
+        return await call_next(request)
+    if ruta == "/login":
+        return _al_ingreso("/")
+    if ruta == "/salir":
+        from .retail import sesiones as retail_sesiones
+        retail_sesiones.salir(request)
+        respuesta = RedirectResponse("/retail/ingresar/", status_code=303)
+        respuesta.delete_cookie(retail_sesiones.COOKIE, path="/")
+        return respuesta
+    try:
+        usuario = _usuario_retail(request)
+    except Exception:
+        return HTMLResponse("<p style='font:16px system-ui;padding:24px'>La plataforma se está preparando. Recargá en un minuto.</p>", status_code=503)
+    if usuario:
+        return await call_next(request)
+    if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+        return _al_ingreso(ruta)
+    return JSONResponse({"detail": "Tenés que iniciar sesión."}, status_code=401)
+
+
 async def middleware(request: Request, call_next):
+    if unificadas():
+        return await _middleware_unificado(request, call_next)
     ruta = request.url.path
     if _exigida() and not _clave():
         mensaje = "Falta configurar PANEL_CLAVE en el servidor: la plataforma no se abre sin contraseña."

@@ -47,6 +47,9 @@ export function Marco({ children }: { children: ReactNode }) {
       {yo.usuario.es_superadmin && (
         <Link href="/plataforma/" className="mt-2 rounded-lg px-3 py-2 text-sm text-suave hover:bg-panel-2">Plataforma (todas las empresas)</Link>
       )}
+      {(yo.usuario.es_superadmin || yo.usuario.rol === "dueno") && (
+        <a href="/" className="rounded-lg px-3 py-2 text-sm text-suave hover:bg-panel-2">Panel ERP (chat y decisiones) ↗</a>
+      )}
     </nav>
   );
 

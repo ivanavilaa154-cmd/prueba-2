@@ -36,7 +36,9 @@ export default function Ingresar() {
       } else {
         await api("/sesion/segundo-factor", { metodo: "POST", cuerpo: { codigo } });
       }
-      location.href = `${BASE}/`;
+      // Si venía del panel ERP (cuentas unificadas), vuelve ahí; solo rutas internas de este mismo sitio.
+      const volver = new URLSearchParams(location.search).get("volver");
+      location.href = volver && volver.startsWith("/") && !volver.startsWith("//") ? volver : `${BASE}/`;
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo ingresar.");
     } finally {

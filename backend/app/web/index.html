@@ -1371,6 +1371,7 @@ cargarUsuarios = async function () {
     if (s.version) $("#salir").insertAdjacentHTML("afterend", ` <span class="nota" title="Versión del programa que está corriendo">· versión ${esc(s.version)}</span>`);
     chatHabilitado = s.chat_habilitado;
     $("#salir").hidden = !s.con_clave;
+    if (s.cuentas_unificadas && !$("#link-retail")) $("#salir").insertAdjacentHTML("beforebegin", ` · <a id="link-retail" href="/retail/">Retail (comercios)</a>`);
     $("#chat-aviso").innerHTML = chatHabilitado ? "" :
       aviso("alerta", "El chat necesita ANTHROPIC_API_KEY en backend/.env (después reiniciá el servidor). Mientras tanto podés usar Consultas y Decisiones.");
     $("#enviar").disabled = !chatHabilitado;

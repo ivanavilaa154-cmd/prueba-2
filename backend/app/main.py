@@ -279,7 +279,8 @@ VERSION = _version()
 @app.get("/salud")
 def salud():
     return {"estado": "ok", "empresa": config.empresa()["EMPRESA"], "modelo": config.ANTHROPIC_MODEL, "version": VERSION,
-            "chat_habilitado": _chat_habilitado(), "fuente": fuente.actual(), "con_clave": bool(os.getenv("PANEL_CLAVE"))}
+            "chat_habilitado": _chat_habilitado(), "fuente": fuente.actual(),
+            "con_clave": bool(os.getenv("PANEL_CLAVE")) or acceso.unificadas(), "cuentas_unificadas": acceso.unificadas()}
 
 
 @app.post("/chat")

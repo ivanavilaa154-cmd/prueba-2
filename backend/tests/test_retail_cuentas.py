@@ -63,3 +63,26 @@ def test_solo_cuentas_reales_borra_la_demo(retail_demo):
     assert dueno.post("/retail/api/yo/clave", json={"actual": cuentas.PULPO["clave"], "nueva": "Otra-clave-2026"}).status_code == 200
     assert cuentas.dejar_solo_reales() == {"creadas": [], "borradas": []}
     assert _login(cuentas.PULPO["email"], "Otra-clave-2026")[1] == 200
+
+
+def test_mismo_usuario_para_retail_y_panel_erp(retail_demo, monkeypatch):
+    monkeypatch.setenv("RETAIL_CUENTAS", "reales")
+    with db.transaccion(superadmin=True) as conn:
+        cuentas.administrador(conn, *cuentas.ADMIN)
+        cuentas.empresa_con_dueno(conn, "Pulpo Azul", None, cuentas.PULPO["email"], cuentas.PULPO["nombre"], cuentas.PULPO["clave"])
+    anonimo = TestClient(app)
+    r = anonimo.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/retail/ingresar/?volver=/")
+    assert anonimo.get("/salud").status_code == 200 and anonimo.get("/salud").json()["cuentas_unificadas"]
+    assert anonimo.get("/login", follow_redirects=False).headers["location"].startswith("/retail/ingresar/")
+    for email, clave in ((cuentas.ADMIN[0], cuentas.ADMIN[2]), (cuentas.PULPO["email"], cuentas.PULPO["clave"])):
+        c, st = _login(email, clave)
+        assert st == 200
+        assert c.get("/", headers={"accept": "text/html"}, follow_redirects=False).status_code == 200    # el panel ERP abre
+        assert c.get("/retail/api/yo").status_code == 200                                              # y Retail también
+    # Un rol que no es dueño no entra al panel ERP; al salir se cierra la sesión de los dos lados.
+    c, st = _login("compras@norte.demo", CLAVE_DEMO)
+    assert st == 200 and c.get("/", headers={"accept": "text/html"}, follow_redirects=False).status_code == 303
+    c, _ = _login(cuentas.ADMIN[0], cuentas.ADMIN[2])
+    c.get("/salir", follow_redirects=False)
+    assert c.get("/retail/api/yo").status_code == 401
