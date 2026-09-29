@@ -169,6 +169,24 @@ export function Conexiones() {
       setOcupado(false);
     }
   }
+  async function conectarRapido() {
+    setOcupado(true);
+    setMensaje(null);
+    try {
+      const r = await api<{ mensaje: string; sucursales_creadas: string[]; conteos: { tickets: number; productos: number } }>("/conexiones/odoo/rapida",
+        { metodo: "POST", cuerpo: { ...form, api_key: form.api_key || null } });
+      setMensaje({ tipo: "ok", texto: `${r.mensaje} Odoo tiene ${numero(r.conteos.tickets)} tickets y ${numero(r.conteos.productos)} productos a la venta.`
+        + (r.sucursales_creadas.length ? ` Sucursales creadas: ${r.sucursales_creadas.join(", ")}.` : "") });
+      setDeteccion(null);
+      setEditando(null);
+      setForm({ url: "", base: "", usuario: "", api_key: "" });
+      cargar();
+    } catch (e) {
+      setMensaje({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo conectar." });
+    } finally {
+      setOcupado(false);
+    }
+  }
   async function sincronizar(id: number) {
     const r = await api<{ mensaje: string }>(`/conexiones/${id}/sincronizar`, { metodo: "POST" }).catch((e) => ({ mensaje: e.message }));
     setMensaje({ tipo: "ok", texto: r.mensaje });
@@ -224,10 +242,11 @@ export function Conexiones() {
         </Tarjeta>
       )}
 
-      <Tarjeta titulo={editando ? "Editar conexión con Odoo" : "Conectar Odoo Punto de Venta"}>
+      <Tarjeta titulo={editando ? "Editar conexión con Odoo" : "Conectar Odoo"}>
         <p className="mb-3 text-sm text-suave">
-          En Odoo: tu usuario → Preferencias → Seguridad de la cuenta → Nueva clave API. Usá un usuario con los roles Punto de Venta: Usuario e Inventario: Usuario.
-          La clave se guarda cifrada y no se vuelve a mostrar.
+          Una sola conexión para las dos secciones: Retail trae la caja (tickets, productos y stock) y el Panel ERP, ventas, clientes, pedidos y deuda.
+          En Odoo: tu usuario → Preferencias → Seguridad de la cuenta → Nueva clave API. Usá un usuario que pueda leer Ventas, Punto de Venta, Inventario
+          y Contabilidad. La clave se guarda cifrada y no se vuelve a mostrar.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Campo etiqueta="URL de Odoo"><Entrada placeholder="https://tuempresa.odoo.com" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} /></Campo>
@@ -239,7 +258,8 @@ export function Conexiones() {
         </div>
         <div className="mt-4 flex gap-2">
           {editando && <Boton variante="secundario" onClick={() => { setEditando(null); setDeteccion(null); }}>Cancelar</Boton>}
-          <Boton disabled={!listo || ocupado} onClick={probar}>{ocupado && !deteccion ? "Probando…" : "Probar conexión"}</Boton>
+          <Boton disabled={!listo || ocupado} onClick={conectarRapido}>{ocupado ? "Conectando…" : "Conectar y sincronizar"}</Boton>
+          <Boton variante="secundario" disabled={!listo || ocupado} onClick={probar}>Elegir a mano qué almacén va a cada sucursal</Boton>
         </div>
 
         {deteccion && (

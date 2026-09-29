@@ -23,6 +23,12 @@ def _url_env() -> str | None:
 
 
 def opciones() -> dict[str, str | None]:
+    from .. import empresas
+    o = empresas.org()
+    if o:                                       # panel ERP de una empresa: solo sus datos (regla 8), nunca la demo
+        c = empresas.carpeta(o)
+        return {"demo": None, "importada": f"sqlite:///{c / 'importada.db'}" if (c / "importada.db").exists() else None,
+                "odoo": f"sqlite:///{c / 'erp.db'}" if (c / "erp.db").exists() else None, "erp": None}
     return {
         "demo": URL_DEMO,
         "importada": URL_IMPORTADA if importar.RUTA.exists() else None,
@@ -32,6 +38,9 @@ def opciones() -> dict[str, str | None]:
 
 
 def actual() -> str:
+    from .. import empresas
+    if empresas.org():
+        return empresas.fuente_elegida(empresas.org())
     for tipo, url in opciones().items():
         if url and url == config.ERP_URL:
             return tipo
@@ -39,6 +48,11 @@ def actual() -> str:
 
 
 def usar(tipo: str) -> None:
+    from .. import empresas
+    if empresas.org():
+        empresas.elegir_fuente(empresas.org(), tipo)
+        conector.olvidar_conexiones()
+        return
     url = opciones().get(tipo)
     if not url:
         raise ValueError({
@@ -50,6 +64,11 @@ def usar(tipo: str) -> None:
     if url.startswith("sqlite:///"):
         modelo.actualizar_base(url.replace("sqlite:///", "", 1))  # bases creadas con una versión anterior
     config.ERP_URL = url
+
+
+def _empresa() -> int | None:
+    from .. import empresas
+    return empresas.org()
 
 
 def ocultar_clave(url: str) -> str:
@@ -69,7 +88,7 @@ def resumen() -> dict:
     error = tablas.pop("_error", None)
     return {
         "fuente": actual(),
-        "url": ocultar_clave(config.ERP_URL),
+        "url": "base propia de la empresa" if _empresa() else ocultar_clave(config.ERP_URL),
         "disponibles": {k: bool(v) for k, v in opciones().items()},
         "tablas": tablas,
         "error": error,

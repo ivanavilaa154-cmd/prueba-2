@@ -43,7 +43,8 @@ def fuente_actual() -> str:
 
 @contextmanager
 def conectar():
-    con = sqlite3.connect(RUTA)
+    from .. import empresas
+    con = sqlite3.connect(empresas.ruta("gestion.db") or RUTA)          # cada empresa, sus objetivos (regla 8)
     con.row_factory = sqlite3.Row
     con.executescript(ESQUEMA)
     try:

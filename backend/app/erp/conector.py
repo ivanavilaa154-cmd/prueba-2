@@ -82,6 +82,12 @@ _DIALECTOS = {"postgresql": "postgres", "mssql": "tsql", "mysql": "mysql", "mari
               "oracle": "oracle", "sqlite": "sqlite"}
 
 
+def url_activa() -> str:
+    """La base de la empresa del pedido (panel ERP por empresa) o, fuera de una empresa, la fuente global."""
+    from .. import empresas
+    return empresas.url_erp() or config.ERP_URL
+
+
 def dialecto(url: str) -> str | None:
     """Dialecto SQL del ERP según la URL de conexión (mssql+pyodbc://... → tsql)."""
     return _DIALECTOS.get(url.split(":", 1)[0].split("+", 1)[0].lower())
@@ -94,7 +100,7 @@ def consultar(sql: str, max_filas: int | None = None, url: str | None = None,
     Sin usuario no se aplican permisos: solo para usos internos del sistema.
     Todo lo que llega del chat o de la API pasa el usuario.
     """
-    url = url or config.ERP_URL
+    url = url or url_activa()
     limpio = validar_sql(sql)
     if usuario is not None:
         limpio = validar_sql(preparar_consulta(usuario, limpio, dialecto(url)))

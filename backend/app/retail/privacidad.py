@@ -59,6 +59,12 @@ def exportar(conn, org_id: int) -> bytes:
             for f in filas:
                 w.writerow(["" if f[c] is None else f[c] for c in visibles])
             z.writestr(f"{tabla}.csv", texto.getvalue())
+        from .. import empresas                  # y lo del Panel ERP de la empresa (su base, tareas y objetivos)
+        base = empresas.CARPETA / str(int(org_id))
+        if base.exists():
+            for archivo in sorted(base.iterdir()):
+                if archivo.is_file() and archivo.suffix in (".db", ".json"):
+                    z.write(archivo, f"panel_erp/{archivo.name}")
         z.writestr("LEEME.txt", "Datos de tu empresa exportados de Retail IA el "
                    f"{datetime.now().strftime('%d/%m/%Y %H:%M')}. Un archivo por tabla, en CSV (UTF-8, separado por comas).\n"
                    "No se incluyen claves ni credenciales (solo sus nombres de columna quedan fuera).\n")
@@ -83,6 +89,10 @@ def procesar_bajas() -> list[int]:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM sesiones WHERE usuario_id IN (SELECT id FROM usuarios WHERE org_id=%s)", (o["id"],))
             cuentas.borrar_empresas(conn, [o["id"]])
+    import shutil
+    from .. import empresas
+    for o in vencidas:                           # ya confirmado el borrado: también el Panel ERP de la empresa
+        shutil.rmtree(empresas.CARPETA / str(int(o["id"])), ignore_errors=True)
     return [o["id"] for o in vencidas]
 
 

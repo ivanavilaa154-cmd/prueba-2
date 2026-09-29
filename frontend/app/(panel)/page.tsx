@@ -44,7 +44,7 @@ export default function Inicio() {
           detalle: yo.datos.origen === "demo" ? `Estás viendo datos de demostración (${yo.datos.productos} productos). Conectá tu caja en Datos.`
             : `${yo.datos.productos} productos cargados.` }
       : { titulo: "Conectar tus datos", estado: "pendiente" as const, ir: "/datos/#conexiones",
-          detalle: "Conectá tu Odoo Punto de Venta (o importá Excel/CSV de ventas, stock y productos) en Datos." },
+          detalle: "Conectá tu Odoo en Datos: una sola conexión completa Retail y el Panel ERP (o importá Excel/CSV de ventas, stock y productos)." },
     yo.datos?.productos && !yo.datos.sin_mapear
       ? { titulo: "Mapear productos", estado: "listo" as const, detalle: "Todos los productos están vinculados al catálogo (o son de elaboración propia)." }
       : { titulo: "Mapear productos", estado: "pendiente" as const, ir: "/datos/#catalogo",

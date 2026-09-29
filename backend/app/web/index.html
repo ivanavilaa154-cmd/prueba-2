@@ -248,6 +248,7 @@ ul { margin: 6px 0; padding-left: 20px; }
   <button data-pestana="decisiones">Centro de Decisiones</button>
 </nav>
 <main>
+<div id="guia-inicio" hidden style="margin:0 0 16px"></div>
 
 <section id="tablero" class="activa">
   <div class="tablero-cab">
@@ -733,6 +734,43 @@ async function cargarDistribucion() {
     $("#dist-cuerpo").innerHTML = pilarGrupos(`Con datos hasta el ${d.ultimo_dato.split("-").reverse().join("/")}`, "distribucion", d, {});
   } catch (e) { $("#dist-cuerpo").innerHTML = aviso("error", "No se pudo calcular: " + e.message); }
 }
+// Primer ingreso de una empresa: qué falta para que el panel tenga datos (una sola conexión de Odoo sirve para las dos secciones).
+let estadoSalud = null, revisandoInicio = null;
+async function revisarInicio() {
+  const g = $("#guia-inicio");
+  if (!estadoSalud) return;
+  if (!estadoSalud.org_id) {
+    g.hidden = !estadoSalud.cuentas_unificadas;
+    g.innerHTML = aviso("alerta", "Estás viendo la demostración. Para ver el panel de una empresa, elegila en Retail (arriba a la derecha) y volvé.");
+    return;
+  }
+  const s = await api("/salud");
+  estadoSalud = s;
+  if (s.con_datos) {
+    g.hidden = true;
+    if (revisandoInicio) { clearInterval(revisandoInicio); revisandoInicio = null; cargarTablero(); cargarDistribucion(); cargarUsuarios(); }
+    return;
+  }
+  g.hidden = false;
+  if (s.con_odoo) {
+    g.innerHTML = aviso("", `Estamos trayendo los datos de Odoo de ${s.empresa}. La primera vez tarda unos minutos; el panel se completa solo.`);
+    if (!revisandoInicio) revisandoInicio = setInterval(revisarInicio, 15000);
+  } else {
+    g.innerHTML = `<div class="tarjeta"><h2>Conectá el Odoo de ${esc(s.empresa)}</h2>
+      <p>Con una sola conexión se completan las dos secciones: este panel (ventas, clientes, stock, deuda, distribución) y Retail
+        (caja, reposición, precios). Necesitás la URL de tu Odoo, el nombre de la base, el usuario y una API key
+        (en Odoo: tu usuario → Seguridad de la cuenta → Nueva clave API). La clave se guarda cifrada y nunca se muestra.</p>
+      <div class="fila"><button class="primario" id="ir-conectar">Conectar Odoo</button>
+        ${s.odoo_global_disponible ? `<button class="sec" id="usar-global">Usar el Odoo que ya estaba configurado en el panel</button>` : ""}</div>
+      <div id="guia-msg"></div></div>`;
+    $("#ir-conectar").onclick = () => { document.querySelector('nav button[data-pestana="datos"]').click(); $("#odoo-url").focus(); };
+    if (s.odoo_global_disponible) $("#usar-global").onclick = async () => {
+      $("#guia-msg").innerHTML = aviso("alerta", "Conectando…");
+      try { const r = await postJSON("/retail/api/conexiones/odoo/desde-panel", {}); $("#guia-msg").innerHTML = aviso("ok", r.mensaje); revisarInicio(); }
+      catch (e) { $("#guia-msg").innerHTML = aviso("error", e.message); }
+    };
+  }
+}
 let mesElegido = null, vista = "todo";
 function aplicarVista() {
   document.querySelectorAll("[data-ver]").forEach(b => b.classList.toggle("activa", b.dataset.ver === vista));
@@ -930,10 +968,11 @@ $("#odoo-probar").onclick = async () => {
 };
 $("#odoo-guardar").onclick = async () => {
   try {
-    await postJSON("/integraciones/odoo", datosOdoo());
+    const r = await postJSON("/integraciones/odoo", datosOdoo());
     $("#odoo-clave").value = "";
     const d = await cargarIntegraciones(true);
-    $("#odoo-diagnostico").innerHTML = aviso("ok", "Guardado en backend/.env." + (d.odoo.config.cada_min ? " La sincronización automática corre mientras el servidor esté encendido." : ""));
+    $("#odoo-diagnostico").innerHTML = aviso("ok", r.mensaje || ("Guardado en backend/.env." + (d.odoo.config.cada_min ? " La sincronización automática corre mientras el servidor esté encendido." : "")));
+    if (d.odoo.config.por_empresa) { seguirSincronizacion(); revisarInicio(); }
   } catch (e) { $("#odoo-diagnostico").innerHTML = aviso("error", e.message); }
 };
 $("#odoo-sincronizar").onclick = async () => {
@@ -1370,6 +1409,7 @@ async function revisarVerComo() {
     verComo = e.activo ? e : null;
     const b = $("#banner-ver-como");
     b.hidden = !verComo;
+    b.style.display = verComo ? "flex" : "none";     // el display del estilo le ganaba a «hidden»
     if (verComo) {
       b.innerHTML = `<span>VIENDO COMO ${esc(verComo.nombre)} · solo lectura</span><button class="sec" id="salir-ver-como">Salir del modo</button>`;
       $("#salir-ver-como").onclick = async () => { await fetch("/pruebas/api/ver-como/salir", {method: "POST"}); location.reload(); };
@@ -1399,6 +1439,8 @@ cargarUsuarios = async function () {
     $("#chat-aviso").innerHTML = chatHabilitado ? "" :
       aviso("alerta", "El chat necesita ANTHROPIC_API_KEY en backend/.env (después reiniciá el servidor). Mientras tanto podés usar Consultas y Decisiones.");
     $("#enviar").disabled = !chatHabilitado;
+    estadoSalud = s;
+    revisarInicio();
     const d = await cargarIntegraciones(true);
     await revisarVerComo();
     await cargarUsuarios();

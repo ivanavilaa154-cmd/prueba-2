@@ -456,6 +456,9 @@ def iniciar_programador() -> None:
                     hechos.add(clave)
                     from . import odoo_pos
                     desde = odoo_pos.sincronizar_todas(e["id"])     # primero traer lo nuevo de la caja
+                    from .. import empresas
+                    if empresas.toca_sincronizar(e["id"]):           # y el Panel ERP de la empresa, cada 3 horas
+                        empresas.sincronizar_en_segundo_plano(e["id"])
                     if ahora.hour == 3:
                         recalcular(e["id"], tipo="nocturno")
                     elif 7 <= ahora.hour <= 22 or desde:

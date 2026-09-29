@@ -46,7 +46,8 @@ SEGUIMIENTOS = {("ACT-01", "no_hay_stock_fisico_ajustado"): "C3", ("ACT-01", "da
 
 
 def _conectar() -> sqlite3.Connection:
-    con = sqlite3.connect(RUTA)
+    from .. import empresas
+    con = sqlite3.connect(empresas.ruta("actividades.db") or RUTA)      # cada empresa, sus tareas (regla 8)
     con.row_factory = sqlite3.Row
     con.executescript(ESQUEMA)
     return con

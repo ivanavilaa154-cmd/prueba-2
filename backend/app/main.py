@@ -21,6 +21,7 @@ from . import acceso, config
 from .actividades import motor as actividades
 from .analisis import catalogo_kpis
 from .analisis import cobertura as cobertura_analisis
+from . import empresas
 from .analisis import distribucion as distribucion_analisis
 from .analisis import tablero as tablero_analisis
 from .chat import motor
@@ -265,6 +266,13 @@ def _usuario(usuario_id: str) -> Usuario:
     servidor solo debe escuchar en 127.0.0.1 hasta que haya autenticación.
     """
     try:
+        p = empresas.persona()
+        if p and empresas.org():
+            # Panel de una empresa: quien entró (dueño o administración) y, para «ver como», los vendedores de su Odoo.
+            if usuario_id == "yo":
+                return Usuario(id="yo", nombre=p["nombre"], rol="dueno")
+            if not usuario_id.startswith("vendedor:"):
+                raise AccesoDenegado("Ese usuario no es de esta empresa.")
         if usuario_id.startswith("vendedor:"):
             vendedor_id = int(usuario_id.split(":", 1)[1])
             return Usuario(id=usuario_id, nombre=f"Vendedor {vendedor_id}", rol="vendedor", vendedor_id=vendedor_id)
@@ -293,7 +301,16 @@ VERSION = _version()
 
 @app.get("/salud")
 def salud():
-    return {"estado": "ok", "empresa": config.empresa()["EMPRESA"], "modelo": config.ANTHROPIC_MODEL, "version": VERSION,
+    nombre, org = config.empresa()["EMPRESA"], empresas.org()
+    if org:                                     # panel de una empresa: su nombre y si ya tiene datos
+        from .retail import db as retail_db
+        with retail_db.transaccion(superadmin=True) as conn:
+            nombre = (retail_db.fila(conn, "SELECT nombre FROM organizaciones WHERE id=%s", (org,)) or {}).get("nombre", nombre)
+    return {"estado": "ok", "empresa": nombre, "org_id": org, "con_datos": empresas.tiene_datos(org) if org else True,
+            "con_odoo": bool(org and empresas.credenciales(org)),
+            # La administración puede pasarle a una empresa el Odoo que se había configurado en el panel global (.env).
+            "odoo_global_disponible": bool(org and (empresas.persona() or {}).get("superadmin") and gestor.config_odoo()["clave_guardada"]),
+            "persona": (empresas.persona() or {}).get("nombre"), "modelo": config.ANTHROPIC_MODEL, "version": VERSION,
             "chat_habilitado": _chat_habilitado(), "fuente": fuente.actual(),
             "con_clave": bool(os.getenv("PANEL_CLAVE")) or acceso.unificadas(), "cuentas_unificadas": acceso.unificadas()}
 
@@ -339,9 +356,14 @@ def kpis_catalogo():
 
 @app.get("/usuarios")
 def usuarios():
-    """Usuarios de demo y, si la fuente tiene vendedores, uno por vendedor para probar carteras."""
-    lista = [{"id": uid, "nombre": d["nombre"], "rol": d["rol"]} for uid, d in config.roles()["usuarios"].items()
-             if d["rol"] not in ("operador", "tester")]   # esos entran con su clave al Centro de pruebas
+    """Usuarios de demo y, si la fuente tiene vendedores, uno por vendedor para probar carteras.
+    En el panel de una empresa: quien entró y los vendedores de esa empresa."""
+    p = empresas.persona()
+    if p and empresas.org():
+        lista = [{"id": "yo", "nombre": p["nombre"], "rol": "dueno"}]
+    else:
+        lista = [{"id": uid, "nombre": d["nombre"], "rol": d["rol"]} for uid, d in config.roles()["usuarios"].items()
+                 if d["rol"] not in ("operador", "tester")]   # esos entran con su clave al Centro de pruebas
     try:
         vendedores = conector.consultar("SELECT id, nombre FROM vendedores ORDER BY nombre", max_filas=500)
         lista += [{"id": f"vendedor:{int(v[0])}", "nombre": v[1] or f"Vendedor {v[0]}", "rol": "vendedor"}
@@ -356,7 +378,7 @@ def consulta(datos: ConsultaDirecta):
     """Ejecuta un SELECT como el usuario elegido: mismas barreras que usa el chat."""
     usuario = _usuario(datos.usuario_id)
     try:
-        ejecutado = preparar_consulta(usuario, conector.validar_sql(datos.sql), conector.dialecto(config.ERP_URL))
+        ejecutado = preparar_consulta(usuario, conector.validar_sql(datos.sql), conector.dialecto(conector.url_activa()))
         resultado = conector.consultar(datos.sql, usuario=usuario)
     except (conector.ConsultaNoPermitida, AccesoDenegado) as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -385,7 +407,7 @@ async def importar_archivos(archivos: list[UploadFile] = File(...)):
     recibidos = [(a.filename or "sin_nombre", await a.read()) for a in archivos]
     conector.olvidar_conexiones()
     try:
-        informe = importar.importar(recibidos)
+        informe = importar.importar(recibidos, empresas.ruta("importada.db"))     # en una empresa, en su carpeta
     except importar.ErrorImportacion as e:
         raise HTTPException(status_code=400, detail=str(e))
     fuente.usar("importada")
@@ -395,15 +417,38 @@ async def importar_archivos(archivos: list[UploadFile] = File(...)):
 @app.get("/integraciones")
 def integraciones():
     """Plataformas disponibles, configuración de Odoo (sin la API key) y estado de sincronización."""
-    return {"plataformas": gestor.PLATAFORMAS, "intervalos": gestor.INTERVALOS,
-            "odoo": {"config": gestor.config_odoo(), **gestor.estado_odoo()}, "fuente": fuente.resumen()}
+    odoo_estado = _odoo_empresa() if empresas.org() else {"config": gestor.config_odoo(), **gestor.estado_odoo()}
+    return {"plataformas": gestor.PLATAFORMAS, "intervalos": gestor.INTERVALOS, "odoo": odoo_estado, "fuente": fuente.resumen()}
+
+
+def _ctx_retail():
+    """Contexto de Retail de quien entró (para guardar la conexión única de la empresa)."""
+    from .retail import sesiones as retail_sesiones
+    ctx = retail_sesiones.contexto_de_sesion(empresas.persona()["sesion"])
+    if not ctx.es_superadmin and ctx.rol != "dueno":
+        raise HTTPException(status_code=403, detail="Solo el dueño conecta los sistemas de la empresa.")
+    return ctx
+
+
+def _odoo_empresa() -> dict:
+    """La conexión de Odoo de la empresa del pedido, con el estado de las dos sincronizaciones (sin la clave)."""
+    o = empresas.org()
+    c = empresas.credenciales(o) or {}
+    return {"config": {"url": c.get("url") or "", "db": c.get("base") or "", "usuario": c.get("usuario") or "", "meses": 12,
+                       "cada_min": empresas.SINCRONIZAR_CADA_HORAS * 60, "clave_guardada": bool(c.get("api_key")), "por_empresa": True},
+            **empresas.estado(o)}
 
 
 @app.post("/integraciones/odoo/probar")
 def probar_odoo(datos: ConfigOdoo):
     """Diagnóstico paso a paso con los datos del formulario (no guarda nada)."""
     try:
-        cliente = gestor.cliente_odoo(datos.url, datos.db, datos.usuario, datos.api_key or None)
+        if empresas.org():
+            guardada = empresas.credenciales(empresas.org()) or {}
+            cliente = odoo.ClienteOdoo(datos.url or guardada.get("url"), datos.db or guardada.get("base"),
+                                       datos.usuario or guardada.get("usuario"), datos.api_key or guardada.get("api_key") or "")
+        else:
+            cliente = gestor.cliente_odoo(datos.url, datos.db, datos.usuario, datos.api_key or None)
     except odoo.OdooError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not cliente.api_key:
@@ -413,6 +458,12 @@ def probar_odoo(datos: ConfigOdoo):
 
 @app.post("/integraciones/odoo")
 def guardar_odoo(datos: ConfigOdoo):
+    if empresas.org():
+        # Una sola conexión por empresa: se guarda cifrada (la misma que usa Retail) y sincroniza las dos secciones.
+        from .retail.api_ingesta import conectar_empresa
+        r = conectar_empresa(_ctx_retail(), {"url": datos.url, "base": datos.db, "usuario": datos.usuario, "api_key": datos.api_key or None},
+                             origen="panel_erp")
+        return {**_odoo_empresa()["config"], "mensaje": r["mensaje"], "sucursales_creadas": r["sucursales_creadas"]}
     try:
         return gestor.guardar_odoo(datos.url, datos.db, datos.usuario, datos.api_key or None, datos.meses, datos.cada_min)
     except ValueError as e:
@@ -422,6 +473,13 @@ def guardar_odoo(datos: ConfigOdoo):
 @app.post("/integraciones/odoo/sincronizar")
 def sincronizar_odoo():
     """Arranca la sincronización en segundo plano; el avance se consulta en GET /integraciones."""
+    if empresas.org():
+        c = empresas.credenciales(empresas.org())
+        if not c:
+            raise HTTPException(status_code=400, detail="Primero conectá Odoo.")
+        from .retail.api_ingesta import sincronizar_ahora
+        sincronizar_ahora(c["plataforma_id"], _ctx_retail())       # Retail y, a continuación, el Panel ERP
+        return _odoo_empresa()
     if not gestor.config_odoo()["clave_guardada"]:
         raise HTTPException(status_code=400, detail="Primero guardá la conexión con Odoo.")
 

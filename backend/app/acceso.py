@@ -89,8 +89,11 @@ def _usuario_retail(request: Request) -> dict | None:
     if not s or s["pendiente_2fa"]:
         return None
     with retail_db.transaccion(usuario_id=s["usuario_id"]) as conn:
-        u = retail_db.fila(conn, "SELECT id, rol, es_superadmin, activo FROM usuarios WHERE id=%s", (s["usuario_id"],))
-    return u if u and u["activo"] and (u["es_superadmin"] or u["rol"] == "dueno") else None
+        u = retail_db.fila(conn, "SELECT id, org_id, nombre, rol, es_superadmin, activo FROM usuarios WHERE id=%s", (s["usuario_id"],))
+    if not (u and u["activo"] and (u["es_superadmin"] or u["rol"] == "dueno")):
+        return None
+    # De qué empresa es el panel en este pedido: el dueño, la suya; la administración, la que eligió en Retail (o ninguna: demo).
+    return {**u, "org": s["org_activa"] if u["es_superadmin"] else u["org_id"], "sesion": dict(s)}
 
 
 def _al_ingreso(ruta: str) -> RedirectResponse:
@@ -98,10 +101,27 @@ def _al_ingreso(ruta: str) -> RedirectResponse:
     return RedirectResponse(f"/retail/ingresar/?volver={quote(ruta)}", status_code=303)
 
 
+async def _con_empresa(usuario: dict, request: Request, call_next):
+    """Todo el pedido trabaja con los datos de la empresa de quien entró (empresas.py)."""
+    from . import empresas
+    tokens = empresas.activar(usuario["org"], {"nombre": usuario["nombre"], "superadmin": usuario["es_superadmin"],
+                                               "usuario_id": usuario["id"], "sesion": usuario["sesion"]})
+    try:
+        return await call_next(request)
+    finally:
+        empresas.desactivar(tokens)
+
+
 async def _middleware_unificado(request: Request, call_next):
     ruta = request.url.path
-    if ruta in ("/salud",) or ruta == "/retail" or ruta.startswith("/retail/"):
+    if ruta == "/retail" or ruta.startswith("/retail/"):
         return await call_next(request)
+    if ruta == "/salud":                        # abierta; con sesión, dice de qué empresa es el panel
+        try:
+            usuario = _usuario_retail(request)
+        except Exception:
+            usuario = None
+        return await _con_empresa(usuario, request, call_next) if usuario else await call_next(request)
     if ruta == "/login":
         return _al_ingreso("/")
     if ruta == "/salir":
@@ -115,7 +135,9 @@ async def _middleware_unificado(request: Request, call_next):
     except Exception:
         return HTMLResponse("<p style='font:16px system-ui;padding:24px'>La plataforma se está preparando. Recargá en un minuto.</p>", status_code=503)
     if usuario:
-        return await call_next(request)
+        if (ruta == "/pruebas" or ruta.startswith("/pruebas/")) and not usuario["es_superadmin"]:
+            return JSONResponse({"detail": "El centro de pruebas es solo para la administración de la plataforma."}, status_code=403)
+        return await _con_empresa(usuario, request, call_next)
     if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
         return _al_ingreso(ruta)
     return JSONResponse({"detail": "Tenés que iniciar sesión."}, status_code=401)
