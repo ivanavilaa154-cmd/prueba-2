@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { fechaCorta, numero, plata } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
 import { Aviso, ComoSeCalcula, Tabla, Tarjeta, Vacio } from "@/components/ui";
+import { SimuladorPromo } from "./SimuladorPromo";
 
 type P = { id: number; nombre: string; desde: string; hasta: string; productos: number[]; incremento_unidades: string; incremento_ganancia: string;
   canibalizacion: string; rebote: string; neto: string; recomendacion: string };
@@ -16,6 +17,8 @@ export function Promociones() {
   if (!puede("ver_costos")) return <Aviso>La efectividad de las promociones la ven el dueño y el comprador.</Aviso>;
   if (!r) return <p className="text-sm text-suave">Cargando…</p>;
   return (
+    <div className="grid grid-cols-1 gap-4">
+    <SimuladorPromo />
     <Tarjeta titulo={`Promociones terminadas · resultado neto ${plata(r.neto_total)}`}>
       {r.promociones.length === 0 ? <Vacio titulo="Todavía no hay promociones terminadas" /> : (
         <Tabla columnas={["Promoción", "Unidades extra", "Ganancia extra", "− Canibalización", "− Rebote", "Neto", "Qué hacer"]}>
@@ -39,5 +42,6 @@ export function Promociones() {
         </ComoSeCalcula>
       </div>
     </Tarjeta>
+    </div>
   );
 }

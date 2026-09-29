@@ -375,10 +375,13 @@ def flujo_de_caja(dias: int = 90, ctx: db.Contexto = Depends(sesiones.contexto))
             entradas[dia] += esperado
             detalle[dia]["cobro_fiado"] += esperado
         # Pagos a proveedores: OC ya aprobadas o enviadas (según condiciones de pago) y compras futuras para reponer lo que se vende.
-        for f in db.filas(conn, """SELECT o.fecha_esperada, o.total::float total, pr.condiciones_pago FROM ordenes_compra o
+        for f in db.filas(conn, """SELECT o.estado, o.fecha_esperada, o.total::float total, pr.condiciones_pago FROM ordenes_compra o
                                    JOIN proveedores pr ON pr.id = o.proveedor_id
                                    WHERE o.estado IN ('aprobada', 'enviada', 'recibida_parcial')"""):
-            dia = max(hoy, (f["fecha_esperada"] or hoy) + timedelta(days=_plazo_pago(f["condiciones_pago"])))
+            dia = (f["fecha_esperada"] or hoy) + timedelta(days=_plazo_pago(f["condiciones_pago"]))
+            if f["estado"] == "recibida_parcial" and dia < hoy:       # ya venció: se pagó con la mercadería que llegó
+                continue
+            dia = max(hoy, dia)
             salidas[dia] += f["total"]
             detalle[dia]["pago_proveedores"] += f["total"]
         plazo_prov = db.fila(conn, "SELECT round(avg(coalesce(substring(condiciones_pago from '(\\d+)')::int, 0))) p FROM proveedores WHERE activo")["p"] or 0

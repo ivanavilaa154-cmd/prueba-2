@@ -16,6 +16,7 @@ type Salud = {
   datos: { productos: number; sin_costo: number; sin_mapear: number; poca_historia: number; stock_negativo: number; ultima_venta: string | null;
     calculado_at: string | null; ultima_sincronizacion: string | null; dias_historia: number };
   avisos: string[];
+  correcciones: { categoria: string; ubicacion: string; factor: number }[];
 };
 const pct = (v: number | null | undefined, d = 0) => (v === null || v === undefined ? "—" : `${numero(v * 100, d)} %`);
 const lado = (s: number | null) => (s === null ? "—" : Math.abs(s) < 0.03 ? "= parejo" : s > 0 ? `▲ sobreestima ${pct(s)}` : `▼ subestima ${pct(-s)}`);
@@ -74,6 +75,15 @@ export default function Modelos() {
             <Tarjeta titulo="Por categoría"><Filas filas={s.por_categoria} clave="categoria" titulo="Categoría" /></Tarjeta>
             <Tarjeta titulo="Por sucursal"><Filas filas={s.por_ubicacion} clave="ubicacion" titulo="Sucursal" /></Tarjeta>
           </div>
+          {s.correcciones.length > 0 && (
+            <Tarjeta titulo="Correcciones automáticas del sesgo">
+              <p className="mb-2 text-sm text-suave">El pronóstico aprende de su error: donde venía pidiendo de más o de menos, se ajusta solo (con topes de −20 % y +25 %).</p>
+              <Tabla columnas={["Categoría", "Sucursal", "Ajuste"]}>
+                {s.correcciones.map((c) => <tr key={`${c.categoria}-${c.ubicacion}`}><td>{c.categoria}</td><td>{c.ubicacion}</td>
+                  <td className="text-right">{c.factor < 1 ? "▼ " : "▲ "}{numero((c.factor - 1) * 100, 1)} %</td></tr>)}
+              </Tabla>
+            </Tarjeta>
+          )}
           <Tarjeta titulo="Productos donde más se equivoca (en pesos)">
             <Tabla columnas={["Producto", "Sucursal", "Pronóstico por semana", "Vendido por semana", "Error por semana"]}>
               {s.peores.map((p) => (

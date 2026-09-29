@@ -7,6 +7,7 @@ import { useSesion } from "@/components/Sesion";
 import { Indicador } from "@/components/Indicador";
 import { TablaDatos } from "@/components/TablaDatos";
 import { Aviso, Boton, ComoSeCalcula, Etiqueta, Tabla, Tarjeta, Vacio } from "@/components/ui";
+import { Liquidaciones } from "@/components/Liquidaciones";
 
 type Oferta = { descuento: number | null; precio_oferta?: string; sin_oferta: string; con_oferta?: string; recuperable: string; texto: string };
 type Lote = { producto_id: number; ubicacion_id: number; nombre: string; codigo_interno: string; ubicacion: string; lote: string; vencimiento: string; dias: number;
@@ -36,7 +37,8 @@ export default function Vencimientos() {
     try {
       const o = await api<{ id: number; nombre: string }>("/ofertas", { metodo: "POST", cuerpo: {
         producto_id: l.producto_id, ubicacion_id: l.ubicacion_id, descuento: l.oferta.descuento, hasta: l.vencimiento, origen: "vencimiento",
-        unidades_objetivo: Number(l.no_llegan) } });
+        unidades_objetivo: Number(l.no_llegan), exhibicion: "puntera",
+        escalera: [l.oferta.descuento + 0.15, l.oferta.descuento + 0.3].filter((x) => x < 0.8).map((x) => Math.round(x * 100) / 100) } });
       setMensaje(`Oferta creada: ${o.nombre}. Imprimí el cartel desde «Ofertas en curso».`);
       cargar();
     } catch (e) {
@@ -95,6 +97,7 @@ export default function Vencimientos() {
               </ComoSeCalcula>
             </div>
           </Tarjeta>
+          <Liquidaciones />
           <Tarjeta titulo="Ofertas en curso y resultado">
             {ofertas.length === 0 ? <Vacio titulo="Todavía no hay ofertas">Creá una desde la lista de arriba o desde Plata parada.</Vacio> : (
               <Tabla columnas={["Oferta", "Motivo", "Vigencia", "Vendidas", "Plata recuperada", ""]}>
