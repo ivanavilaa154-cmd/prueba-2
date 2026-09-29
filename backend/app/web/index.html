@@ -239,6 +239,7 @@ ul { margin: 6px 0; padding-left: 20px; }
 <div id="banner-ver-como" role="status" hidden style="background:var(--alerta);color:#fff;padding:8px 16px;font-weight:600;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between"></div>
 <nav>
   <button data-pestana="tablero" class="activa">Tablero</button>
+  <button data-pestana="distribucion">Distribución</button>
   <button data-pestana="actividades">Actividades <span id="act-badge" class="cuenta" hidden></span></button>
   <button data-pestana="gestion">Gestión</button>
   <button data-pestana="datos">Integraciones</button>
@@ -265,6 +266,17 @@ ul { margin: 6px 0; padding-left: 20px; }
   </div>
   <div id="tablero-cuerpo"></div>
   <div id="grafico-tip" class="grafico-tip" role="tooltip" hidden></div>
+</section>
+
+<section id="distribucion">
+  <div class="tablero-cab">
+    <div>
+      <h2 class="tablero-titulo">Distribución y preventa</h2>
+      <p class="nota" id="dist-sub">Qué va a pedir cada cliente, quién está por dejar de comprar, cuánto hay que cargar por zona, qué entregas pueden fallar,
+        cuánto van a devolver, dónde crecer y cuánto stock tuyo queda en los comercios. Todo con su rango del 80 %.</p>
+    </div>
+  </div>
+  <div id="dist-cuerpo"><p class="nota">Cargando…</p></div>
 </section>
 
 <section id="actividades">
@@ -520,6 +532,7 @@ async function cargarUsuarios() {
   $("#usuario").innerHTML = lista.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)} · ${esc(roles[u.rol] || u.rol)}${u.id.startsWith("vendedor:") ? " (" + esc(u.id.split(":")[1]) + ")" : ""}</option>`).join("");
   if (lista.some(u => u.id === previo)) $("#usuario").value = previo;
   cargarTablero();
+  cargarDistribucion();
   cargarActividades();
   cargarObjetivos();
 }
@@ -598,6 +611,7 @@ function valorKpi(k) {
   if (k.formato === "porcentaje") return (k.valor * 100).toFixed(1).replace(".", ",") + " %";
   if (k.formato === "dias") return fmt.format(k.valor) + (k.valor === 1 ? " día" : " días");
   if (k.formato === "veces") return fmt.format(k.valor) + " veces";
+  if (k.formato === "texto") return String(k.valor);
   return fmt.format(k.valor);
 }
 function variacionKpi(k) {
@@ -710,6 +724,15 @@ async function cargarTablero() {
     aplicarVista();
   } catch (e) { $("#tablero-cuerpo").innerHTML = aviso("error", "No se pudo armar el tablero: " + e.message); }
 }
+async function cargarDistribucion() {
+  const u = $("#usuario").value;
+  if (!u) return;
+  try {
+    const d = await api(`/distribucion?usuario_id=${encodeURIComponent(u)}`);
+    if (d.sin_acceso || d.sin_datos) { $("#dist-cuerpo").innerHTML = aviso(d.sin_acceso ? "" : "alerta", d.mensaje); return; }
+    $("#dist-cuerpo").innerHTML = pilarGrupos(`Con datos hasta el ${d.ultimo_dato.split("-").reverse().join("/")}`, "distribucion", d, {});
+  } catch (e) { $("#dist-cuerpo").innerHTML = aviso("error", "No se pudo calcular: " + e.message); }
+}
 let mesElegido = null, vista = "todo";
 function aplicarVista() {
   document.querySelectorAll("[data-ver]").forEach(b => b.classList.toggle("activa", b.dataset.ver === vista));
@@ -724,6 +747,7 @@ $("#tablero-cuerpo").addEventListener("click", (e) => {
   if (barra && barra.dataset.mes !== mesElegido) { mesElegido = barra.dataset.mes; cargarTablero(); window.scrollTo({top: 0, behavior: "smooth"}); }
 });
 $("#usuario").addEventListener("change", cargarTablero);
+$("#usuario").addEventListener("change", cargarDistribucion);
 // Detalle al pasar el mouse (o tocar) sobre las barras
 document.addEventListener("pointermove", (e) => {
   const tip = $("#grafico-tip"), el = e.target.closest?.("[data-tip]");
@@ -1357,7 +1381,7 @@ cargarUsuarios = async function () {
   if (verComo) {
     $("#usuario").innerHTML = `<option value="${esc(verComo.usuario_id)}">${esc(verComo.nombre)}</option>`;
     $("#usuario").disabled = true;
-    cargarTablero(); cargarActividades(); cargarObjetivos();
+    cargarTablero(); cargarDistribucion(); cargarActividades(); cargarObjetivos();
     return;
   }
   return _cargarUsuariosOriginal();

@@ -21,6 +21,7 @@ from . import acceso, config
 from .actividades import motor as actividades
 from .analisis import catalogo_kpis
 from .analisis import cobertura as cobertura_analisis
+from .analisis import distribucion as distribucion_analisis
 from .analisis import tablero as tablero_analisis
 from .chat import motor
 from .decisiones import credito
@@ -313,6 +314,13 @@ def tablero(usuario_id: str, mes: str | None = None):
     if mes is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
         raise HTTPException(status_code=400, detail="El mes tiene que tener el formato AAAA-MM, por ejemplo 2026-09.")
     return tablero_analisis.tablero(_usuario(usuario_id), mes)
+
+
+@app.get("/distribucion")
+def distribucion(usuario_id: str):
+    """Predicciones de distribución y preventa (33 a 39): pedido sugerido, clientes en riesgo, carga por zona, entregas, devoluciones,
+    potencial y stock en el canal. Con los permisos del usuario (el vendedor ve su cartera)."""
+    return distribucion_analisis.distribucion(_usuario(usuario_id))
 
 
 @app.get("/cobertura")
