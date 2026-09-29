@@ -17,3 +17,4 @@ backend/postgres-inicio.log
 backend/emails/
 backend/documentos/
 backend/.clave_retail
+backend/respaldos/

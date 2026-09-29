@@ -406,6 +406,15 @@ def iniciar_programador() -> None:
     def ciclo():
         hechos: set = set()
         while True:
+            try:                    # privacidad: bajas vencidas y copia de seguridad diaria (13.5)
+                from . import privacidad
+                privacidad.procesar_bajas()
+                hoy_utc = datetime.now(ZoneInfo("UTC")).date()
+                if ("copia", hoy_utc) not in hechos and datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).hour >= 2:
+                    hechos.add(("copia", hoy_utc))
+                    print(f"Retail: copia de seguridad {privacidad.respaldar().name}")
+            except Exception as ex:
+                print(f"Retail: copia de seguridad o bajas no disponibles ({type(ex).__name__}: {str(ex)[:160]})")
             try:
                 with db.transaccion(superadmin=True) as conn:
                     empresas = db.filas(conn, "SELECT id, zona_horaria FROM organizaciones WHERE activa")

@@ -2,7 +2,7 @@
 // Estructura común: menú lateral, barra superior con la empresa y el filtro global, y cuenta del usuario.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, BASE } from "@/lib/api";
 import { ROLES } from "@/lib/formato";
 import { SECCIONES, SECCIONES_DISTRIBUIDOR } from "@/lib/secciones";
@@ -31,6 +31,14 @@ export function Marco({ children }: { children: ReactNode }) {
   async function salirDeEmpresa() {
     await api("/plataforma/entrar", { metodo: "POST", cuerpo: { org_id: null } });
     location.href = `${BASE}/plataforma/`;
+  }
+
+  // Privacidad (13.5): cada usuario acepta la política vigente antes de usar la plataforma; si la empresa pidió la baja, se avisa.
+  const [privacidad, setPrivacidad] = useState<{ aceptada: boolean; version: string; baja: { se_borra: string } | null } | null>(null);
+  useEffect(() => { api<{ aceptada: boolean; version: string; baja: { se_borra: string } | null }>("/privacidad").then(setPrivacidad).catch(() => {}); }, []);
+  async function aceptarPrivacidad() {
+    await api("/privacidad/aceptar", { metodo: "POST" });
+    setPrivacidad((p) => (p ? { ...p, aceptada: true } : p));
   }
 
   const activa = (r: string) => (r === "/" ? ruta === "/" : ruta.startsWith(r));
@@ -73,7 +81,25 @@ export function Marco({ children }: { children: ReactNode }) {
         </div>
       )}
 
+      {privacidad && !privacidad.aceptada && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="titulo-privacidad">
+          <div className="grid max-w-md gap-3 rounded-2xl bg-panel p-6 shadow-xl">
+            <h2 id="titulo-privacidad" className="text-lg font-semibold">Política de privacidad</h2>
+            <p className="text-sm text-suave">Para usar la plataforma tenés que aceptar la política de privacidad (Ley 25.326): qué datos se usan, para qué,
+              cómo se protegen y cómo pedir el acceso o la supresión.</p>
+            <a className="text-sm text-acento underline" href={`${BASE}/privacidad/`} target="_blank" rel="noreferrer">Leer la política (versión {privacidad.version}) ↗</a>
+            <div className="flex gap-2"><button className="rounded-lg bg-acento px-3.5 py-2 text-sm font-medium text-acento-texto" onClick={aceptarPrivacidad}>Leí y acepto</button>
+              <button className="rounded-lg border border-borde px-3.5 py-2 text-sm" onClick={salir}>Salir</button></div>
+          </div>
+        </div>
+      )}
       <div className="min-w-0">
+        {privacidad?.baja && (
+          <div className="bg-peligro/15 px-4 py-2 text-sm">
+            Esta empresa pidió la baja: el {new Date(privacidad.baja.se_borra).toLocaleDateString("es-AR")} se borran todos sus datos.{" "}
+            <Link className="underline" href="/configuracion/#datos">Cancelar la baja</Link>
+          </div>
+        )}
         {yo.usuario.es_superadmin && yo.empresa && (
           <div className="flex flex-wrap items-center justify-between gap-2 bg-alerta/15 px-4 py-2 text-sm">
             <span>Estás dentro de <strong>{yo.empresa.nombre}</strong> como administración de la plataforma. Todo lo que hagas queda auditado.</span>

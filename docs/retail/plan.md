@@ -57,3 +57,12 @@ El dueño pidió ver datos cuanto antes: se construyeron primero las partes 2, 7
 - [x] Stock publicado: en lugar de sincronizarlo solo (regla 4 de CLAUDE.md), el sistema propone después de cada sincronización y cada
       hora (sobreventa o publicado en 0 con stock) y el dueño elige y aprueba en Canales → Stock; recién ahí se escribe en la plataforma,
       con el disponible de ese momento, y queda auditado quién lo aprobó y qué respondió la plataforma.
+
+## Transversales (29/09/2026)
+
+- [x] Privacidad y cumplimiento (13.5): política de privacidad versionada que cada usuario acepta al entrar; descarga de todos los
+      datos de la empresa (ZIP, sin claves); baja de la empresa con 30 días para arrepentirse (después se borra todo, la auditoría
+      queda sin empresa); supresión de los datos de un cliente final; copia de seguridad diaria de la base (se guardan 7, probada
+      restaurando en una base nueva). Ya estaban: cifrado de credenciales, segundo factor, RLS con pruebas y auditoría.
+- [x] Un solo ingreso para el Panel ERP y Retail (cuentas de administración y dueño) y uso del Odoo del Panel ERP en una empresa.
+- [ ] Planes y facturación (13.6).

@@ -15,6 +15,21 @@ export default function Plataforma() {
   const cargar = useCallback(() => api<Fila[]>("/plataforma/empresas").then(setLista).catch((e) => setMensaje({ tipo: "error", texto: e.message })), []);
   useEffect(() => { if (yo.usuario.es_superadmin) void cargar(); }, [cargar, yo.usuario.es_superadmin]);
 
+  const [respaldos, setRespaldos] = useState<{ copias: { archivo: string; bytes: number; fecha: string }[]; guardadas: number;
+    bajas: { id: number; nombre: string; baja_solicitada_at: string }[] } | null>(null);
+  const cargarRespaldos = useCallback(() => api<typeof respaldos>("/plataforma/respaldos").then(setRespaldos).catch(() => {}), []);
+  useEffect(() => { if (yo.usuario.es_superadmin) void cargarRespaldos(); }, [cargarRespaldos, yo.usuario.es_superadmin]);
+  async function respaldarAhora() {
+    setMensaje(null);
+    try {
+      const r = await api<{ archivo: string }>("/plataforma/respaldos", { metodo: "POST" });
+      setMensaje({ tipo: "ok", texto: `Copia de seguridad hecha: ${r.archivo}.` });
+      await cargarRespaldos();
+    } catch (e) {
+      setMensaje({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo hacer la copia." });
+    }
+  }
+
   if (!yo.usuario.es_superadmin) return <Aviso tipo="error">Esta pantalla es solo para la administración de la plataforma.</Aviso>;
 
   async function entrar(id: number) {
@@ -59,6 +74,16 @@ export default function Plataforma() {
           <Campo etiqueta="Email del dueño"><Entrada type="email" value={nueva.email_dueno} onChange={(e) => setNueva({ ...nueva, email_dueno: e.target.value })} /></Campo>
         </div>
         <Boton className="mt-3" onClick={crear} disabled={!nueva.nombre || !nueva.email_dueno || !nueva.nombre_dueno}>Crear empresa</Boton>
+      </Tarjeta>
+      <Tarjeta titulo="Copias de seguridad y bajas">
+        <p className="text-sm text-suave">Se hace una copia completa de la base todos los días (se guardan las últimas {respaldos?.guardadas ?? 7}) en backend/respaldos.</p>
+        {respaldos && respaldos.copias.length > 0 && (
+          <ul className="mt-2 text-sm">{respaldos.copias.map((c) => <li key={c.archivo}>{c.archivo} · {(c.bytes / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 1 })} MB</li>)}</ul>
+        )}
+        <div className="mt-3"><Boton variante="secundario" onClick={respaldarAhora}>Hacer una copia ahora</Boton></div>
+        {respaldos && respaldos.bajas.length > 0 && (
+          <div className="mt-3"><Aviso tipo="alerta">Bajas pedidas: {respaldos.bajas.map((b) => `${b.nombre} (${fecha(b.baja_solicitada_at)})`).join(", ")}. Se borran a los 30 días.</Aviso></div>
+        )}
       </Tarjeta>
     </div>
   );
