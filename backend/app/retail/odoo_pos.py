@@ -167,7 +167,7 @@ def _productos(conn, ctx, c: ClienteOdoo, plataforma_id: int) -> dict:
                                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                               (ctx.org_id, maestro, codigo_nuevo, o["name"], ean, unidad, estado, ctx.usuario_id or None))["id"]
                 por_codigo[codigo_nuevo] = pid
-                if o.get("lst_price"):
+                if (o.get("lst_price") or 0) > 0:        # Odoo tiene productos con precio negativo (descuentos, envases): sin precio de lista
                     cur.execute("INSERT INTO precios (org_id, producto_id, precio, desde, origen, created_by) VALUES (%s,%s,%s,%s,'importado',%s)",
                                 (ctx.org_id, pid, Decimal(str(o["lst_price"])), hoy, ctx.usuario_id or None))
                 nuevos += 1

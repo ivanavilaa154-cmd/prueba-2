@@ -30,6 +30,8 @@ def _datos(ean_existente):
         "product.product": [
             {"id": 500, "name": "Producto ya cargado", "barcode": ean_existente, "default_code": False, "lst_price": 100.0, "sale_ok": True, "uom_id": M2O(1, "Unidades")},
             {"id": 501, "name": "Alfajor de Odoo", "barcode": False, "default_code": "ALF-ODOO", "lst_price": 900.0, "sale_ok": True, "uom_id": M2O(1, "Unidades")},
+            # Odoo usa productos con precio negativo para descuentos o devolución de envases: no deben frenar la sincronización.
+            {"id": 502, "name": "Descuento", "barcode": False, "default_code": "DESC", "lst_price": -500.0, "sale_ok": True, "uom_id": M2O(1, "Unidades")},
         ],
         "pos.order": [
             {"id": 1, "name": "Caja 1/0001", "date_order": "2026-09-22 13:05:00", "config_id": M2O(60, "Caja 1"), "user_id": M2O(9, "Ana"), "amount_total": 2800.0, "state": "paid"},
@@ -136,7 +138,9 @@ def test_sincroniza_tickets_pagos_productos_y_stock_sin_duplicar(odoo_falso):
     _, pid = _conectar(c)
     centro = _q("SELECT id FROM ubicaciones WHERE nombre='Salta Centro'")[0]["id"]
     r = _sincronizar(pid)
-    assert r["tickets_nuevos"] == 2 and r["lineas"] == 3 and r["productos_nuevos"] == 1 and r["cajas_sin_sucursal"] == 1
+    assert r["tickets_nuevos"] == 2 and r["lineas"] == 3 and r["productos_nuevos"] == 2 and r["cajas_sin_sucursal"] == 1
+    descuento = _q("SELECT id FROM productos WHERE codigo_interno='DESC'")[0]["id"]      # entra, pero sin precio de lista negativo
+    assert not _q("SELECT 1 FROM precios WHERE producto_id=%s", (descuento,))
     t = _q("SELECT id, total, punto_venta, cajero, ubicacion_id, fecha_hora FROM tickets WHERE origen='odoo' ORDER BY numero_externo")
     assert [x["total"] for x in t] == [Decimal("2800.00"), Decimal("900.00")] and t[0]["punto_venta"] == "Caja 1" and t[0]["ubicacion_id"] == centro
     linea = _q("SELECT precio_lista, precio_cobrado, descuento, costo_unitario FROM tickets_lineas WHERE ticket_id=%s ORDER BY precio_lista DESC", (t[0]["id"],))[0]
