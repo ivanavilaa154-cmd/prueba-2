@@ -16,12 +16,18 @@ from . import db
 PERMISOS: dict[str, set[str]] = {
     "dueno": {"ver_todas_ubicaciones", "configurar_empresa", "gestionar_ubicaciones", "gestionar_usuarios",
               "ver_auditoria", "gestionar_proveedores", "crear_oc", "aprobar_oc", "aprobar_transferencias",
-              "recepciones", "recuentos", "remarcar", "ver_costos", "ver_ventas", "importar_datos", "gestionar_conexiones"},
+              "recepciones", "recuentos", "remarcar", "ver_costos", "ver_ventas", "importar_datos", "gestionar_conexiones",
+              "ver_clientes_b2b", "ver_vendedores", "gestionar_vendedores", "ver_cuenta_corriente", "gestionar_cobranza"},
     "comprador": {"ver_todas_ubicaciones", "gestionar_proveedores", "crear_oc", "aprobar_oc", "remarcar",
                   "ver_costos", "ver_ventas", "importar_datos"},
     "encargado": {"aprobar_transferencias", "recepciones", "recuentos", "ver_costos", "ver_ventas"},
     "cajero": {"recepciones", "recuentos"},
-    "distribuidor": {"panel_marcas"},   # solo el panel agregado y anónimo y los pedidos que le envían (13.3)
+    "distribuidor": {"panel_marcas"},
+    # Modo distribuidor (12B). El vendedor ve solo su cartera: lo acota la base (app.vendedor_id), no la pantalla.
+    "jefe_ventas": {"ver_todas_ubicaciones", "ver_ventas", "ver_costos", "ver_clientes_b2b", "ver_vendedores", "gestionar_vendedores",
+                    "ver_cuenta_corriente"},
+    "vendedor": {"ver_clientes_b2b", "ver_cartera", "ver_cuenta_corriente"},
+    "cobranzas": {"ver_clientes_b2b", "ver_cuenta_corriente", "gestionar_cobranza"},   # solo el panel agregado y anónimo y los pedidos que le envían (13.3)
 }
 
 TIPOS_DOCUMENTO = ("orden_compra", "transferencia", "ajuste_stock", "precio")
@@ -37,6 +43,13 @@ def permisos_de(ctx: db.Contexto) -> set[str]:
 
 def puede(ctx: db.Contexto, permiso: str) -> bool:
     return permiso in permisos_de(ctx)
+
+
+def exigir_modo(conn, ctx: db.Contexto, modo: str) -> None:
+    """Los módulos del modo distribuidor solo existen si la empresa lo tiene activado."""
+    f = db.fila(conn, "SELECT modos FROM organizaciones WHERE id = %s", (ctx.org_id,))
+    if not f or modo not in f["modos"]:
+        raise HTTPException(status_code=403, detail="Tu empresa no tiene activado el modo distribuidor (Configuración → Empresa).")
 
 
 def exigir(ctx: db.Contexto, permiso: str) -> None:

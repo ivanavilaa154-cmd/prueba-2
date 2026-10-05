@@ -197,6 +197,7 @@ class Empresa(BaseModel):
     moneda: str = "ARS"
     modelo_abastecimiento: str = "mixto"
     consentimiento_datos: bool = False
+    modos: list[str] = Field(default_factory=lambda: ["comercio"])   # comercio, distribuidor o ambos (SPEC v2, sección 1)
 
 
 def _validar_empresa(e: Empresa) -> None:
@@ -208,6 +209,9 @@ def _validar_empresa(e: Empresa) -> None:
         raise HTTPException(status_code=400, detail=f"Moneda no admitida. Opciones: {', '.join(MONEDAS)}.")
     if e.modelo_abastecimiento not in ("centralizado", "descentralizado", "mixto"):
         raise HTTPException(status_code=400, detail="El modelo de abastecimiento tiene que ser centralizado, descentralizado o mixto.")
+    if not e.modos or set(e.modos) - {"comercio", "distribuidor"}:
+        raise HTTPException(status_code=400, detail="Elegí el modo de la empresa: comercio, distribuidor o ambos.")
+    e.modos = sorted(set(e.modos))
     if e.cuit and not e.cuit.replace("-", "").isdigit():
         raise HTTPException(status_code=400, detail="El CUIT tiene que tener solo números (con o sin guiones).")
 
@@ -231,9 +235,11 @@ def guardar_empresa(datos: Empresa, request: Request, ctx: db.Contexto = Depends
             fecha = datetime.now().astimezone() if datos.consentimiento_datos else None
         with conn.cursor() as cur:
             cur.execute("UPDATE organizaciones SET nombre=%s, cuit=%s, zona_horaria=%s, moneda=%s, modelo_abastecimiento=%s, "
-                        "consentimiento_datos=%s, consentimiento_fecha=%s, updated_at=now() WHERE id=%s",
+                        "consentimiento_datos=%s, consentimiento_fecha=%s, modos=%s, updated_at=now() WHERE id=%s",
                         (datos.nombre.strip(), datos.cuit, datos.zona_horaria, datos.moneda, datos.modelo_abastecimiento,
-                         datos.consentimiento_datos, fecha, ctx.org_id))
+                         datos.consentimiento_datos, fecha, datos.modos, ctx.org_id))
+            if "distribuidor" in datos.modos:          # el distribuidor vende por el canal mayorista
+                cur.execute("UPDATE canales SET activo = true WHERE codigo = 'mayorista' AND org_id = %s", (ctx.org_id,))
         cambios = {k: [antes[k], v] for k, v in datos.model_dump().items() if antes[k] != v}
         sesiones.auditar(conn, ctx, ctx.usuario_id, "modificar", "empresa", ctx.org_id, cambios, sesiones.ip_de(request))
         return respuesta(db.fila(conn, "SELECT * FROM organizaciones WHERE id=%s", (ctx.org_id,)))
@@ -361,6 +367,7 @@ class UsuarioNuevo(BaseModel):
     nombre: str = Field(min_length=2, max_length=120)
     rol: str
     ubicaciones: list[int] = Field(default_factory=list)
+    vendedor_id: int | None = None          # rol vendedor: su ficha de vendedor (modo distribuidor)
 
 
 class UsuarioCambio(BaseModel):
@@ -368,11 +375,18 @@ class UsuarioCambio(BaseModel):
     rol: str
     activo: bool = True
     ubicaciones: list[int] = Field(default_factory=list)
+    vendedor_id: int | None = None
 
 
-def _validar_rol(conn, rol: str, ubicaciones: list[int]) -> None:
+def _validar_rol(conn, rol: str, ubicaciones: list[int], vendedor_id: int | None = None) -> None:
     if rol not in permisos.PERMISOS:
         raise HTTPException(status_code=400, detail="Rol no válido.")
+    if rol in ("jefe_ventas", "vendedor", "cobranzas"):
+        modos = db.fila(conn, "SELECT modos FROM organizaciones WHERE id = app_org()")["modos"]
+        if "distribuidor" not in modos:
+            raise HTTPException(status_code=400, detail="Ese rol es del modo distribuidor: activalo primero en Configuración → Empresa.")
+    if rol == "vendedor" and (not vendedor_id or not db.fila(conn, "SELECT 1 FROM vendedores WHERE id=%s", (vendedor_id,))):
+        raise HTTPException(status_code=400, detail="Elegí la ficha del vendedor: así ve solo su cartera.")
     if rol in ROLES_CON_SUCURSAL and not ubicaciones:
         raise HTTPException(status_code=400, detail="Asigná al menos una sucursal a un encargado o cajero.")
     if ubicaciones:
@@ -382,7 +396,7 @@ def _validar_rol(conn, rol: str, ubicaciones: list[int]) -> None:
 
 
 def _usuarios(conn, usuario_id: int | None = None) -> list[dict]:
-    return db.filas(conn, "SELECT u.id, u.email, u.nombre, u.rol, u.activo, u.ultimo_ingreso, u.totp_secreto IS NOT NULL AS segundo_factor, "
+    return db.filas(conn, "SELECT u.id, u.email, u.nombre, u.rol, u.activo, u.vendedor_id, u.ultimo_ingreso, u.totp_secreto IS NOT NULL AS segundo_factor, "
                           "u.bloqueado_hasta > now() AS bloqueado, "
                           "coalesce(array_agg(uu.ubicacion_id ORDER BY uu.ubicacion_id) FILTER (WHERE uu.ubicacion_id IS NOT NULL), '{}') AS ubicaciones "
                           "FROM usuarios u LEFT JOIN usuario_ubicaciones uu ON uu.usuario_id=u.id "
@@ -404,7 +418,8 @@ def listar_usuarios(ctx: db.Contexto = Depends(sesiones.contexto)):
     permisos.exigir(ctx, "gestionar_usuarios")
     with db.transaccion(ctx) as conn:
         return respuesta({"usuarios": _usuarios(conn),
-                          "roles": db.filas(conn, "SELECT * FROM roles ORDER BY array_position(ARRAY['dueno','comprador','encargado','cajero','distribuidor'], codigo)")})
+                          "roles": db.filas(conn, "SELECT * FROM roles ORDER BY array_position(ARRAY['dueno','comprador','encargado','cajero','jefe_ventas','vendedor','cobranzas','distribuidor'], codigo)"),
+                          "vendedores": db.filas(conn, "SELECT id, nombre, zona FROM vendedores WHERE activo ORDER BY nombre")})
 
 
 @api.post("/usuarios")
@@ -415,11 +430,12 @@ def crear_usuario(datos: UsuarioNuevo, request: Request, ctx: db.Contexto = Depe
         raise HTTPException(status_code=400, detail="El email no es válido.")
     clave = seguridad.clave_temporal()
     with db.transaccion(ctx, login_email=email) as conn:
-        _validar_rol(conn, datos.rol, datos.ubicaciones)
+        _validar_rol(conn, datos.rol, datos.ubicaciones, datos.vendedor_id)
         if db.fila(conn, "SELECT 1 FROM usuarios WHERE lower(email)=%s", (email,)):
             raise HTTPException(status_code=400, detail="Ya existe un usuario con ese email.")
-        nuevo = db.fila(conn, "INSERT INTO usuarios (org_id, email, nombre, rol, hash_clave, created_by) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
-                        (ctx.org_id, email, datos.nombre.strip(), datos.rol, seguridad.hash_clave(clave), ctx.usuario_id))
+        nuevo = db.fila(conn, "INSERT INTO usuarios (org_id, email, nombre, rol, hash_clave, vendedor_id, created_by) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                        (ctx.org_id, email, datos.nombre.strip(), datos.rol, seguridad.hash_clave(clave),
+                         datos.vendedor_id if datos.rol == "vendedor" else None, ctx.usuario_id))
         _guardar_ubicaciones(conn, ctx, nuevo["id"], datos.rol, datos.ubicaciones)
         sesiones.auditar(conn, ctx, ctx.usuario_id, "crear", "usuario", nuevo["id"],
                          {"email": email, "rol": datos.rol, "ubicaciones": datos.ubicaciones}, sesiones.ip_de(request))
@@ -433,13 +449,13 @@ def modificar_usuario(usuario_id: int, datos: UsuarioCambio, request: Request, c
         antes = db.fila(conn, "SELECT id, rol, activo, nombre FROM usuarios WHERE id=%s AND org_id=app_org()", (usuario_id,))
         if not antes:
             raise HTTPException(status_code=404, detail="No existe ese usuario.")
-        _validar_rol(conn, datos.rol, datos.ubicaciones)
+        _validar_rol(conn, datos.rol, datos.ubicaciones, datos.vendedor_id)
         deja_de_ser_dueno = antes["rol"] == "dueno" and (datos.rol != "dueno" or not datos.activo)
         if deja_de_ser_dueno and not db.fila(conn, "SELECT 1 FROM usuarios WHERE org_id=app_org() AND rol='dueno' AND activo AND id<>%s", (usuario_id,)):
             raise HTTPException(status_code=400, detail="La empresa tiene que tener al menos un dueño activo.")
         with conn.cursor() as cur:
-            cur.execute("UPDATE usuarios SET nombre=%s, rol=%s, activo=%s, updated_at=now() WHERE id=%s",
-                        (datos.nombre.strip(), datos.rol, datos.activo, usuario_id))
+            cur.execute("UPDATE usuarios SET nombre=%s, rol=%s, activo=%s, vendedor_id=%s, updated_at=now() WHERE id=%s",
+                        (datos.nombre.strip(), datos.rol, datos.activo, datos.vendedor_id if datos.rol == "vendedor" else None, usuario_id))
             if not datos.activo:
                 cur.execute("UPDATE sesiones SET revocada=true WHERE usuario_id=%s", (usuario_id,))
         _guardar_ubicaciones(conn, ctx, usuario_id, datos.rol, datos.ubicaciones)
@@ -595,13 +611,13 @@ class EmpresaNueva(Empresa):
 def crear_empresa(conn, datos: EmpresaNueva, creada_por: int | None) -> tuple[dict, str]:
     """Empresa con sus 4 canales (solo tienda física activa) y su primer dueño. Devuelve (empresa, clave temporal)."""
     org = db.fila(conn, "INSERT INTO organizaciones (nombre, cuit, zona_horaria, moneda, modelo_abastecimiento, consentimiento_datos, "
-                        "consentimiento_fecha, created_by) VALUES (%s,%s,%s,%s,%s,%s, CASE WHEN %s THEN now() END, %s) RETURNING *",
+                        "consentimiento_fecha, modos, created_by) VALUES (%s,%s,%s,%s,%s,%s, CASE WHEN %s THEN now() END, %s, %s) RETURNING *",
                   (datos.nombre.strip(), datos.cuit, datos.zona_horaria, datos.moneda, datos.modelo_abastecimiento,
-                   datos.consentimiento_datos, datos.consentimiento_datos, creada_por))
+                   datos.consentimiento_datos, datos.consentimiento_datos, sorted(set(datos.modos or ["comercio"])), creada_por))
     with conn.cursor() as cur:
         for codigo, nombre in ETIQUETA_CANAL.items():
             cur.execute("INSERT INTO canales (org_id, codigo, nombre, activo, created_by) VALUES (%s,%s,%s,%s,%s)",
-                        (org["id"], codigo, nombre, codigo == "fisico", creada_por))
+                        (org["id"], codigo, nombre, codigo == "fisico" or (codigo == "mayorista" and "distribuidor" in org["modos"]), creada_por))
     clave = seguridad.clave_temporal()
     dueno = db.fila(conn, "INSERT INTO usuarios (org_id, email, nombre, rol, hash_clave, created_by) VALUES (%s,%s,%s,'dueno',%s,%s) RETURNING id",
                     (org["id"], datos.email_dueno.strip().lower(), datos.nombre_dueno.strip(), seguridad.hash_clave(clave), creada_por))

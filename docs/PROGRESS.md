@@ -14,7 +14,7 @@ predicciones con IA y Panel ERP por empresa.
 
 | # | Paso | Estado |
 |---|---|---|
-| 1 | Modos de empresa (comercio / distribuidor / ambos) y roles jefe de ventas, vendedor y cobranzas | pendiente |
+| 1 | Modos de empresa (comercio / distribuidor / ambos) y roles jefe de ventas, vendedor y cobranzas | hecho (migración 015, cartera del vendedor por RLS) |
 | 2 | Unidades y conversiones exactas, venta por peso | pendiente |
 | 3 | Costo de reposición e histórico, impuestos (IVA, internos, IIBB), descuentos de proveedor; margen neto | pendiente |
 | 4 | Diagnóstico de calidad de datos (5.6) | pendiente |

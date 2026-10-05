@@ -6,19 +6,23 @@ import { useSesion } from "@/components/Sesion";
 import { Aviso, Boton, Campo, Entrada, Etiqueta, Selector, Tabla, Tarjeta } from "@/components/ui";
 
 type Usuario = { id: number; email: string; nombre: string; rol: string; activo: boolean; ultimo_ingreso: string | null;
-  segundo_factor: boolean; bloqueado: boolean | null; ubicaciones: number[] };
-type Edicion = { id?: number; email: string; nombre: string; rol: string; activo: boolean; ubicaciones: number[] };
+  segundo_factor: boolean; bloqueado: boolean | null; ubicaciones: number[]; vendedor_id: number | null };
+type Edicion = { id?: number; email: string; nombre: string; rol: string; activo: boolean; ubicaciones: number[]; vendedor_id?: number | null };
+const DEL_DISTRIBUIDOR = ["jefe_ventas", "vendedor", "cobranzas"];
 const CON_SUCURSAL = ["encargado", "cajero"];
 
 export function Usuarios() {
   const { yo } = useSesion();
   const [lista, setLista] = useState<Usuario[]>([]);
+  const [vendedores, setVendedores] = useState<{ id: number; nombre: string; zona: string | null }[]>([]);
+  const distribuidor = (yo.empresa?.modos ?? []).includes("distribuidor");
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [claveNueva, setClaveNueva] = useState<{ nombre: string; clave: string } | null>(null);
   const nombreUbic = (id: number) => yo.ubicaciones.find((u) => u.id === id)?.nombre ?? `#${id}`;
 
-  const cargar = useCallback(() => api<{ usuarios: Usuario[] }>("/usuarios").then((d) => setLista(d.usuarios)).catch((e) => setError(e.message)), []);
+  const cargar = useCallback(() => api<{ usuarios: Usuario[]; vendedores: { id: number; nombre: string; zona: string | null }[] }>("/usuarios")
+    .then((d) => { setLista(d.usuarios); setVendedores(d.vendedores ?? []); }).catch((e) => setError(e.message)), []);
   useEffect(() => { void cargar(); }, [cargar]);
 
   async function guardar() {
@@ -26,9 +30,9 @@ export function Usuarios() {
     setError(null);
     try {
       if (edicion.id) {
-        await api(`/usuarios/${edicion.id}`, { metodo: "PUT", cuerpo: { nombre: edicion.nombre, rol: edicion.rol, activo: edicion.activo, ubicaciones: edicion.ubicaciones } });
+        await api(`/usuarios/${edicion.id}`, { metodo: "PUT", cuerpo: { nombre: edicion.nombre, rol: edicion.rol, activo: edicion.activo, ubicaciones: edicion.ubicaciones, vendedor_id: edicion.vendedor_id ?? null } });
       } else {
-        const r = await api<{ clave_temporal: string }>("/usuarios", { metodo: "POST", cuerpo: { email: edicion.email, nombre: edicion.nombre, rol: edicion.rol, ubicaciones: edicion.ubicaciones } });
+        const r = await api<{ clave_temporal: string }>("/usuarios", { metodo: "POST", cuerpo: { email: edicion.email, nombre: edicion.nombre, rol: edicion.rol, ubicaciones: edicion.ubicaciones, vendedor_id: edicion.vendedor_id ?? null } });
         setClaveNueva({ nombre: edicion.nombre, clave: r.clave_temporal });
       }
       setEdicion(null);
@@ -73,7 +77,7 @@ export function Usuarios() {
           <Campo etiqueta="Email"><Entrada type="email" disabled={!!edicion.id} value={edicion.email} onChange={(e) => setEdicion({ ...edicion, email: e.target.value })} /></Campo>
           <Campo etiqueta="Rol">
             <Selector value={edicion.rol} onChange={(e) => setEdicion({ ...edicion, rol: e.target.value })}>
-              {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(ROLES).filter(([k]) => distribuidor || !DEL_DISTRIBUIDOR.includes(k)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </Selector>
           </Campo>
           {edicion.id && (
@@ -81,7 +85,14 @@ export function Usuarios() {
               <input type="checkbox" checked={edicion.activo} onChange={(e) => setEdicion({ ...edicion, activo: e.target.checked })} /> Activo
             </label>
           )}
-          {CON_SUCURSAL.includes(edicion.rol) ? (
+          {edicion.rol === "vendedor" ? (
+            <Campo etiqueta="Ficha del vendedor" ayuda="Ve solo los clientes de esta ficha (su cartera).">
+              <Selector value={edicion.vendedor_id ?? ""} onChange={(e) => setEdicion({ ...edicion, vendedor_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">Elegí…</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}{v.zona ? ` · ${v.zona}` : ""}</option>)}
+              </Selector>
+            </Campo>
+          ) : CON_SUCURSAL.includes(edicion.rol) ? (
             <fieldset className="sm:col-span-2">
               <legend className="mb-1 text-sm font-medium">Sucursales que ve</legend>
               <div className="flex flex-wrap gap-2">
@@ -93,7 +104,9 @@ export function Usuarios() {
               </div>
             </fieldset>
           ) : (
-            <p className="text-sm text-suave sm:col-span-2">{edicion.rol === "distribuidor" ? "Este rol solo verá el panel agregado y anónimo (fase 3)." : "Este rol ve todas las sucursales de la empresa."}</p>
+            <p className="text-sm text-suave sm:col-span-2">{edicion.rol === "distribuidor" ? "Este rol solo verá el panel agregado y anónimo (fase 3)."
+              : edicion.rol === "cobranzas" ? "Ve las cuentas corrientes y la deuda de todos los clientes." : edicion.rol === "jefe_ventas" ? "Ve a todos los vendedores, clientes y cuentas corrientes."
+              : "Este rol ve todas las sucursales de la empresa."}</p>
           )}
           <div className="flex gap-2 sm:col-span-2">
             <Boton onClick={guardar}>{edicion.id ? "Guardar" : "Crear y generar clave"}</Boton>

@@ -19,7 +19,7 @@ export function Empresa() {
     try {
       await api("/empresa", { metodo: "PUT", cuerpo: {
         nombre: e.nombre, cuit: e.cuit || null, zona_horaria: e.zona_horaria, moneda: e.moneda,
-        modelo_abastecimiento: e.modelo_abastecimiento, consentimiento_datos: e.consentimiento_datos } });
+        modelo_abastecimiento: e.modelo_abastecimiento, consentimiento_datos: e.consentimiento_datos, modos: e.modos ?? ["comercio"] } });
       await recargar();
       setMensaje({ tipo: "ok", texto: "Cambios guardados." });
     } catch (err) {
@@ -42,6 +42,25 @@ export function Empresa() {
             <option value="ARS">Pesos argentinos (ARS)</option><option value="USD">Dólares (USD)</option><option value="UYU">Pesos uruguayos (UYU)</option>
           </Selector>
         </Campo>
+        <div className="sm:col-span-2">
+          <p className="mb-2 text-sm font-medium">Qué hace la empresa</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([["comercio", "Comercio", "Vende al público en sus sucursales y por internet."],
+               ["distribuidor", "Distribuidor o mayorista", "Vende a comercios con vendedores y preventistas, rutas, reparto y cuenta corriente."]] as const).map(([clave, nombre, texto]) => {
+              const modos = e.modos ?? ["comercio"];
+              const marcado = modos.includes(clave);
+              return (
+                <label key={clave} className={`cursor-pointer rounded-lg border p-3 text-sm ${marcado ? "border-acento bg-acento/5" : "border-borde"}`}>
+                  <input type="checkbox" className="mr-2" checked={marcado}
+                    onChange={() => setE({ ...e, modos: marcado ? modos.filter((m) => m !== clave) : [...modos, clave] })} />
+                  <strong>{nombre}</strong>
+                  <span className="mt-1 block text-suave">{texto}</span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-suave">Puede ser las dos cosas. El modo distribuidor suma Clientes, Vendedores, Pedidos y Cuenta corriente.</p>
+        </div>
         <div className="sm:col-span-2">
           <p className="mb-2 text-sm font-medium">Modelo de abastecimiento</p>
           <div className="grid gap-2 sm:grid-cols-3">

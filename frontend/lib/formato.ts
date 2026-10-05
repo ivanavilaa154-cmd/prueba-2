@@ -28,7 +28,10 @@ export const ROLES: Record<string, string> = {
   comprador: "Comprador",
   encargado: "Encargado de sucursal",
   cajero: "Cajero / operativo",
-  distribuidor: "Distribuidor / marca",
+  jefe_ventas: "Jefe de ventas",
+  vendedor: "Vendedor / preventista",
+  cobranzas: "Cobranzas",
+  distribuidor: "Marca o distribuidor externo (solo panel anónimo)",
 };
 
 export const TIPO_UBICACION: Record<string, string> = { venta: "Sucursal", deposito: "Depósito", ambos: "Sucursal y depósito" };

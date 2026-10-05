@@ -41,6 +41,7 @@ export type Canal = { id: number; codigo: string; nombre: string; activo?: boole
 export type Plataforma = { id: number; tipo: string; nombre: string; canal_id: number; ubicacion_despacho_id?: number | null };
 export type Empresa = {
   id: number;
+  modos?: string[];
   nombre: string;
   cuit: string | null;
   plan: string;

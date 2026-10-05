@@ -11,7 +11,7 @@ COOKIE = "retail_sesion"
 DURACION = timedelta(hours=12)
 MAX_INTENTOS = 5
 BLOQUEO = timedelta(minutes=15)
-ROLES_TODAS = ("dueno", "comprador")
+ROLES_TODAS = ("dueno", "comprador", "jefe_ventas", "cobranzas", "vendedor")   # el vendedor se acota por cartera, no por sucursal
 
 
 def auditar(conn, ctx_o_org, usuario_id: int | None, accion: str, objeto: str, objeto_id=None, detalle: dict | None = None,
@@ -100,12 +100,12 @@ def salir(request: Request) -> None:
 
 def contexto_de_sesion(s: dict) -> db.Contexto:
     with db.transaccion(usuario_id=s["usuario_id"]) as conn:
-        u = db.fila(conn, "SELECT id, org_id, rol, nombre, email, es_superadmin, activo FROM usuarios WHERE id=%s", (s["usuario_id"],))
+        u = db.fila(conn, "SELECT id, org_id, rol, nombre, email, es_superadmin, activo, vendedor_id FROM usuarios WHERE id=%s", (s["usuario_id"],))
         if not u or not u["activo"]:
             raise HTTPException(status_code=401, detail="Tu usuario está desactivado.")
         org_id = s["org_activa"] if u["es_superadmin"] else u["org_id"]
         ctx = db.Contexto(usuario_id=u["id"], org_id=org_id, rol=u["rol"], nombre=u["nombre"], email=u["email"],
-                          es_superadmin=u["es_superadmin"])
+                          es_superadmin=u["es_superadmin"], vendedor_id=u["vendedor_id"])
         if u["es_superadmin"] or u["rol"] in ROLES_TODAS:
             ctx.todas_ubicaciones = True
         elif org_id:

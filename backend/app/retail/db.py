@@ -113,6 +113,7 @@ class Contexto:
     es_superadmin: bool = False
     todas_ubicaciones: bool = False
     ubicaciones: list[int] = field(default_factory=list)
+    vendedor_id: int | None = None          # modo distribuidor: la ficha del vendedor (rol vendedor)
 
 
 def conectar():
@@ -131,6 +132,8 @@ def transaccion(ctx: Contexto | None = None, *, usuario_id: int | None = None, l
         "app.todas_ubicaciones": "1" if ctx and ctx.todas_ubicaciones else "0",
         "app.ubicaciones": "{" + ",".join(str(int(u)) for u in (ctx.ubicaciones if ctx else [])) + "}",
         "app.superadmin": "1" if superadmin else "0",
+        # Cartera: el vendedor solo ve sus clientes (RLS de clientes_b2b y lo que cuelga de ellos). Sin ficha: -1, no ve ninguno.
+        "app.vendedor_id": (str(ctx.vendedor_id or -1) if ctx and ctx.rol == "vendedor" and not ctx.es_superadmin else ""),
         "app.login_email": login_email or "",
     }
     with conectar() as conn:
