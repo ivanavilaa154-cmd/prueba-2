@@ -123,6 +123,10 @@ def sincronizar(conn, ctx, plataforma_id: int, transporte=None, hoy: date | None
         productos = _productos(conn, ctx, c, plataforma_id)
         ventas = _tickets(conn, ctx, c, plataforma_id, almacenes, productos, desde, zona)
         stock = _stock(conn, ctx, c, almacenes, productos)
+        dist = None
+        if "distribuidor" in db.fila(conn, "SELECT modos FROM organizaciones WHERE id = app_org()")["modos"]:
+            from . import odoo_distribuidor           # modo distribuidor: clientes, vendedores, pedidos y cuenta corriente
+            dist = odoo_distribuidor.sincronizar(conn, ctx, c, plataforma_id, almacenes, productos, desde)
     except OdooError as e:
         raise ValueError(f"Odoo respondió con un error: {e}")
     except OSError as e:
@@ -131,6 +135,12 @@ def sincronizar(conn, ctx, plataforma_id: int, transporte=None, hoy: date | None
     resultado["mensaje"] = (f"{ventas['tickets_nuevos']} tickets nuevos" + (f" ({ventas['tickets_repetidos']} ya estaban)" if ventas["tickets_repetidos"] else "")
                             + f", stock de {stock['stock_actualizado']} productos × sucursal"
                             + (f", {productos['nuevos']} productos nuevos" if productos["nuevos"] else ""))
+    if dist:
+        resultado["distribuidor"] = dist
+        resultado["mensaje"] += (f", {dist['pedidos_nuevos']} pedidos nuevos ({dist['pedidos_actualizados']} actualizados), "
+                                 f"{dist['comprobantes']} comprobantes de cuenta corriente")
+        if dist["desde_pedidos"]:
+            resultado["desde_pedidos"] = dist["desde_pedidos"]
     with conn.cursor() as cur:
         cur.execute("UPDATE plataformas SET estado_sincronizacion='ok', error_sincronizacion=NULL, ultima_sincronizacion=now(), "
                     "sincronizado_hasta=greatest(coalesce(sincronizado_hasta, %s), %s) WHERE id=%s",
@@ -297,8 +307,9 @@ def sincronizar_todas(org_id: int) -> date | None:
                 else:
                     from . import plataformas_online
                     r = plataformas_online.sincronizar(conn, ctx, pid)
-            if r.get("desde") and (desde is None or r["desde"] < desde):
-                desde = r["desde"]
+            for d in (r.get("desde"), r.get("desde_pedidos")):
+                if d and (desde is None or d < desde):
+                    desde = d
         except Exception as e:           # una conexión caída no frena a las demás; el error queda en la conexión
             marcar_error(ctx, pid, e)
     if conexiones:

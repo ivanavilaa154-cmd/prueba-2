@@ -25,8 +25,8 @@ PULPO = {"empresa": "Pulpo Azul", "email": "dueno@pulpoazul.local", "nombre": "D
 
 
 def _empresas_demo() -> list[str]:
-    from . import demo, demo_panel
-    return [demo.EMPRESA, "Minimercado La Esquina", demo_panel.DISTRIBUIDOR] + [c[0] for c in demo_panel.COMERCIOS]
+    from . import demo, demo_distribuidora, demo_panel
+    return [demo.EMPRESA, "Minimercado La Esquina", demo_panel.DISTRIBUIDOR, demo_distribuidora.EMPRESA] + [c[0] for c in demo_panel.COMERCIOS]
 
 
 def borrar_empresas(conn, org_ids: list[int]) -> None:

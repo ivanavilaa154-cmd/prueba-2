@@ -32,4 +32,12 @@ Se actualizan producto, estructura, comandos y referencias; las reglas numeradas
 - **Costo de reposición:** costo de la última lista vigente del proveedor principal, menos sus descuentos y bonificaciones vigentes.
   **Costo histórico:** promedio ponderado de las recepciones (cantidad × costo) de los últimos 12 meses.
 - **Cliente perdido (distribuidor):** sin comprar más de 3 veces su intervalo habitual entre compras (mínimo 21 días); en riesgo,
-  más de 1,5 veces. Configurable por empresa.
+  más de 1,5 veces. Configurable por empresa. Una «compra» es un pedido no anulado ni rechazado; el intervalo habitual es la mediana de
+  sus últimos 12 intervalos (con menos de 3 compras, 30 días). La plata que se deja de facturar es lo que compraba por mes en los
+  180 días anteriores a su última compra.
+- **Venta del distribuidor:** lo entregado de cada pedido (o lo pedido mientras está en camino), sin IVA. Precios y costos de los
+  pedidos se guardan sin impuestos. En el agregado de ventas, la demanda (unidades) suma lo que no se entregó por falta de stock,
+  para que la reposición no se achique por un quiebre; la facturación es solo lo entregado.
+- **Oportunidades por cliente:** categorías que compra al menos el 40 % de los clientes parecidos (misma zona y canal; si son menos de
+  5, mismo canal) en 90 días y este no; se sugiere el producto más elegido y la mediana de unidades por pedido.
+- **Vendedor y cobranzas:** solo acceden a las pantallas del modo distribuidor; la base (RLS) acota la cartera del vendedor.

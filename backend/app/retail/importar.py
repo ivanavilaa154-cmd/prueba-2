@@ -295,6 +295,8 @@ def _validar_fila(conn, tipo: str, v: dict, cat: dict, sin_producto: dict) -> st
         for c, e, o in CAMPOS[tipo]:
             if o and (v.get(c) is None or str(v.get(c)).strip() == ""):
                 return f"Falta {e.lower()}"
+        if tipo in importar_distribuidor.CAMPOS:
+            return importar_distribuidor.validar_fila(conn, tipo, v, cat, sin_producto)
         if tipo == "delivery" and _plataforma_delivery(v["plataforma"]) is None:
             return f"«{v['plataforma']}» no es PedidosYa ni Rappi"
         if tipo in ("ventas", "compras", "stock", "delivery"):
@@ -357,7 +359,7 @@ def confirmar(conn, ctx, lote_id: int) -> dict:
     cat = _contexto_catalogo(conn)
     zona = ZoneInfo(db.fila(conn, "SELECT zona_horaria FROM organizaciones WHERE id = app_org()")["zona_horaria"])
     resultado = {"ventas": _ventas, "stock": _stock, "productos": _productos, "compras": _compras, "precios": _precios,
-                 "delivery": _delivery}[lote["tipo"]](conn, ctx, lote, filas, cat, zona)
+                 "delivery": _delivery, **importar_distribuidor.MANEJADORES}[lote["tipo"]](conn, ctx, lote, filas, cat, zona)
     with conn.cursor() as cur:
         cur.execute("UPDATE lotes_importacion SET estado='importado', filas_ok=%s, filas_duplicadas=%s, resultado=%s WHERE id=%s",
                     (resultado.get("importadas", 0), resultado.get("duplicadas", 0), json.dumps(resultado, default=str), lote_id))
@@ -630,3 +632,11 @@ def _precios(conn, ctx, lote, filas, cat, zona) -> dict:
                             "VALUES (%s,%s,%s,%s,%s,%s,%s)", (ctx.org_id, lista, e.producto_id, codigo, v.get("descripcion"), costo, anterior))
     return {"importadas": emparejadas, "sin_emparejar": sin_emparejar, "pendientes": pendientes[:50],
             "mensaje": f"{emparejadas} costos actualizados" + (f"; {sin_emparejar} líneas sin emparejar (revisalas en Catálogo)" if sin_emparejar else "")}
+
+
+# Modo distribuidor: clientes, pedidos y cuenta corriente (al final: ese módulo usa las funciones de este).
+from . import importar_distribuidor  # noqa: E402
+
+CAMPOS.update(importar_distribuidor.CAMPOS)
+for _campo, _sinonimos in importar_distribuidor.SINONIMOS.items():
+    SINONIMOS[_campo] = SINONIMOS.get(_campo, []) + [x for x in _sinonimos if x not in SINONIMOS.get(_campo, [])]

@@ -44,21 +44,40 @@ def _agregar(conn, org_id: int, desde: date | None) -> None:
     params = {"org": org_id, "desde": desde}
     with conn.cursor() as cur:
         cur.execute(f"DELETE FROM agg_producto_ubicacion_dia WHERE org_id=%(org)s {'AND fecha >= %(desde)s' if desde else ''}", params)
+        # Ventas de caja (tickets) y, en modo distribuidor, pedidos de clientes por el canal mayorista. En los pedidos la demanda
+        # (unidades) suma lo que no se entregó por falta de stock, así alimenta la reposición; la facturación es solo lo entregado
+        # (o lo pedido, si todavía está en camino). Los precios y costos de los pedidos son sin impuestos.
         cur.execute(f"""
             INSERT INTO agg_producto_ubicacion_dia (org_id, producto_id, ubicacion_id, canal_id, fecha, unidades, facturacion, facturacion_neta,
                                                     costo, ganancia, tickets, unidades_promo, sin_costo)
-            SELECT l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha,
-                   sum(l.cantidad), sum(l.precio_cobrado * l.cantidad), sum(l.precio_cobrado * l.cantidad / (1 + p.iva)),
-                   sum(coalesce(l.costo_unitario, 0) * l.cantidad / CASE WHEN o.costos_con_iva THEN 1 + p.iva ELSE 1 END),
-                   -- Ganancia neta de impuestos recuperables (SPEC v2): precio sin IVA − costo sin IVA.
-                   sum(l.precio_cobrado * l.cantidad / (1 + p.iva))
-                     - sum(coalesce(l.costo_unitario, 0) * l.cantidad / CASE WHEN o.costos_con_iva THEN 1 + p.iva ELSE 1 END),
-                   count(DISTINCT l.ticket_id), sum(CASE WHEN l.promocion_id IS NOT NULL THEN l.cantidad ELSE 0 END),
-                   bool_or(l.costo_unitario IS NULL)
-            FROM tickets_lineas l JOIN tickets t ON t.id = l.ticket_id JOIN productos p ON p.id = l.producto_id
-            JOIN organizaciones o ON o.id = l.org_id
-            WHERE l.org_id = %(org)s AND t.estado <> 'anulado' {filtro}
-            GROUP BY l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha""", params)
+            SELECT org_id, producto_id, ubicacion_id, canal_id, fecha, sum(unidades), sum(facturacion), sum(neta), sum(costo), sum(neta) - sum(costo),
+                   sum(tickets), sum(unidades_promo), bool_or(sin_costo)
+            FROM (
+                SELECT l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha,
+                       sum(l.cantidad) unidades, sum(l.precio_cobrado * l.cantidad) facturacion, sum(l.precio_cobrado * l.cantidad / (1 + p.iva)) neta,
+                       -- Ganancia neta de impuestos recuperables (SPEC v2): precio sin IVA − costo sin IVA.
+                       sum(coalesce(l.costo_unitario, 0) * l.cantidad / CASE WHEN o.costos_con_iva THEN 1 + p.iva ELSE 1 END) costo,
+                       count(DISTINCT l.ticket_id) tickets, sum(CASE WHEN l.promocion_id IS NOT NULL THEN l.cantidad ELSE 0 END) unidades_promo,
+                       bool_or(l.costo_unitario IS NULL) sin_costo
+                FROM tickets_lineas l JOIN tickets t ON t.id = l.ticket_id JOIN productos p ON p.id = l.producto_id
+                JOIN organizaciones o ON o.id = l.org_id
+                WHERE l.org_id = %(org)s AND t.estado <> 'anulado' {filtro}
+                GROUP BY l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha
+                UNION ALL
+                SELECT pv.org_id, l.producto_id, pv.ubicacion, pv.canal_id, pv.fecha,
+                       sum(q.cantidad + l.faltante_stock), sum(l.precio * (1 + p.iva) * q.cantidad), sum(l.precio * q.cantidad),
+                       sum(coalesce(l.costo_unitario, 0) * q.cantidad), count(DISTINCT pv.id), 0, bool_or(l.costo_unitario IS NULL)
+                FROM (SELECT pe.*, coalesce(pe.ubicacion_id, (SELECT min(u.id) FROM ubicaciones u WHERE u.org_id = pe.org_id)) ubicacion,
+                             (SELECT c.id FROM canales c WHERE c.org_id = pe.org_id AND c.codigo = 'mayorista') canal_id
+                      FROM pedidos_venta pe WHERE pe.org_id = %(org)s AND pe.estado NOT IN ('anulado', 'rechazado')
+                      {filtro.replace('l.fecha', 'pe.fecha')}) pv
+                JOIN pedidos_venta_lineas l ON l.pedido_id = pv.id JOIN productos p ON p.id = l.producto_id
+                CROSS JOIN LATERAL (SELECT CASE WHEN pv.estado IN ('entregado', 'entregado_parcial') THEN l.cantidad_entregada
+                                                ELSE l.cantidad_pedida END AS cantidad) q
+                WHERE pv.ubicacion IS NOT NULL AND pv.canal_id IS NOT NULL
+                GROUP BY pv.org_id, l.producto_id, pv.ubicacion, pv.canal_id, pv.fecha
+            ) x
+            GROUP BY org_id, producto_id, ubicacion_id, canal_id, fecha""", params)
         cur.execute(f"""DELETE FROM agg_ubicacion_hora WHERE org_id=%(org)s {'AND fecha >= %(desde)s' if desde else ''}""", params)
         cur.execute(f"""
             INSERT INTO agg_ubicacion_hora (org_id, ubicacion_id, canal_id, fecha, hora, tickets, facturacion, unidades)

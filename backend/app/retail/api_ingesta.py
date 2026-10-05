@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import catalogo, db, importar, permisos, sesiones
+from . import catalogo, db, importar, importar_distribuidor, permisos, sesiones
 from .rutas import respuesta
 
 api = APIRouter(prefix="/retail/api", tags=["retail"])
@@ -38,8 +38,11 @@ def recalcular_en_segundo_plano(org_id: int, desde: date | None = None) -> None:
 @api.get("/importar/tipos")
 def tipos(ctx: db.Contexto = Depends(sesiones.contexto)):
     permisos.exigir(ctx, "importar_datos")
-    return respuesta([{"tipo": t, "titulo": TITULOS[t], "campos": [{"campo": c, "etiqueta": e, "obligatorio": o} for c, e, o in campos]}
-                      for t, campos in importar.CAMPOS.items()])
+    with db.transaccion(ctx) as conn:
+        distribuidor = "distribuidor" in (db.fila(conn, "SELECT modos FROM organizaciones WHERE id = %s", (ctx.org_id,)) or {"modos": []})["modos"]
+    return respuesta([{"tipo": t, "titulo": TITULOS.get(t) or importar_distribuidor.TITULOS[t],
+                       "campos": [{"campo": c, "etiqueta": e, "obligatorio": o} for c, e, o in campos]}
+                      for t, campos in importar.CAMPOS.items() if distribuidor or t not in importar_distribuidor.CAMPOS])
 
 
 @api.get("/importar/plantilla/{tipo}")
@@ -507,7 +510,7 @@ def sincronizar_ahora(plataforma_id: int, ctx: db.Contexto = Depends(sesiones.co
                 else:
                     from . import plataformas_online
                     r = plataformas_online.sincronizar(conn, ctx, plataforma_id)
-            recalcular_en_segundo_plano(ctx.org_id, r.get("desde"))
+            recalcular_en_segundo_plano(ctx.org_id, min((d for d in (r.get("desde"), r.get("desde_pedidos")) if d), default=None))
         except Exception as e:
             odoo_pos.marcar_error(ctx, plataforma_id, e)
         finally:

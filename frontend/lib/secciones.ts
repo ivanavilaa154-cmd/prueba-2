@@ -1,5 +1,6 @@
 // Navegación lateral (sección 15 del documento). «llega» marca una sección todavía no construida (se muestra «pronto»).
-export type Seccion = { ruta: string; nombre: string; llega?: string; que_hace: string; modulo?: string };
+// modo: solo si la empresa tiene ese modo (comercio o distribuidor); permiso: solo si el rol lo tiene.
+export type Seccion = { ruta: string; nombre: string; llega?: string; que_hace: string; modulo?: string; modo?: string; permiso?: string };
 
 // Distribuidor o marca (13.3): solo su panel agregado y anónimo, los pedidos que le envían y su cuenta.
 export const SECCIONES_DISTRIBUIDOR: Seccion[] = [
@@ -12,6 +13,16 @@ export const SECCIONES: Seccion[] = [
   { ruta: "/", nombre: "Inicio", que_hace: "Resumen del día, tarjetas clave y acciones con botón." },
   { ruta: "/tablero/", nombre: "Mi tablero",
     que_hace: "Vista por rol (Dirección, Comercial, Sucursal, Marketing, Finanzas): indicadores, avisos por plata en juego y pronóstico con rango." },
+  { ruta: "/mi-cartera/", nombre: "Mi cartera", modo: "distribuidor", permiso: "ver_cartera",
+    que_hace: "Tu ruta de hoy con qué ofrecer a cada cliente, los clientes a recuperar, tu meta y la deuda de tu cartera." },
+  { ruta: "/clientes/", nombre: "Clientes", modo: "distribuidor", permiso: "ver_clientes_b2b",
+    que_hace: "Clientes que dejaron de comprar o están en riesgo, con la plata que se deja de facturar; Pareto de clientes y productos." },
+  { ruta: "/vendedores/", nombre: "Vendedores", modo: "distribuidor", permiso: "ver_vendedores",
+    que_hace: "Ventas, margen, descuentos y metas por vendedor; objetivos de las marcas representadas." },
+  { ruta: "/pedidos/", nombre: "Pedidos y entregas", modo: "distribuidor", permiso: "ver_ventas",
+    que_hace: "Pedidos por estado, entregas completas, parciales y rechazos; lo que no se facturó por faltantes." },
+  { ruta: "/cuenta-corriente/", nombre: "Cuenta corriente", modo: "distribuidor", permiso: "ver_cuenta_corriente",
+    que_hace: "Deuda por cliente y antigüedad, clientes que compran con deuda vencida o pasan su límite, compromisos de pago." },
   { ruta: "/comprar/", nombre: "Comprar y reponer",
     que_hace: "Qué te falta, cuándo se agota cada producto y cuánto comprar, con semáforo y explicación del cálculo." },
   { ruta: "/transferencias/", nombre: "Transferencias y OC",
@@ -28,7 +39,7 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Comparativos entre sucursales, matriz producto × sucursal, precios distintos y ajustes de stock." },
   { ruta: "/canales/", modulo: "avanzado", nombre: "Canales",
     que_hace: "Ganancia real por canal (comisiones y envíos), stock unificado y sobreventa online." },
-  { ruta: "/caja/", nombre: "Caja y control",
+  { ruta: "/caja/", nombre: "Caja y control", modo: "comercio",
     que_hace: "Anulaciones, devoluciones, descuentos manuales y valores atípicos por cajero y turno." },
   { ruta: "/proveedores/", modulo: "avanzado", nombre: "Proveedores",
     que_hace: "Días de visita, demoras, pedidos mínimos, nivel de servicio y rentabilidad por proveedor." },
@@ -49,3 +60,7 @@ export const SECCIONES: Seccion[] = [
   { ruta: "/configuracion/", nombre: "Configuración", que_hace: "Empresa, sucursales, canales, usuarios, límites, auditoría y tu cuenta." },
 ];
 
+
+// Vendedor y cobranzas solo usan las pantallas del modo distribuidor (la base les cierra el resto).
+export const ROLES_SOLO_DISTRIBUIDOR = ["vendedor", "cobranzas"];
+export const INICIO_POR_ROL: Record<string, string> = { vendedor: "/mi-cartera/", cobranzas: "/cuenta-corriente/" };

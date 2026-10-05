@@ -22,7 +22,8 @@ from .rutas import respuesta
 api = APIRouter(prefix="/retail/api", tags=["retail"])
 TAMANO_MAXIMO = 40 * 1024 * 1024
 PREFIJOS = {"venta": "ventas", "ventas": "ventas", "stock": "stock", "producto": "productos", "productos": "productos", "articulos": "productos",
-            "compra": "compras", "compras": "compras", "precio": "precios", "precios": "precios", "lista": "precios", "delivery": "delivery"}
+            "compra": "compras", "compras": "compras", "cliente": "clientes", "clientes": "clientes", "pedido": "pedidos", "pedidos": "pedidos",
+            "cuenta": "cuenta_corriente", "corriente": "cuenta_corriente", "cobranza": "cuenta_corriente", "precio": "precios", "precios": "precios", "lista": "precios", "delivery": "delivery"}
 
 
 def tipo_de_archivo(nombre: str) -> str | None:

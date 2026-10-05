@@ -1,11 +1,11 @@
 "use client";
 // Estructura común: menú lateral, barra superior con la empresa y el filtro global, y cuenta del usuario.
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, BASE } from "@/lib/api";
 import { ROLES } from "@/lib/formato";
-import { SECCIONES, SECCIONES_DISTRIBUIDOR } from "@/lib/secciones";
+import { INICIO_POR_ROL, ROLES_SOLO_DISTRIBUIDOR, SECCIONES, SECCIONES_DISTRIBUIDOR } from "@/lib/secciones";
 import { cx } from "./ui";
 import { FiltroGlobal } from "./FiltroGlobal";
 import { NoIncluido } from "./NoIncluido";
@@ -42,12 +42,23 @@ export function Marco({ children }: { children: ReactNode }) {
     setPrivacidad((p) => (p ? { ...p, aceptada: true } : p));
   }
 
+  const router = useRouter();
+  const rol = yo.usuario.es_superadmin ? "dueno" : yo.usuario.rol ?? "";
+  const modos = yo.empresa?.modos ?? ["comercio"];
+  const soloDistribuidor = ROLES_SOLO_DISTRIBUIDOR.includes(rol);
+  const visibles = (rol === "distribuidor" ? SECCIONES_DISTRIBUIDOR : SECCIONES).filter((s) =>
+    (!s.modo || modos.includes(s.modo)) && (!s.permiso || yo.permisos.includes(s.permiso))
+    && (!soloDistribuidor || s.modo === "distribuidor"));
+  if (soloDistribuidor) visibles.push({ ruta: "/configuracion/#cuenta", nombre: "Mi cuenta", que_hace: "Tu clave y el segundo factor." });
+  useEffect(() => {        // el vendedor y cobranzas arrancan en su pantalla
+    if (ruta === "/" && INICIO_POR_ROL[rol]) router.replace(INICIO_POR_ROL[rol]);
+  }, [ruta, rol, router]);
   const seccion = SECCIONES.find((s) => s.ruta !== "/" && ruta.startsWith(s.ruta));
   const bloqueada = Boolean(seccion?.modulo && !incluye(seccion.modulo));
   const activa = (r: string) => (r === "/" ? ruta === "/" : ruta.startsWith(r));
   const menu = (
     <nav aria-label="Secciones" className="grid gap-0.5 p-2">
-      {(yo.usuario.rol === "distribuidor" ? SECCIONES_DISTRIBUIDOR : SECCIONES).map((s) => (
+      {visibles.map((s) => (
         <Link key={s.ruta} href={s.ruta} onClick={() => setMenuAbierto(false)}
           className={cx("flex items-center justify-between rounded-lg px-3 py-2 text-sm",
             activa(s.ruta) ? "bg-acento/12 font-semibold text-acento" : s.modulo && !incluye(s.modulo) ? "text-suave hover:bg-panel-2" : "text-texto hover:bg-panel-2")}>
@@ -142,7 +153,7 @@ export function Marco({ children }: { children: ReactNode }) {
               </details>
             </div>
           </div>
-          {yo.empresa && yo.usuario.rol !== "distribuidor" && <FiltroGlobal />}
+          {yo.empresa && yo.usuario.rol !== "distribuidor" && !soloDistribuidor && <FiltroGlobal />}
         </header>
         <main className="mx-auto max-w-6xl px-4 py-5 sm:py-6">{bloqueada ? <NoIncluido /> : children}</main>
       </div>

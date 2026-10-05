@@ -11,6 +11,8 @@ COOKIE = "retail_sesion"
 DURACION = timedelta(hours=12)
 MAX_INTENTOS = 5
 BLOQUEO = timedelta(minutes=15)
+SOLO_DISTRIBUIDOR = ("vendedor", "cobranzas")
+RUTAS_DISTRIBUIDOR = tuple(f"/retail/api/{r}" for r in ("distribuidor/", "yo", "sesion", "privacidad"))
 ROLES_TODAS = ("dueno", "comprador", "jefe_ventas", "cobranzas", "vendedor")   # el vendedor se acota por cartera, no por sucursal
 
 
@@ -128,6 +130,9 @@ def contexto(request: Request) -> db.Contexto:
     if s["pendiente_2fa"]:
         raise HTTPException(status_code=401, detail="Falta el código del segundo factor.")
     ctx = contexto_de_sesion(s)
+    if ctx.rol in SOLO_DISTRIBUIDOR and not ctx.es_superadmin and not request.url.path.startswith(RUTAS_DISTRIBUIDOR):
+        # El vendedor y cobranzas solo usan sus pantallas (su cartera por RLS); el resto de Retail (stock, costos, compras) no es para ellos.
+        raise HTTPException(status_code=403, detail="Tu rol no tiene permiso para esta acción.")
     from . import suscripcion
     suscripcion.exigir_escritura(request, ctx)          # suscripción vencida → solo lectura (13.6)
     return ctx

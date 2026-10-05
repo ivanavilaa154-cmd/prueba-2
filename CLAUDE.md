@@ -64,6 +64,7 @@ backend/tests/    Pruebas con pytest
 - API: `cd backend && uvicorn app.main:app --reload` (docs en http://localhost:8000/docs)
 - Retail (pantallas): `cd frontend && npx tsc --noEmit -p . && npm run build` (exporta a `backend/app/web/retail/`)
 - Retail (demo): se carga sola al arrancar con `RETAIL_CUENTAS=demo`; tiempos de pantallas: `python -m app.retail.tiempos --url http://localhost:8000`
+- Retail, modo distribuidor (demo «Distribuidora del Valle»): `python -m app.retail.tiempos --url http://localhost:8000 --email dueno@valle.demo --clave <clave demo>`
 - Retail (cuentas reales): `cd backend && python -m app.retail.cuentas --reales`
 - Codespace: `bash tools/codespaces/iniciar.sh`
 

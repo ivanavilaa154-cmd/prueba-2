@@ -66,6 +66,12 @@ PANTALLAS: dict[str, list[str]] = {
     "Datos · conexiones": ["/conexiones"],
     "Configuración": ["/ubicaciones", "/canales", "/usuarios", "/limites", "/config/precios"],
 }
+# Modo distribuidor (--email dueno@valle.demo): los 5 reportes iniciales y la vista del vendedor.
+PANTALLAS_MODO_DISTRIBUIDOR: dict[str, list[str]] = {
+    "Clientes que dejaron de comprar": ["/distribuidor/clientes"], "Vendedores": ["/distribuidor/vendedores"],
+    "Cuenta corriente": ["/distribuidor/cuenta-corriente"], "Pareto de clientes y productos": ["/distribuidor/pareto"],
+    "Pedidos y entregas": ["/distribuidor/pedidos"], "Qué comprar hoy": ["/comprar"], "Mi cartera (vendedor)": ["/distribuidor/mi-cartera"],
+}
 # El panel de marcas lo abre el distribuidor (--email distribuidor@andina.demo).
 PANTALLAS_DISTRIBUIDOR: dict[str, list[str]] = {"Panel de marcas": ["/panel"], "Pedidos de clientes": ["/panel/pedidos"]}
 
@@ -99,7 +105,11 @@ def main() -> None:
         r = c.post("/retail/api/sesion", json={"email": a.email, "clave": a.clave})
         r.raise_for_status()
         yo = c.get("/retail/api/yo").json()
-        filas = medir(c.get, pantallas=PANTALLAS_DISTRIBUIDOR if yo["usuario"]["rol"] == "distribuidor" else PANTALLAS)
+        modo = "distribuidor" in ((yo.get("empresa") or {}).get("modos") or [])
+        if modo and yo["usuario"]["rol"] == "dueno":       # la cartera de un vendedor, vista por el dueño
+            PANTALLAS_MODO_DISTRIBUIDOR["Mi cartera (vendedor)"] = [f"/distribuidor/mi-cartera?vendedor={c.get('/retail/api/distribuidor/clientes').json()['vendedores'][0]['id']}"]
+        filas = medir(c.get, pantallas=PANTALLAS_DISTRIBUIDOR if yo["usuario"]["rol"] == "distribuidor"
+                      else PANTALLAS_MODO_DISTRIBUIDOR if modo else PANTALLAS)
     for f in filas:
         print(f"{'✓' if f['ok'] else '✕'} {f['pantalla']:<28} {f['segundos']:>5.2f} s  {f['estados']}")
     lentas = [f for f in filas if not f["ok"]]

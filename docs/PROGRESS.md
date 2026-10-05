@@ -19,12 +19,12 @@ predicciones con IA y Panel ERP por empresa.
 | 3 | Costo de reposición e histórico, impuestos (IVA, internos, IIBB), descuentos de proveedor; margen neto | hecho (Configuración → Unidades e impuestos; ganancia y margen sin IVA) |
 | 4 | Diagnóstico de calidad de datos (5.6) | hecho (`calidad.py`, pantalla Calidad de datos, confianza por producto en Comprar; la demo siembra un caso de cada problema) |
 | 5 | Agente de sincronización por carpeta (5.1) | hecho (`tools/agente/agente_sync.py` solo con la biblioteca estándar, cola local con reintentos crecientes, token propio revocable; migración 018; tarjeta en Datos → Conexiones; los formatos nuevos se retoman en Datos → Importar) |
-| 6 | Datos del modo distribuidor (12B) desde Odoo y archivos | pendiente |
-| 7 | Los 5 reportes iniciales del distribuidor (12B.7) y vista del vendedor | pendiente |
-| 8 | Demo distribuidora (16) | pendiente |
+| 6 | Datos del modo distribuidor (12B) desde Odoo y archivos | hecho (`odoo_distribuidor.py`: clientes, vendedores, pedidos con lo entregado, facturas con saldo y cobros; importación de clientes, pedidos y cuenta corriente por archivo o por el agente; los pedidos entran a la demanda por el canal mayorista) |
+| 7 | Los 5 reportes iniciales del distribuidor (12B.7) y vista del vendedor | hecho (`distribuidor.py`, migración 019; pantallas Clientes, Vendedores, Pedidos y entregas, Cuenta corriente y Mi cartera (celular); vendedor y cobranzas solo ven sus pantallas y su cartera) |
+| 8 | Demo distribuidora (16) | hecho (`demo_distribuidora.py`: «Distribuidora del Valle», 6 vendedores, 350 clientes en 4 zonas, 13 meses de pedidos; se carga sola en modo demo; dueno@valle.demo, jefe@valle.demo, cobranzas@valle.demo, carla@valle.demo…) |
 | 9 | MAPE y métricas de soporte (13.7) | pendiente |
 | 10 | Primer ingreso guiado de 6 pasos (15) | pendiente |
 | 11 | Criterios de aceptación nuevos (17) y tiempos | pendiente |
 
-**Fase 2 (después):** rutas y cobertura (12B.3), fill rate y logística (12B.5), marcas representadas (12B.6), lectura directa de bases
+**Fase 2 (después):** rutas y cobertura completas (12B.3), logística (tiempos de entrega, repartidores; 12B.5), marcas representadas completas (12B.6), lectura directa de bases
 locales en el agente.
