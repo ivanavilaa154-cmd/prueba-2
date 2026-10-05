@@ -4,6 +4,7 @@ import { useSesion } from "@/components/Sesion";
 import { cx } from "@/components/ui";
 import { Auditoria } from "@/components/config/Auditoria";
 import { Canales } from "@/components/config/Canales";
+import { Ayuda } from "@/components/config/Ayuda";
 import { Cuenta } from "@/components/config/Cuenta";
 import { Empresa } from "@/components/config/Empresa";
 import { Limites } from "@/components/config/Limites";
@@ -28,6 +29,7 @@ const PESTANAS = [
   { id: "datos", nombre: "Tus datos", permiso: "configurar_empresa", componente: TusDatos },
   { id: "plan", nombre: "Plan", permiso: "configurar_empresa", componente: Plan },
   { id: "cuenta", nombre: "Mi cuenta", permiso: null, componente: Cuenta },
+  { id: "ayuda", nombre: "Pedir ayuda", permiso: null, componente: Ayuda },
 ] as const;
 
 export default function Configuracion() {

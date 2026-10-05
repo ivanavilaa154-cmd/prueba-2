@@ -12,7 +12,7 @@ DURACION = timedelta(hours=12)
 MAX_INTENTOS = 5
 BLOQUEO = timedelta(minutes=15)
 SOLO_DISTRIBUIDOR = ("vendedor", "cobranzas")
-RUTAS_DISTRIBUIDOR = tuple(f"/retail/api/{r}" for r in ("distribuidor/", "yo", "sesion", "privacidad"))
+RUTAS_DISTRIBUIDOR = tuple(f"/retail/api/{r}" for r in ("distribuidor/", "yo", "sesion", "privacidad", "soporte"))
 ROLES_TODAS = ("dueno", "comprador", "jefe_ventas", "cobranzas", "vendedor")   # el vendedor se acota por cartera, no por sucursal
 
 

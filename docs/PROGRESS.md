@@ -22,8 +22,8 @@ predicciones con IA y Panel ERP por empresa.
 | 6 | Datos del modo distribuidor (12B) desde Odoo y archivos | hecho (`odoo_distribuidor.py`: clientes, vendedores, pedidos con lo entregado, facturas con saldo y cobros; importación de clientes, pedidos y cuenta corriente por archivo o por el agente; los pedidos entran a la demanda por el canal mayorista) |
 | 7 | Los 5 reportes iniciales del distribuidor (12B.7) y vista del vendedor | hecho (`distribuidor.py`, migración 019; pantallas Clientes, Vendedores, Pedidos y entregas, Cuenta corriente y Mi cartera (celular); vendedor y cobranzas solo ven sus pantallas y su cartera) |
 | 8 | Demo distribuidora (16) | hecho (`demo_distribuidora.py`: «Distribuidora del Valle», 6 vendedores, 350 clientes en 4 zonas, 13 meses de pedidos; se carga sola en modo demo; dueno@valle.demo, jefe@valle.demo, cobranzas@valle.demo, carla@valle.demo…) |
-| 9 | MAPE y métricas de soporte (13.7) | pendiente |
-| 10 | Primer ingreso guiado de 6 pasos (15) | pendiente |
+| 9 | MAPE y métricas de soporte (13.7) | hecho (migración 020: foto diaria de WAPE/MAPE/sesgo/cobertura por empresa, tiempo de implementación, tickets de soporte; panel «Costo de servir» en Plataforma; «Pedir ayuda» en Configuración) |
+| 10 | Primer ingreso guiado de 6 pasos (15) | hecho (migración 021, pantalla /bienvenida: lo que se ve en los datos se marca solo, lo demás lo confirma el dueño; una empresa nueva sin datos arranca ahí) |
 | 11 | Criterios de aceptación nuevos (17) y tiempos | pendiente |
 
 **Fase 2 (después):** rutas y cobertura completas (12B.3), logística (tiempos de entrega, repartidores; 12B.5), marcas representadas completas (12B.6), lectura directa de bases

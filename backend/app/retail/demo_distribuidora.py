@@ -176,6 +176,14 @@ def cargar(hoy: date | None = None, escala: Escala | None = None, semilla: int =
         resumen = _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy, sin_stock)
         _rutas_y_visitas(conn, rng, oid, clientes, vendedores, hoy, resumen["fechas_pedido"])
         _metas_y_marcas(conn, oid, vendedores, hoy, resumen)
+        with conn.cursor() as cur:          # costo de servir (13.7): horas de implementación y algunos pedidos de ayuda
+            cur.execute("UPDATE organizaciones SET implementacion_horas = 6.5, primer_ingreso_completo_at = now() WHERE id = %s", (oid,))
+            for asunto, tema, estado, minutos, dias in [("Cómo cargo la cuenta corriente desde el sistema viejo", "datos", "resuelto", 45, 20),
+                                                        ("El vendedor no ve a un cliente nuevo", "uso", "resuelto", 15, 9),
+                                                        ("La conexión con Odoo da error de clave", "conexion", "abierto", 10, 1)]:
+                cur.execute("""INSERT INTO tickets_soporte (org_id, asunto, tema, estado, minutos, created_at, resuelto_at)
+                               VALUES (%s,%s,%s,%s,%s, now() - make_interval(days => %s), CASE WHEN %s = 'resuelto' THEN now() - make_interval(days => %s - 1) END)""",
+                            (oid, asunto, tema, estado, minutos, dias, estado, dias))
 
         # ---------------------------------------------------------------- stock del depósito
         diaria = resumen["diaria"]

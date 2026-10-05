@@ -185,3 +185,21 @@ def _grupo(filas, clave):
     for f in filas:
         g[f[clave]].append(f)
     return g
+
+
+def registrar_precision(conn, org_id: int, hoy: date) -> dict | None:
+    """Foto del error de los pronósticos de la empresa (13.7: precisión medida). La lee el panel interno de la plataforma."""
+    filas = [f for f in evaluados(conn, hoy) if f["dias_sin"] <= 1]
+    if not filas:
+        return None
+    e = C.error_pronostico([(f["pron"], f["vendido"]) for f in filas])
+    con_venta = [f for f in filas if f["vendido"] > 0]
+    mape = sum(min(abs(f["vendido"] - f["pron"]) / f["vendido"], 5) for f in con_venta) / len(con_venta) if con_venta else None
+    cobertura = sum(1 for f in filas if f["mi"] - 0.5 <= f["vendido"] <= f["ma"] + 0.5) / len(filas)
+    r = {"wape": e["wape"], "mape": mape, "sesgo": e["sesgo"], "cobertura": cobertura, "evaluados": len(filas)}
+    with conn.cursor() as cur:
+        cur.execute("""INSERT INTO precision_pronosticos (org_id, fecha, wape, mape, sesgo, cobertura, evaluados) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (org_id, fecha) DO UPDATE SET wape = EXCLUDED.wape, mape = EXCLUDED.mape, sesgo = EXCLUDED.sesgo,
+                           cobertura = EXCLUDED.cobertura, evaluados = EXCLUDED.evaluados, created_at = now()""",
+                    (org_id, hoy, *(round(v, 4) if v is not None else None for v in (r["wape"], r["mape"], r["sesgo"], r["cobertura"])), r["evaluados"]))
+    return r

@@ -815,6 +815,8 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), greatest((SELECT coalesce(max(id), 1) FROM {tabla}), 1))")
         _problemas_de_calidad(conn, org_id, hoy, prods, ubic)          # después de fijar las secuencias: inserta filas nuevas
+        with conn.cursor() as cur:       # la demo ya está puesta en marcha: la guía del primer ingreso no se abre sola
+            cur.execute("UPDATE organizaciones SET primer_ingreso_completo_at = now() WHERE id = %s", (org_id,))
         resumen.update({"cargada": True, "org_id": org_id, "productos": len(prods), "tickets": len(f_tickets), "lineas": len(f_lineas),
                         "desde": inicio.isoformat(), "hasta": hoy.isoformat()})
 

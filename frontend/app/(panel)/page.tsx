@@ -34,6 +34,15 @@ export default function Inicio() {
   const depositos = yo.ubicaciones.filter((u) => u.tipo === "deposito").length;
   const configura = puede("configurar_empresa");
   const modelo = MODELOS[yo.empresa?.modelo_abastecimiento ?? "mixto"];
+  // Primer ingreso guiado: una empresa nueva sin datos arranca en la guía; si no, se ofrece seguirla desde acá.
+  const [guia, setGuia] = useState<{ listos: number; total: number; mostrar: boolean } | null>(null);
+  useEffect(() => {
+    if (!configura || distribuidor) return;
+    api<{ listos: number; total: number; mostrar: boolean }>("/primer-ingreso").then((g) => {
+      setGuia(g);
+      if (g.mostrar && !yo.datos?.productos) location.replace(`${location.pathname.replace(/\/$/, "")}/bienvenida/`);
+    }).catch(() => {});
+  }, [configura, distribuidor, yo.datos?.productos]);
 
   const pasos: Paso[] = [
     { titulo: "Confirmar sucursales y depósitos", estado: sucursales > 0 ? "listo" : "pendiente", ir: "/configuracion/#sucursales",
@@ -118,6 +127,12 @@ export default function Inicio() {
             Ves {yo.usuario.todas_ubicaciones ? "todas las sucursales" : yo.ubicaciones.map((u) => u.nombre).join(", ")}.
             Cuando se conecten las ventas y el stock, acá vas a encontrar tus tareas del día: recuentos, recepciones y avisos.
           </p>
+        </Tarjeta>
+      )}
+      {guia?.mostrar && (
+        <Tarjeta titulo="Puesta en marcha">
+          <p className="text-sm">Completaste {guia.listos} de {guia.total} pasos para que las recomendaciones usen tus datos reales.</p>
+          <Link href="/bienvenida/" className="mt-2 inline-block rounded-lg bg-acento px-3.5 py-2 text-sm font-medium text-acento-texto">Seguir con la guía</Link>
         </Tarjeta>
       )}
       {configura && <details open={!yo.datos?.productos} className="rounded-xl border border-borde bg-panel p-4 sm:p-5">

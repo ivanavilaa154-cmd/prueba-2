@@ -4,6 +4,7 @@ import { api, BASE } from "@/lib/api";
 import { fecha } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
 import { Aviso, Boton, Campo, Entrada, Tabla, Tarjeta } from "@/components/ui";
+import { PlataformaCostoServir } from "@/components/PlataformaCostoServir";
 import { PlataformaSuscripciones } from "@/components/PlataformaSuscripciones";
 
 type Fila = { id: number; nombre: string; cuit: string | null; plan: string; activa: boolean; created_at: string; ubicaciones: number; usuarios: number };
@@ -76,6 +77,7 @@ export default function Plataforma() {
         </div>
         <Boton className="mt-3" onClick={crear} disabled={!nueva.nombre || !nueva.email_dueno || !nueva.nombre_dueno}>Crear empresa</Boton>
       </Tarjeta>
+      <PlataformaCostoServir />
       <PlataformaSuscripciones />
       <Tarjeta titulo="Copias de seguridad y bajas">
         <p className="text-sm text-suave">Se hace una copia completa de la base todos los días (se guardan las últimas {respaldos?.guardadas ?? 7}) en backend/respaldos.</p>

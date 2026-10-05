@@ -182,6 +182,13 @@ def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = N
         if calidad.toca_revisar(conn) and (tipo == "nocturno" or not db.fila(conn, "SELECT 1 FROM chequeos_calidad LIMIT 1")):
             primera = not db.fila(conn, "SELECT 1 FROM chequeos_calidad LIMIT 1")
             resumen["calidad"] = float(calidad.revisar(conn, org_id, hoy, "conexion" if primera else "semanal")["puntaje"])
+        if tipo == "nocturno" or not db.fila(conn, "SELECT 1 FROM precision_pronosticos WHERE fecha = %s", (hoy,)):
+            from . import pronosticos           # precisión medida (13.7): una foto por día para el panel interno
+            p = pronosticos.registrar_precision(conn, org_id, hoy)
+            resumen["precision"] = p and {k: (round(v, 4) if isinstance(v, float) else v) for k, v in p.items()}
+        if resumen.get("metricas"):             # primer cálculo con datos: la implementación terminó
+            with conn.cursor() as cur:
+                cur.execute("UPDATE organizaciones SET implementacion_lista_at = now() WHERE id = %s AND implementacion_lista_at IS NULL", (org_id,))
         resumen["segundos_agregados"] = round(t_agg, 2)
     # Reposición y alertas en su propia transacción (usan las métricas recién guardadas).
     try:
