@@ -9,6 +9,7 @@ import { Empresa } from "@/components/config/Empresa";
 import { Limites } from "@/components/config/Limites";
 import { MediosPago } from "@/components/config/MediosPago";
 import { Precios } from "@/components/config/Precios";
+import { Impuestos } from "@/components/config/Impuestos";
 import { Sucursales } from "@/components/config/Sucursales";
 import { Usuarios } from "@/components/config/Usuarios";
 import { TusDatos } from "@/components/config/TusDatos";
@@ -21,6 +22,7 @@ const PESTANAS = [
   { id: "usuarios", nombre: "Usuarios", permiso: "gestionar_usuarios", componente: Usuarios },
   { id: "limites", nombre: "Límites de aprobación", permiso: "gestionar_usuarios", componente: Limites },
   { id: "precios", nombre: "Precios", permiso: "ver_costos", componente: Precios },
+  { id: "impuestos", nombre: "Unidades e impuestos", permiso: "ver_costos", componente: Impuestos },
   { id: "medios", nombre: "Medios de pago", permiso: "ver_ventas", componente: MediosPago },
   { id: "auditoria", nombre: "Auditoría", permiso: "ver_auditoria", componente: Auditoria },
   { id: "datos", nombre: "Tus datos", permiso: "configurar_empresa", componente: TusDatos },

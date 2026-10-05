@@ -410,6 +410,58 @@ def margen(precio: Decimal, costo: Decimal) -> Decimal | None:
     return (precio - costo) / precio if precio > 0 else None
 
 
+# ------------------------------------------------------------------------------ unidades, costos e impuestos (SPEC v2, sección 4)
+def a_unidad_base(cantidad: Decimal, factor: Decimal) -> Decimal:
+    """Cantidad en la unidad base del producto: 1 bulto de 12 → 12; 250 g de un producto por kg (factor 0,001) → 0,25. Exacto."""
+    if Decimal(factor) <= 0:
+        raise ValueError("El factor de conversión tiene que ser mayor que cero.")
+    return Decimal(str(cantidad)) * Decimal(str(factor))
+
+
+def precio_neto(precio_final: Decimal, iva: Decimal) -> Decimal:
+    """Precio sin IVA (el precio al público lo incluye). Los impuestos internos quedan: no son recuperables para quien revende."""
+    return Decimal(precio_final) / (1 + Decimal(iva))
+
+
+def costo_neto(costo: Decimal, iva: Decimal, costos_con_iva: bool, percepcion_iibb: Decimal = Decimal(0)) -> Decimal:
+    """Costo sin impuestos recuperables. Si la empresa carga los costos con IVA (y percepciones), se los quita; si no, ya está neto."""
+    costo = Decimal(costo)
+    return costo / (1 + Decimal(iva) + Decimal(percepcion_iibb)) if costos_con_iva else costo
+
+
+def margen_neto(precio_final: Decimal, costo_neto_: Decimal, iva: Decimal) -> Decimal | None:
+    """Margen sobre importes netos: (precio sin IVA − costo neto) ÷ precio sin IVA."""
+    return margen(precio_neto(precio_final, iva), costo_neto_)
+
+
+def precio_final_sugerido(costo_neto_: Decimal, margen_objetivo: Decimal, iva: Decimal, costo_canal_pct: Decimal = Decimal(0)) -> Decimal:
+    """Precio al público = costo neto ÷ (1 − margen − costos del canal) × (1 + IVA)."""
+    return precio_sugerido(costo_neto_, margen_objetivo, costo_canal_pct) * (1 + Decimal(iva))
+
+
+def descuento_proveedor(descuentos: list[dict], cantidad: Decimal = Decimal(0)) -> Decimal:
+    """Descuento efectivo sobre el costo de lista. Los porcentajes se aplican en cascada (10 % y 5 % = 14,5 %); una bonificación
+    «N + M» equivale a M ÷ (N + M) (12 + 1 = 7,69 %). Un descuento con escala aplica si la cantidad del pedido llega a su mínimo."""
+    queda = Decimal(1)
+    for d in descuentos:
+        if Decimal(d.get("desde_cantidad") or 0) > Decimal(cantidad):
+            continue
+        if d["tipo"] == "bonificacion":
+            n, m = Decimal(d["compra_unidades"]), Decimal(d["bonifica_unidades"])
+            queda *= 1 - m / (n + m)
+        else:
+            queda *= 1 - Decimal(d["porcentaje"])
+    return 1 - queda
+
+
+def costo_promedio_ponderado(recepciones: list[tuple[Decimal, Decimal]]) -> Decimal | None:
+    """Costo histórico = Σ (cantidad × costo) ÷ Σ cantidad de las recepciones."""
+    total = sum((Decimal(q) for q, _ in recepciones if Decimal(q) > 0), Decimal(0))
+    if total <= 0:
+        return None
+    return sum((Decimal(q) * Decimal(c) for q, c in recepciones if Decimal(q) > 0), Decimal(0)) / total
+
+
 # ------------------------------------------------------------------------------ rentabilidad del inventario
 def gmroi(ganancia_bruta: Decimal, inventario_promedio_costo: Decimal) -> Decimal | None:
     """GMROI = ganancia bruta del período ÷ inversión promedio en stock a costo."""

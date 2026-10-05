@@ -68,6 +68,7 @@ def remarcacion(canal: str | None = None, categoria: int | None = None, filtro: 
         filas = db.filas(conn, f"""
             SELECT p.id, p.nombre, p.codigo_interno, p.ean, p.rol_producto, p.clase_abc, p.categoria_id, c.padre_id,
                    coalesce(cp.nombre, c.nombre) categoria, pp.costo, pr.razon_social proveedor, pr.id proveedor_id,
+                   p.iva, pr.percepcion_iibb, cpr.costo_reposicion, cpr.costo_historico, cpr.descuento_aplicado,
                    (SELECT precio FROM precios x WHERE x.producto_id = p.id AND x.ubicacion_id IS NULL
                       AND (x.canal_id IS NOT DISTINCT FROM %(canal)s) AND x.desde <= %(hoy)s AND (x.hasta IS NULL OR x.hasta >= %(hoy)s)
                     ORDER BY x.desde DESC LIMIT 1) precio_canal,
@@ -81,11 +82,18 @@ def remarcacion(canal: str | None = None, categoria: int | None = None, filtro: 
                    (SELECT max(x.desde) FROM precios x WHERE x.producto_id = p.id AND x.canal_id IS NULL) ultimo_cambio
             FROM productos p LEFT JOIN categorias c ON c.id = p.categoria_id LEFT JOIN categorias cp ON cp.id = c.padre_id
             LEFT JOIN producto_proveedores pp ON pp.producto_id = p.id AND pp.principal LEFT JOIN proveedores pr ON pr.id = pp.proveedor_id
+            LEFT JOIN costos_producto cpr ON cpr.producto_id = p.id
             WHERE p.activo {filtro_cat}""", {"canal": canal_id, "hoy": hoy, "hace30": hoy - timedelta(days=30), "cat": categoria})
         items = []
+        con_iva = db.fila(conn, "SELECT costos_con_iva FROM organizaciones WHERE id = app_org()")["costos_con_iva"]
         for f in filas:
             precio = f["precio_canal"] or f["precio_general"]
             costo = f["costo"]
+            iva = f["iva"]
+            # Margen y remarcación con el costo de reposición neto de impuestos recuperables y de descuentos (SPEC v2, sección 4).
+            # Si el cálculo nocturno todavía no corrió, se calcula acá con la misma fórmula.
+            costo_rep = f["costo_reposicion"] if f["costo_reposicion"] is not None else (
+                C.costo_neto(costo, iva, con_iva, f["percepcion_iibb"] or 0) * (1 - (f["descuento_aplicado"] or 0)) if costo is not None else None)
             # Sin precio propio del canal se usa el general como referencia.
             # Margen objetivo: el del canal (producto o categoría), si no el del producto, la subcategoría o la categoría.
             del_canal = por_canal.get(canal_id, {}) if canal_id else {}
@@ -93,15 +101,16 @@ def remarcacion(canal: str | None = None, categoria: int | None = None, filtro: 
                         or por_producto.get(f["id"]) or por_categoria.get(f["categoria_id"]) or por_categoria.get(f["padre_id"]) or MARGEN_DEFECTO)
             item = {**{k: f[k] for k in ("id", "nombre", "codigo_interno", "ean", "rol_producto", "clase_abc", "categoria", "proveedor", "fecha_lista", "ultimo_cambio")},
                     "precio": precio, "costo": costo, "costo_anterior": f["costo_anterior"], "margen_objetivo": objetivo, "costo_canal_pct": pct_canal,
+                    "iva": iva, "costo_reposicion": costo_rep, "costo_historico": f["costo_historico"],
                     "venta_diaria": f["venta_diaria"] or Decimal(0)}
             if costo is None or precio is None:
                 item.update({"estado": "sin_costo" if costo is None else "sin_precio", "sugerido": None, "margen_actual": None,
                              "perdida_diaria": Decimal(0), "aumento_pct": None, "motivo": "Falta el costo del producto" if costo is None else "No tiene precio vigente"})
                 items.append(item)
                 continue
-            margen_actual = C.margen(precio, costo)
+            margen_actual = C.margen_neto(precio, costo_rep, iva)
             try:
-                bruto = C.precio_sugerido(costo, objetivo, pct_canal)
+                bruto = C.precio_final_sugerido(costo_rep, objetivo, iva, pct_canal)
             except ValueError:
                 bruto = None
             sugerido = C.redondear_precio(bruto, reglas) if bruto else None
@@ -113,7 +122,7 @@ def remarcacion(canal: str | None = None, categoria: int | None = None, filtro: 
             margen_perdido = (objetivo - margen_actual) if margen_actual is not None else Decimal(0)
             # Pérdida de margen por día: cuánto más cuesta el producto que el costo que daría el margen objetivo con el precio de
             # hoy, por las unidades que se venden por día.
-            perdida_diaria = max(Decimal(0), (costo - precio * (1 - objetivo - pct_canal))) * Decimal(str(item["venta_diaria"]))
+            perdida_diaria = max(Decimal(0), (costo_rep - C.precio_neto(precio, iva) * (1 - objetivo - pct_canal))) * Decimal(str(item["venta_diaria"]))
             cambio = (sugerido - precio) / precio if sugerido is not None and precio else Decimal(0)
             if sugerido is None:
                 estado = "revisar"

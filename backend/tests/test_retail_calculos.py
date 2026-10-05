@@ -274,3 +274,41 @@ def test_prob_quiebre_y_error():
     e = C.error_pronostico([(10, 12), (20, 16), (5, 5)])
     assert e["wape"] == pytest.approx((2 + 4 + 0) / 33) and e["sesgo"] == pytest.approx((35 - 33) / 33)
     assert C.error_pronostico([(3, 0)])["wape"] is None
+
+
+# ------------------------------------------------------------------------------ SPEC v2: unidades, costos e impuestos
+def test_conversiones_exactas():
+    from decimal import Decimal as D
+    assert C.a_unidad_base(D(1), D(12)) == D(12)                       # 1 bulto de 12 suma 12 unidades
+    assert C.a_unidad_base(D("2.5"), D(24)) == D(60)
+    assert C.a_unidad_base(D(250), D("0.001")) == D("0.25")             # 250 g de un producto que se vende por kg
+    with pytest.raises(ValueError):
+        C.a_unidad_base(D(1), D(0))
+
+
+def test_margen_neto_de_impuestos_recuperables():
+    from decimal import Decimal as D
+    # Precio al público $1.210 con IVA 21 % → $1.000 neto; costo de factura $600 + IVA.
+    assert C.precio_neto(D(1210), D("0.21")) == D(1000)
+    assert C.costo_neto(D(600), D("0.21"), costos_con_iva=False) == D(600)
+    assert C.costo_neto(D(726), D("0.21"), costos_con_iva=True) == D(600)
+    assert C.margen_neto(D(1210), D(600), D("0.21")) == D("0.4")
+    # Exento: precio y costo sin IVA.
+    assert C.margen_neto(D(1000), D(600), D(0)) == D("0.4")
+    # Precio sugerido: neto ÷ (1 − margen) × (1 + IVA).
+    assert C.precio_final_sugerido(D(600), D("0.4"), D("0.21")) == D(1210)
+
+
+def test_descuentos_del_proveedor():
+    from decimal import Decimal as D
+    assert C.descuento_proveedor([{"tipo": "porcentaje", "porcentaje": D("0.10")}, {"tipo": "porcentaje", "porcentaje": D("0.05")}]) == D("0.145")
+    bonif = C.descuento_proveedor([{"tipo": "bonificacion", "compra_unidades": 12, "bonifica_unidades": 1}])
+    assert abs(bonif - D(1) / D(13)) < D("1e-20")
+    escala = [{"tipo": "porcentaje", "porcentaje": D("0.08"), "desde_cantidad": 100}]
+    assert C.descuento_proveedor(escala, D(50)) == 0 and C.descuento_proveedor(escala, D(100)) == D("0.08")
+
+
+def test_costo_historico_promedio_ponderado():
+    from decimal import Decimal as D
+    assert C.costo_promedio_ponderado([(D(10), D(100)), (D(30), D(120))]) == D(115)
+    assert C.costo_promedio_ponderado([]) is None

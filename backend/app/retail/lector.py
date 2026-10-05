@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -25,8 +26,9 @@ CONFIANZA_BAJA = 0.7
 class LineaLeida(BaseModel):
     codigo: str | None = Field(description="Código del artículo del proveedor o código de barras, tal como figura; null si no hay")
     descripcion: str = Field(description="Descripción del artículo tal como figura en el documento")
-    cantidad: float | None = Field(description="Unidades (no bultos: si dice bultos y unidades por bulto, multiplicar). null en listas de precios")
-    costo_unitario: float | None = Field(description="Precio unitario neto de bonificaciones, sin IVA si está discriminado")
+    cantidad: float | None = Field(description="Cantidad tal como figura en el documento (no la conviertas). null en listas de precios")
+    unidad: str | None = Field(default=None, description="Unidad de esa cantidad tal como figura: unidad, bulto, caja, pack, kg, g…; null si no dice")
+    costo_unitario: float | None = Field(description="Precio por esa unidad (por bulto si la cantidad es en bultos), neto de bonificaciones, sin IVA si está discriminado")
     lote: str | None = None
     vencimiento: str | None = Field(default=None, description="Fecha de vencimiento en formato AAAA-MM-DD, si figura")
     confianza: float = Field(description="0 a 1: qué tan seguro estás de haber leído bien esta línea (baja si está borrosa, cortada o manuscrita)")
@@ -136,7 +138,8 @@ def leer(conn, ctx, contenido: bytes, nombre: str, tipo: str, ubicacion_id: int 
 
 
 def confirmar(conn, ctx, documento_id: int, proveedor_id: int, ubicacion_id: int | None, lineas: list[dict], orden_id: int | None = None) -> dict:
-    """lineas: [{producto_id, codigo, descripcion, cantidad, costo_unitario, lote, vencimiento}] ya revisadas por la persona."""
+    """lineas: [{producto_id, codigo, descripcion, cantidad, unidad, costo_unitario, lote, vencimiento}] ya revisadas por la persona.
+    Cantidad y costo se pasan a la unidad base del producto con la conversión exacta cargada (unidades.py): 1 bulto de 12 → 12."""
     from .api_documentos import LineaRecibida, _oc, registrar_recepcion
     d = db.fila(conn, "SELECT * FROM documentos_leidos WHERE id=%s", (documento_id,))
     if not d or d["estado"] != "leido":
@@ -148,6 +151,17 @@ def confirmar(conn, ctx, documento_id: int, proveedor_id: int, ubicacion_id: int
         raise ErrorLector("No hay ninguna línea con producto asignado.")
     for l in validas:
         catalogo.guardar_alias(conn, ctx.org_id, l["producto_id"], "proveedor", proveedor_id, (l.get("codigo") or None), l.get("descripcion"), ctx.usuario_id)
+    from . import unidades
+    for l in validas:                          # a la unidad base, con el factor exacto (nunca adivinado)
+        try:
+            f = unidades.factor(conn, l["producto_id"], l.get("unidad"), proveedor_id)
+        except unidades.SinConversion as e:
+            raise ErrorLector(f"{l.get('descripcion') or 'Una línea'}: {e}")
+        if f != 1:
+            if l.get("cantidad") not in (None, ""):
+                l["cantidad"] = str(Decimal(str(l["cantidad"])) * f)
+            if l.get("costo_unitario") not in (None, ""):
+                l["costo_unitario"] = str(Decimal(str(l["costo_unitario"])) / f)
     extraido = d["extraido"]
     if d["tipo"] == "lista_precios":
         vigencia = _fecha(extraido.get("vigencia_desde")) or _fecha(extraido.get("fecha")) or date.today()

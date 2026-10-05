@@ -278,6 +278,7 @@ class LineaConfirmada(BaseModel):
     codigo: str | None = None
     descripcion: str | None = None
     cantidad: float | None = None
+    unidad: str | None = None             # como figura en el documento; se convierte a la unidad base al confirmar
     costo_unitario: float | None = None
     lote: str | None = None
     vencimiento: str | None = None

@@ -45,15 +45,18 @@ def _agregar(conn, org_id: int, desde: date | None) -> None:
     with conn.cursor() as cur:
         cur.execute(f"DELETE FROM agg_producto_ubicacion_dia WHERE org_id=%(org)s {'AND fecha >= %(desde)s' if desde else ''}", params)
         cur.execute(f"""
-            INSERT INTO agg_producto_ubicacion_dia (org_id, producto_id, ubicacion_id, canal_id, fecha, unidades, facturacion, costo,
-                                                    ganancia, tickets, unidades_promo, sin_costo)
+            INSERT INTO agg_producto_ubicacion_dia (org_id, producto_id, ubicacion_id, canal_id, fecha, unidades, facturacion, facturacion_neta,
+                                                    costo, ganancia, tickets, unidades_promo, sin_costo)
             SELECT l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha,
-                   sum(l.cantidad), sum(l.precio_cobrado * l.cantidad),
-                   sum(coalesce(l.costo_unitario, 0) * l.cantidad),
-                   sum(l.precio_cobrado * l.cantidad) - sum(coalesce(l.costo_unitario, 0) * l.cantidad),
+                   sum(l.cantidad), sum(l.precio_cobrado * l.cantidad), sum(l.precio_cobrado * l.cantidad / (1 + p.iva)),
+                   sum(coalesce(l.costo_unitario, 0) * l.cantidad / CASE WHEN o.costos_con_iva THEN 1 + p.iva ELSE 1 END),
+                   -- Ganancia neta de impuestos recuperables (SPEC v2): precio sin IVA − costo sin IVA.
+                   sum(l.precio_cobrado * l.cantidad / (1 + p.iva))
+                     - sum(coalesce(l.costo_unitario, 0) * l.cantidad / CASE WHEN o.costos_con_iva THEN 1 + p.iva ELSE 1 END),
                    count(DISTINCT l.ticket_id), sum(CASE WHEN l.promocion_id IS NOT NULL THEN l.cantidad ELSE 0 END),
                    bool_or(l.costo_unitario IS NULL)
-            FROM tickets_lineas l JOIN tickets t ON t.id = l.ticket_id
+            FROM tickets_lineas l JOIN tickets t ON t.id = l.ticket_id JOIN productos p ON p.id = l.producto_id
+            JOIN organizaciones o ON o.id = l.org_id
             WHERE l.org_id = %(org)s AND t.estado <> 'anulado' {filtro}
             GROUP BY l.org_id, l.producto_id, l.ubicacion_id, t.canal_id, l.fecha""", params)
         cur.execute(f"""DELETE FROM agg_ubicacion_hora WHERE org_id=%(org)s {'AND fecha >= %(desde)s' if desde else ''}""", params)
@@ -66,6 +69,60 @@ def _agregar(conn, org_id: int, desde: date | None) -> None:
             FROM tickets t JOIN organizaciones o ON o.id = t.org_id
             WHERE t.org_id = %(org)s AND t.estado <> 'anulado' {filtro_t}
             GROUP BY 1, 2, 3, 4, 5""", params)
+
+
+def aplicar_impuestos(conn, org_id: int) -> None:
+    """Reglas de impuesto → IVA e impuestos internos de cada producto: la del producto, si no la de su subcategoría, si no la de
+    su categoría; sin regla queda lo que tenga (21 % por defecto)."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE productos p SET iva = r.iva, impuestos_internos = r.impuestos_internos
+            FROM (SELECT p2.id, coalesce(rp.iva, rs.iva, rc.iva) iva, coalesce(rp.impuestos_internos, rs.impuestos_internos, rc.impuestos_internos) impuestos_internos
+                  FROM productos p2 LEFT JOIN categorias c ON c.id = p2.categoria_id
+                  LEFT JOIN reglas_impuesto rp ON rp.producto_id = p2.id
+                  LEFT JOIN reglas_impuesto rs ON rs.categoria_id = c.id
+                  LEFT JOIN reglas_impuesto rc ON rc.categoria_id = c.padre_id
+                  WHERE p2.org_id = %s) r
+            WHERE p.id = r.id AND r.iva IS NOT NULL AND (p.iva, p.impuestos_internos) IS DISTINCT FROM (r.iva, r.impuestos_internos)""", (org_id,))
+
+
+def actualizar_costos(conn, org_id: int, hoy: date) -> None:
+    """Costo de reposición (lista vigente del proveedor principal − descuentos, neto de impuestos recuperables) y costo histórico
+    (promedio ponderado de las recepciones de 12 meses, neto). El margen y la remarcación usan el de reposición (SPEC v2, sección 4)."""
+    con_iva = db.fila(conn, "SELECT costos_con_iva FROM organizaciones WHERE id=%s", (org_id,))["costos_con_iva"]
+    descuentos = defaultdict(list)
+    for d in db.filas(conn, """SELECT d.*, p.id AS pid FROM descuentos_proveedor d
+                               JOIN producto_proveedores pp ON pp.proveedor_id = d.proveedor_id AND pp.principal
+                               JOIN productos p ON p.id = pp.producto_id
+                               LEFT JOIN categorias c ON c.id = p.categoria_id
+                               WHERE d.vigente_desde <= %s AND (d.vigente_hasta IS NULL OR d.vigente_hasta >= %s)
+                                 AND (d.producto_id = p.id OR d.categoria_id IN (c.id, c.padre_id) OR (d.producto_id IS NULL AND d.categoria_id IS NULL))""",
+                      (hoy, hoy)):
+        descuentos[d["pid"]].append(d)
+    historico = defaultdict(list)
+    for r in db.filas(conn, """SELECT l.producto_id, l.cantidad, l.costo, r.fecha::date f FROM recepciones_lineas l
+                               JOIN recepciones r ON r.id = l.recepcion_id
+                               WHERE r.fecha >= %s AND l.costo IS NOT NULL AND l.cantidad > 0""", (hoy - timedelta(days=365),)):
+        historico[r["producto_id"]].append(r)
+    filas = []
+    for p in db.filas(conn, """SELECT p.id, p.iva, pp.costo, pp.updated_at::date fecha, pr.percepcion_iibb
+                               FROM productos p
+                               LEFT JOIN LATERAL (SELECT costo, updated_at, proveedor_id FROM producto_proveedores x WHERE x.producto_id = p.id
+                                                  ORDER BY principal DESC, prioridad LIMIT 1) pp ON true
+                               LEFT JOIN proveedores pr ON pr.id = pp.proveedor_id"""):
+        rep = None
+        dto = C.descuento_proveedor(descuentos.get(p["id"], []))
+        if p["costo"] is not None:
+            rep = C.costo_neto(p["costo"], p["iva"], con_iva, p["percepcion_iibb"] or 0) * (1 - dto)
+        hist_rec = historico.get(p["id"], [])
+        hist = C.costo_promedio_ponderado([(r["cantidad"], C.costo_neto(r["costo"], p["iva"], con_iva, p["percepcion_iibb"] or 0))
+                                           for r in hist_rec])
+        filas.append((org_id, p["id"], p["costo"], rep, p["fecha"] if rep is not None else None, hist,
+                      max(r["f"] for r in hist_rec) if hist_rec else None, dto))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM costos_producto WHERE org_id=%s", (org_id,))
+    db.copiar(conn, "costos_producto", ["org_id", "producto_id", "costo_lista", "costo_reposicion", "costo_reposicion_fecha",
+                                        "costo_historico", "costo_historico_fecha", "descuento_aplicado"], filas)
 
 
 def _foto_stock(conn, org_id: int, hoy: date) -> None:
@@ -92,7 +149,9 @@ def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = N
         hoy = hoy or hoy_de(conn, org_id)
         ejecucion = db.fila(conn, "INSERT INTO ejecuciones_calculo (org_id, tipo) VALUES (%s,%s) RETURNING id", (org_id, tipo))["id"]
         _foto_stock(conn, org_id, hoy)
+        aplicar_impuestos(conn, org_id)
         _agregar(conn, org_id, desde if desde else (None if tipo == "nocturno" else hoy - timedelta(days=3)))
+        actualizar_costos(conn, org_id, hoy)
         t_agg = _time.time() - t0
         prueba = None
         if tipo == "nocturno":             # primera vez: prueba sobre el pasado, así el error (y su corrección) se miden desde el día uno

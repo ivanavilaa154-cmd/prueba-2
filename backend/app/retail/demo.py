@@ -793,6 +793,14 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
                         (org_id, json.dumps({"desde": (hoy - timedelta(days=90)).isoformat(), "hasta": (hoy - timedelta(days=63)).isoformat()})))
             cur.execute("INSERT INTO parametros (org_id, clave, valor) VALUES (%s,'comisiones_medios',%s)",
                         (org_id, json.dumps({m[0]: {"comision": m[2], "acreditacion_dias": m[3]} for m in MEDIOS})))
+        # Impuestos (SPEC v2): los costos de la demo están cargados con IVA (así se generaron, a partir del precio al público).
+        # Lácteos y panificados con IVA reducido; cigarrillos con impuestos internos.
+        with conn.cursor() as cur:
+            cur.execute("UPDATE organizaciones SET costos_con_iva = true WHERE id = %s", (org_id,))
+            for cat, iva, internos in (("Lácteos", "0.105", "0"), ("Panadería y rotisería", "0.105", "0"), ("Cigarrillos", "0.21", "0.70")):
+                if (cat, None) in cat_ids:
+                    cur.execute("INSERT INTO reglas_impuesto (org_id, categoria_id, iva, impuestos_internos) VALUES (%s,%s,%s,%s)",
+                                (org_id, cat_ids[(cat, None)], iva, internos))
         _fiado_y_metas(conn, org_id, hoy, rng, sucursales, ubic)
         _online(conn, org_id, hoy, rng, plataformas, ubic)
         _clientes_identificados(conn, org_id, hoy)
@@ -987,6 +995,7 @@ def borrar(org_id: int) -> None:
               "costos_canal", "anulaciones_devoluciones", "pagos", "tickets_lineas", "tickets", "movimientos_stock", "stock_lotes",
               "stock_actual", "transferencias_lineas", "transferencias", "recepciones_lineas", "recepciones", "ordenes_compra_lineas",
               "ordenes_compra", "listas_precios_proveedor_lineas", "listas_precios_proveedor", "precios", "promociones",
+              "costos_producto", "reglas_impuesto", "descuentos_proveedor", "conversiones_unidad",
               "margenes_objetivo", "reglas_redondeo", "reglas_reposicion", "config_automatizacion", "config_abastecimiento",
               "presupuestos_compra", "parametros", "metas", "alias_producto", "producto_proveedores", "documentos_leidos",
               "staging_filas", "lotes_importacion", "mapeos_columnas", "calendario", "cuentas_clientes", "clientes", "pedidos_online", "propuestas_stock", "publicaciones"]

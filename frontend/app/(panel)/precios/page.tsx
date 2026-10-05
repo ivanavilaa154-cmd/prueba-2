@@ -12,7 +12,7 @@ import { Aviso, Boton, ComoSeCalcula, Etiqueta, Selector, Tabla, Tarjeta } from 
 type Item = { id: number; nombre: string; codigo_interno: string; ean: string | null; rol_producto: string | null; clase_abc: string; categoria: string;
   proveedor: string | null; precio: string | null; costo: string | null; costo_anterior: string | null; margen_objetivo: string; margen_actual: string | null;
   sugerido: string | null; aumento_pct: string | null; perdida_diaria: string; estado: string; erosionado?: boolean; parcial?: boolean; cambio_pct?: string;
-  motivo: string | null; fecha_lista: string | null; venta_diaria: string };
+  motivo: string | null; fecha_lista: string | null; venta_diaria: string; iva?: string; costo_reposicion?: string | null; costo_historico?: string | null };
 type R = { items: Item[]; tarjetas: { a_remarcar: number; perdida_diaria: string; erosionados: number; aumentos: number };
   listas_recientes: { id: number; vigencia_desde: string; proveedor: string; productos: number; aumento_promedio: string | null }[];
   canal_costo_pct: string; puede_remarcar: boolean; hoy: string };
@@ -141,6 +141,11 @@ function Historial({ item }: { item: Item }) {
   return (
     <div className="grid gap-4">
       {item.motivo && <Aviso tipo="info">{item.motivo}</Aviso>}
+      <div className="grid grid-cols-2 gap-3">
+        <Dato titulo="Costo de reposición" valor={plata(item.costo_reposicion)} nota="lista vigente, sin IVA y con descuentos: lo usa el margen" />
+        <Dato titulo="Costo histórico" valor={plata(item.costo_historico)} nota="promedio ponderado de las compras de 12 meses, sin IVA" />
+      </div>
+      {item.iva !== undefined && <p className="text-xs text-suave">IVA del producto: {Number(item.iva) === 0 ? "exento" : `${numero(Number(item.iva) * 100, 1)} %`}. El margen se calcula sin IVA.</p>}
       <Tarjeta titulo="Precio cobrado y costo por semana">
         <div className="h-56">
           <ResponsiveContainer>

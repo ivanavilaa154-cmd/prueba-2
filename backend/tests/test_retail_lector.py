@@ -112,3 +112,28 @@ def test_errores_del_lector(retail_demo, preparar):
     # Una lista de precios la carga quien gestiona proveedores, no la caja.
     assert cliente("caja.centro@norte.demo").post("/retail/api/lector/leer", data={"tipo": "lista_precios"},
                                                   files={"archivo": ("x.pdf", b"1")}).status_code == 403
+
+
+def test_bultos_se_convierten_a_unidades_exactas(retail_demo, preparar):
+    """Criterio de aceptación (SPEC v2): comprar 1 bulto de 12 suma 12 unidades y el costo queda por unidad."""
+    prov, prods, suc = _datos()
+    pid = prods[0]["id"]
+    with db.transaccion(motor.contexto_sistema(1)) as conn, conn.cursor() as cur:
+        cur.execute("INSERT INTO conversiones_unidad (org_id, producto_id, unidad, factor) VALUES (1,%s,'bulto',12)", (pid,))
+    preparar(lector.DocumentoLeido(tipo="remito", proveedor=prov["razon_social"], cuit=None, numero="R-1", fecha="2026-09-20",
+                                   vigencia_desde=None, total=None, observaciones=None, lineas=[
+        lector.LineaLeida(codigo=prods[0]["codigo_interno"], descripcion=prods[0]["nombre"], cantidad=1, unidad="Bultos",
+                          costo_unitario=1200, confianza=0.95),
+        lector.LineaLeida(codigo=prods[1]["codigo_interno"], descripcion=prods[1]["nombre"], cantidad=2, unidad="pallet",
+                          costo_unitario=10, confianza=0.95)]))
+    c = cliente()
+    r = c.post("/retail/api/lector/leer", data={"tipo": "remito", "ubicacion_id": str(suc)}, files={"archivo": ("remito.pdf", b"%PDF-1.4 falso")}).json()
+    # Una unidad sin factor cargado no se adivina: se pide cargarlo.
+    mal = c.post(f"/retail/api/lector/{r['id']}/confirmar", json={"proveedor_id": prov["id"], "ubicacion_id": suc, "lineas": r["lineas"]})
+    assert mal.status_code == 400 and "pallet" in mal.json()["detail"]
+    antes = _q("SELECT coalesce(sum(cantidad),0) s FROM stock_actual WHERE producto_id=%s AND ubicacion_id=%s", (pid, suc))[0]["s"]
+    ok = c.post(f"/retail/api/lector/{r['id']}/confirmar", json={"proveedor_id": prov["id"], "ubicacion_id": suc, "lineas": r["lineas"][:1]})
+    assert ok.status_code == 200, ok.text
+    despues = _q("SELECT sum(cantidad) s FROM stock_actual WHERE producto_id=%s AND ubicacion_id=%s", (pid, suc))[0]["s"]
+    assert despues - antes == Decimal("12")
+    assert _q("SELECT costo FROM recepciones_lineas ORDER BY id DESC LIMIT 1")[0]["costo"] == Decimal("100")

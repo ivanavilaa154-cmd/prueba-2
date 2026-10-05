@@ -7,7 +7,7 @@ import { useSesion } from "@/components/Sesion";
 import { Aviso, Boton, Campo, Entrada, Etiqueta, Selector, Tabla, Tarjeta, Vacio } from "@/components/ui";
 
 type Candidato = { producto_id: number; nombre: string; codigo: string; confianza: number };
-type Linea = { codigo: string | null; descripcion: string; cantidad: number | null; costo_unitario: number | null; lote: string | null;
+type Linea = { codigo: string | null; descripcion: string; cantidad: number | null; unidad?: string | null; costo_unitario: number | null; lote: string | null;
   vencimiento: string | null; confianza: number; producto_id: number | null; emparejado_por: string; candidatos: Candidato[]; revisar: boolean };
 type Leido = { id: number; tipo: string; proveedor: string | null; cuit: string | null; numero: string | null; fecha: string | null;
   observaciones: string | null; lineas: Linea[]; proveedor_encontrado: { id: number; razon_social: string } | null };
@@ -162,7 +162,10 @@ export function Documentos() {
                     {l.revisar && <div className="mt-1"><Etiqueta tono="alerta">⚠ Revisar{l.confianza < 0.7 ? " · lectura dudosa" : ""}</Etiqueta></div>}
                   </td>
                   <td><ElegirProducto linea={l} onCambio={(id) => cambiar(i, { producto_id: id })} /></td>
-                  {!esLista && <td><Entrada className="w-20 text-right" inputMode="decimal" value={l.cantidad ?? ""} onChange={(e) => cambiar(i, { cantidad: e.target.value === "" ? null : Number(e.target.value.replace(",", ".")) })} /></td>}
+                  {!esLista && <td><div className="flex items-center gap-1">
+                    <Entrada className="w-20 text-right" inputMode="decimal" value={l.cantidad ?? ""} onChange={(e) => cambiar(i, { cantidad: e.target.value === "" ? null : Number(e.target.value.replace(",", ".")) })} />
+                    <Entrada className="w-20" aria-label="Unidad" title="Bultos, cajas o kg se pasan a unidades con la conversión cargada" value={l.unidad ?? "unidad"}
+                      onChange={(e) => cambiar(i, { unidad: e.target.value })} /></div></td>}
                   <td><Entrada className="w-24 text-right" inputMode="decimal" value={l.costo_unitario ?? ""} onChange={(e) => cambiar(i, { costo_unitario: e.target.value === "" ? null : Number(e.target.value.replace(",", ".")) })} /></td>
                   {!esLista && <td><Entrada className="w-24" value={l.lote ?? ""} onChange={(e) => cambiar(i, { lote: e.target.value || null })} /></td>}
                   {!esLista && <td><Entrada className="w-36" type="date" value={l.vencimiento ?? ""} onChange={(e) => cambiar(i, { vencimiento: e.target.value || null })} /></td>}
