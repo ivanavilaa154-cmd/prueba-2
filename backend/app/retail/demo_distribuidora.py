@@ -53,6 +53,10 @@ CASOS = {
     "limite": {"cliente": "Minimercado Los Andes", "vendedor": "Paula Vargas", "zona": "Salta Norte", "canal": "autoservicio", "frecuencia": 7,
                "tamano": 2.0, "pagador": "lento", "limite": 250000},
 }
+CUMPLIMIENTO = {"Hernán Ibarra": 0.8}       # visitas realizadas / planificadas (el resto, 0,93)
+SIN_SABADOS = "Hernán Ibarra"                # no hace la ruta del sábado: esas visitas no se hacen y se pierden pedidos
+# Comercios relevados que todavía no son clientes, por zona (cada 350 clientes): en Valle de Lerma hay mucho por ganar.
+PROSPECTOS = {"Salta Centro": 25, "Salta Norte": 30, "Valle de Lerma": 70, "San Salvador de Jujuy": 35}
 QUIEBRES = 3              # productos populares sin stock en los últimos días (pedidos con faltantes)
 
 
@@ -176,6 +180,7 @@ def cargar(hoy: date | None = None, escala: Escala | None = None, semilla: int =
         resumen = _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy, sin_stock)
         _rutas_y_visitas(conn, rng, oid, clientes, vendedores, hoy, resumen["fechas_pedido"])
         _metas_y_marcas(conn, oid, vendedores, hoy, resumen)
+        _prospectos(conn, rng, oid, escala.clientes)
         with conn.cursor() as cur:          # costo de servir (13.7): horas de implementación y algunos pedidos de ayuda
             cur.execute("UPDATE organizaciones SET implementacion_horas = 6.5, primer_ingreso_completo_at = now() WHERE id = %s", (oid,))
             for asunto, tema, estado, minutos, dias in [("Cómo cargo la cuenta corriente desde el sistema viejo", "datos", "resuelto", 45, 20),
@@ -277,7 +282,8 @@ def _clientes(conn, rng, oid, cantidad, inicio, hoy, prods, vendedores, listas) 
         lista = 1 if canal == "autoservicio" else 2 if canal == "mayorista" else 0
         cid = len(salida)
         salida.append(_Cliente(id=cid, nombre=nombre, zona=zona, canal=canal, vendedor=vendedores[vendedor]["id"], frecuencia=frecuencia,
-                               tamano=tamano, dia=min(hoy.weekday(), 5) if caso is CASOS["riesgo"] else rng.randint(0, 5), fijo=bool(caso),
+                               tamano=tamano, dia=min(hoy.weekday(), 5) if caso is CASOS["riesgo"] else 5 if vendedor == SIN_SABADOS and i % 3 == 0 else rng.randint(0, 5),
+                               fijo=bool(caso),
                                alta=alta, fin=fin, canasta=canasta, pagador=pagador, condicion=condicion, lista=listas[lista],
                                descuento_lista=LISTAS[lista][1]))
         compra_mes = tamano * 120000
@@ -318,11 +324,13 @@ def _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy,
     marcas = defaultdict(lambda: defaultdict(float))   # marca → {'unidades', clientes...}
     marcas_clientes = defaultdict(set)
     numero = 0
+    sin_sabados = vendedores[SIN_SABADOS]["id"]
     for c in clientes:
         # Primera compra: el primer día de ruta desde su alta, con un desfase según su frecuencia.
         d = c.alta + timedelta(days=(c.dia - c.alta.weekday()) % 7 + 7 * rng.randint(0, c.frecuencia // 7 - 1))
         while d <= hoy and (c.fin is None or d <= c.fin):
-            if rng.random() < 0.06 and not c.fijo:          # a veces no pide esa vuelta
+            saltea = 0.6 if c.vendedor == sin_sabados and c.dia == 5 and d > hoy - timedelta(days=90) else 0.06
+            if rng.random() < saltea and not c.fijo:        # a veces no pide esa vuelta
                 d += timedelta(days=c.frecuencia)
                 continue
             numero += 1
@@ -441,6 +449,8 @@ def _rutas_y_visitas(conn, rng, oid, clientes, vendedores, hoy, fechas_pedido) -
                                             (oid, v["id"], dia, ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dia]))["id"]
     orden = defaultdict(int)
     filas, visitas = [], []
+    cumple = {v["id"]: CUMPLIMIENTO.get(n, 0.93) for n, v in vendedores.items()}
+    sin_sabados = vendedores[SIN_SABADOS]["id"]
     for c in clientes:
         r = rutas[(c.vendedor, c.dia)]
         orden[r] += 1
@@ -453,11 +463,26 @@ def _rutas_y_visitas(conn, rng, oid, clientes, vendedores, hoy, fechas_pedido) -
             if f == hoy:
                 visitas.append((oid, c.vendedor, c.id, f, True, f in fechas_pedido[c.id], "pedido" if f in fechas_pedido[c.id] else None))
                 continue
-            realizada = rng.random() < 0.92 or f in fechas_pedido[c.id]
+            # Al que dejó de comprar se lo deja de visitar de a poco; Hernán cumple menos su ruta (se ve en Rutas).
+            abandono = c.fin is not None and f > c.fin + timedelta(days=14)
+            prob = 0.1 if c.vendedor == sin_sabados and c.dia == 5 else (0.0 if c.fijo else 0.45) if abandono else cumple[c.vendedor]
+            realizada = rng.random() < prob or f in fechas_pedido[c.id]
             resultado = ("pedido" if f in fechas_pedido[c.id] else rng.choices(["sin_pedido", "cerrado", "no_atendio"], [0.8, 0.1, 0.1])[0]) if realizada else None
             visitas.append((oid, c.vendedor, c.id, f, True, realizada, resultado))
     db.copiar(conn, "rutas_clientes", ["org_id", "ruta_id", "cliente_id", "orden"], filas)
     db.copiar(conn, "visitas", ["org_id", "vendedor_id", "cliente_id", "fecha", "planificada", "realizada", "resultado"], visitas)
+
+
+def _prospectos(conn, rng, oid, clientes) -> None:
+    tipos = [("Almacén", "almacen"), ("Despensa", "almacen"), ("Kiosco", "kiosco"), ("Autoservicio", "autoservicio"), ("Minimercado", "autoservicio")]
+    calles = ["Belgrano", "San Martín", "Mitre", "Güemes", "Alvarado", "Caseros", "España", "Urquiza", "Sarmiento"]
+    filas = []
+    for zona, n in PROSPECTOS.items():
+        for i in range(max(2, round(n * clientes / 350))):
+            nombre, canal = rng.choice(tipos)
+            filas.append((oid, f"{nombre} {rng.choice(calles)} {rng.randint(100, 3999)}", f"{rng.choice(calles)} {rng.randint(100, 3999)}",
+                          rng.choice(ZONAS[zona][0]), zona, canal, "relevamiento", f"demo:p:{zona}:{i}"))
+    db.copiar(conn, "prospectos", ["org_id", "razon_social", "direccion", "localidad", "zona", "canal", "fuente", "codigo_externo"], filas)
 
 
 def _metas_y_marcas(conn, oid, vendedores, hoy, resumen) -> None:

@@ -34,7 +34,7 @@ export default function Vendedores() {
           <h1 className="text-2xl font-semibold">Vendedores</h1>
           <p className="text-sm text-suave">Quién vende, con qué margen, cuánto descuenta y si llega a su meta.</p>
         </div>
-        <Selector value={periodo} onChange={(e) => setPeriodo(e.target.value)} aria-label="Período">
+        <Selector className="w-48" value={periodo} onChange={(e) => setPeriodo(e.target.value)} aria-label="Período">
           {PERIODOS.map(([v, n]) => <option key={v} value={v}>{n}</option>)}
         </Selector>
       </div>

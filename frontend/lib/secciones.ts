@@ -19,6 +19,8 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Clientes que dejaron de comprar o están en riesgo, con la plata que se deja de facturar; Pareto de clientes y productos." },
   { ruta: "/vendedores/", nombre: "Vendedores", modo: "distribuidor", permiso: "ver_vendedores",
     que_hace: "Ventas, margen, descuentos y metas por vendedor; objetivos de las marcas representadas." },
+  { ruta: "/rutas/", nombre: "Rutas", modo: "distribuidor", permiso: "ver_vendedores",
+    que_hace: "Visitas planificadas contra realizadas, efectividad, clientes sin visita, cobertura por zona y armado de rutas." },
   { ruta: "/pedidos/", nombre: "Pedidos y entregas", modo: "distribuidor", permiso: "ver_ventas",
     que_hace: "Pedidos por estado, entregas completas, parciales y rechazos; lo que no se facturó por faltantes." },
   { ruta: "/cuenta-corriente/", nombre: "Cuenta corriente", modo: "distribuidor", permiso: "ver_cuenta_corriente",

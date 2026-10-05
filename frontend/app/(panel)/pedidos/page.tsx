@@ -31,7 +31,7 @@ export default function Pedidos() {
           <h1 className="text-2xl font-semibold">Pedidos y entregas</h1>
           <p className="text-sm text-suave">Cuánto de lo que piden tus clientes llega y se factura, y por qué no.</p>
         </div>
-        <Selector value={periodo} onChange={(e) => setPeriodo(e.target.value)} aria-label="Período">
+        <Selector className="w-48" value={periodo} onChange={(e) => setPeriodo(e.target.value)} aria-label="Período">
           <option value="semana">Últimos 7 días</option><option value="mes">Últimos 30 días</option><option value="90d">Últimos 90 días</option>
         </Selector>
       </div>

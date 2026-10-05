@@ -26,5 +26,11 @@ predicciones con IA y Panel ERP por empresa.
 | 10 | Primer ingreso guiado de 6 pasos (15) | hecho (migración 021, pantalla /bienvenida: lo que se ve en los datos se marca solo, lo demás lo confirma el dueño; una empresa nueva sin datos arranca ahí) |
 | 11 | Criterios de aceptación nuevos (17) y tiempos | hecho (mapa criterio → prueba en `docs/retail/aceptacion.md`; todas las pantallas del distribuidor por debajo de 1,5 s con la demo completa) |
 
-**Fase 2 (después):** rutas y cobertura completas (12B.3), logística (tiempos de entrega, repartidores; 12B.5), marcas representadas completas (12B.6), lectura directa de bases
-locales en el agente.
+## Fase 2 de la SPEC v2 (aprobada el 05/10/2026)
+
+| # | Paso | Estado |
+|---|---|---|
+| F2.1 | Rutas y cobertura (12B.3) | hecho (migración 022; pantalla Rutas: cumplimiento por vendedor y día, efectividad, clientes sin visita en X días, cobertura por zona con comercios relevados, armado de rutas; importación «Comercios de la zona») |
+| F2.2 | Logística (12B.5): repartidores, devoluciones, rechazos, tiempo de entrega | pendiente |
+| F2.3 | Marcas representadas (12B.6) | pendiente |
+| F2.4 | Agente: lectura directa de bases locales (SQLite, DBF, ODBC) | pendiente |

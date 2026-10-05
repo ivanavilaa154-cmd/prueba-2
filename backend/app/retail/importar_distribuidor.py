@@ -26,11 +26,13 @@ CAMPOS = {
     "cuenta_corriente": [("cliente", "Cliente (código, CUIT o nombre)", True), ("tipo", "Tipo de comprobante", True), ("numero", "Número", True),
                          ("fecha", "Fecha", True), ("importe", "Importe", True), ("vencimiento", "Vencimiento", False), ("saldo", "Saldo pendiente", False)],
 }
-TITULOS = {"clientes": "Clientes (comercios)", "pedidos": "Pedidos de clientes y entregas", "cuenta_corriente": "Cuenta corriente de clientes"}
+CAMPOS["prospectos"] = [("nombre", "Nombre del comercio", True), ("direccion", "Dirección", False), ("localidad", "Localidad", False),
+                        ("zona", "Zona", False), ("canal", "Canal", False), ("fuente", "Fuente (relevamiento, cámara…)", False)]
+TITULOS = {"prospectos": "Comercios de la zona que todavía no son clientes", "clientes": "Clientes (comercios)", "pedidos": "Pedidos de clientes y entregas", "cuenta_corriente": "Cuenta corriente de clientes"}
 SINONIMOS = {
     "razon_social": ["razon social", "cliente", "nombre"], "nombre_fantasia": ["nombre fantasia", "fantasia", "comercio"], "cuit": ["cuit", "cuil", "documento"],
     "direccion": ["direccion", "domicilio", "calle"], "localidad": ["localidad", "ciudad"], "zona": ["zona", "region", "recorrido"],
-    "vendedor": ["vendedor", "preventista", "representante"], "lista": ["lista", "lista precios"], "limite_credito": ["limite", "limite credito", "credito"],
+    "vendedor": ["vendedor", "preventista", "representante"], "fuente": ["fuente", "origen"], "lista": ["lista", "lista precios"], "limite_credito": ["limite", "limite credito", "credito"],
     "condicion_pago": ["condicion pago", "dias pago", "plazo"], "cliente": ["cliente", "codigo cliente", "razon social"],
     "entregada": ["entregada", "cantidad entregada", "entregado"], "faltante": ["faltante", "sin stock"], "fecha_entrega": ["fecha entrega", "entrega"],
     "motivo": ["motivo", "motivo rechazo", "observacion"], "deposito": ["deposito", "almacen"], "importe": ["importe", "total", "monto"],
@@ -58,6 +60,8 @@ def contexto(conn, cat: dict) -> None:
 
 def validar_fila(conn, tipo: str, v: dict, cat: dict, sin_producto: dict) -> str | None:
     contexto(conn, cat)
+    if tipo == "prospectos":
+        return None
     if tipo == "clientes":
         for campo in ("limite_credito", "condicion_pago"):
             numero(v.get(campo))
@@ -209,4 +213,23 @@ def cuenta_corriente(conn, ctx, lote, filas, cat, zona) -> dict:
             "mensaje": f"{nuevos} comprobantes nuevos y {actualizados} con el saldo actualizado."}
 
 
-MANEJADORES = {"clientes": clientes, "pedidos": pedidos, "cuenta_corriente": cuenta_corriente}
+def prospectos(conn, ctx, lote, filas, cat, zona) -> dict:
+    """Comercios relevados de cada zona. Reimportar no duplica (mismo nombre y dirección); los que ya son clientes se saltean."""
+    contexto(conn, cat)
+    nuevos = ya_clientes = 0
+    for _, v in filas:
+        nombre = str(v["nombre"]).strip()
+        if _norm(nombre) in cat["clientes"]:
+            ya_clientes += 1
+            continue
+        clave = f"archivo:{_norm(nombre)}|{_norm(v.get('direccion') or '')}"
+        r = db.fila(conn, """INSERT INTO prospectos (org_id, razon_social, direccion, localidad, zona, canal, fuente, codigo_externo, created_by)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (org_id, codigo_externo) DO NOTHING RETURNING id""",
+                    (ctx.org_id, nombre, v.get("direccion"), v.get("localidad"), v.get("zona"), _norm(v["canal"]) if v.get("canal") else None,
+                     v.get("fuente"), clave, ctx.usuario_id))
+        nuevos += bool(r)
+    return {"importadas": nuevos, "duplicadas": len(filas) - nuevos - ya_clientes, "ya_clientes": ya_clientes,
+            "mensaje": f"{nuevos} comercios nuevos" + (f"; {ya_clientes} ya eran clientes" if ya_clientes else "") + "."}
+
+
+MANEJADORES = {"prospectos": prospectos, "clientes": clientes, "pedidos": pedidos, "cuenta_corriente": cuenta_corriente}

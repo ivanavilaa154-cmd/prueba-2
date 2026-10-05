@@ -352,3 +352,81 @@ def test_pantallas_del_distribuidor_cargan_en_menos_de_3_segundos(retail_distrib
     pantallas = {**tiempos.PANTALLAS_MODO_DISTRIBUIDOR, "Mi cartera (vendedor)": [f"/distribuidor/mi-cartera?vendedor={vid}"]}
     filas = tiempos.medir(cliente().get, pantallas=pantallas)
     assert all(f["ok"] for f in filas), [f for f in filas if not f["ok"]]
+
+
+# ------------------------------------------------------------------------------------------- Fase 2 · rutas y cobertura (12B.3)
+def test_cumplimiento_y_efectividad_de_visitas(retail_distribuidora):
+    r = cliente("jefe@valle.demo").get("/retail/api/distribuidor/rutas?periodo=90d").json()
+    vs = {v["vendedor"]: v for v in r["cumplimiento"]["vendedores"]}
+    assert len(vs) == 6
+    # Hernán no hace la ruta del sábado: es su peor día y está muy por debajo de lo que cumple el resto del equipo.
+    hernan = vs["Hernán Ibarra"]["dias"]
+    assert hernan["Sábado"]["cumplimiento"] == min(d["cumplimiento"] for d in hernan.values()) and hernan["Sábado"]["cumplimiento"] < 0.6
+    assert r["cumplimiento"]["vendedores"] == sorted(r["cumplimiento"]["vendedores"], key=lambda v: v["cumplimiento"])
+    total = _q("""SELECT count(*) FILTER (WHERE planificada) p, count(*) FILTER (WHERE planificada AND realizada) r,
+                         count(*) FILTER (WHERE realizada AND resultado = 'pedido') c, count(*) FILTER (WHERE realizada) rt
+                  FROM visitas WHERE fecha BETWEEN %s AND %s""", (HOY - timedelta(days=89), HOY))[0]
+    t = r["cumplimiento"]["total"]
+    assert (t["planificadas"], t["realizadas"]) == (total["p"], total["r"])
+    assert abs(t["efectividad"] - total["c"] / total["rt"]) < 1e-3 and 0 < t["efectividad"] < 1
+    assert all(set(v["dias"]) <= set(r["cumplimiento"]["dias"]) for v in vs.values())
+    assert cliente("carla@valle.demo").get("/retail/api/distribuidor/rutas").status_code == 403
+
+
+def test_clientes_sin_visita(retail_distribuidora):
+    c = cliente("jefe@valle.demo")
+    r = c.get("/retail/api/distribuidor/rutas").json()["sin_visita"]
+    assert r["dias"] == 14 and r["filas"]
+    assert all(f["dias_sin_visita"] is None or f["dias_sin_visita"] > 14 for f in r["filas"])
+    assert CASOS["perdido"]["cliente"] in {f["cliente"] for f in r["filas"]}           # al que dejó de comprar se lo dejó de visitar
+    assert c.put("/retail/api/distribuidor/rutas/dias-sin-visita", json={"dias": 60}).status_code == 200
+    menos = c.get("/retail/api/distribuidor/rutas").json()["sin_visita"]
+    assert menos["dias"] == 60 and len(menos["filas"]) < len(r["filas"])
+
+
+def test_cobertura_por_zona_y_prospectos(retail_distribuidora):
+    c = cliente("jefe@valle.demo")
+    zonas = {z["zona"]: z for z in c.get("/retail/api/distribuidor/rutas").json()["cobertura"]["zonas"]}
+    assert set(zonas) == set(demo.ZONAS)
+    assert min(zonas.values(), key=lambda z: z["cobertura"])["zona"] == "Valle de Lerma"
+    for z in zonas.values():
+        assert abs(z["cobertura"] - z["activos"] / (z["clientes"] + z["prospectos"])) < 1e-3
+    lista = c.get("/retail/api/distribuidor/prospectos?zona=Valle de Lerma").json()
+    assert len(lista) == zonas["Valle de Lerma"]["prospectos"]
+    hernan = _q("SELECT id FROM vendedores WHERE nombre = 'Hernán Ibarra'")[0]["id"]
+    nuevo = c.post(f"/retail/api/distribuidor/prospectos/{lista[0]['id']}/convertir", json={"vendedor_id": hernan})
+    assert nuevo.status_code == 201
+    assert _q("SELECT vendedor_id, zona FROM clientes_b2b WHERE id = %s", (nuevo.json()["cliente_id"],))[0] == {"vendedor_id": hernan, "zona": "Valle de Lerma"}
+    despues = {z["zona"]: z for z in c.get("/retail/api/distribuidor/rutas").json()["cobertura"]["zonas"]}["Valle de Lerma"]
+    assert (despues["prospectos"], despues["clientes"]) == (zonas["Valle de Lerma"]["prospectos"] - 1, zonas["Valle de Lerma"]["clientes"] + 1)
+    assert c.post(f"/retail/api/distribuidor/prospectos/{lista[0]['id']}/convertir", json={"vendedor_id": hernan}).status_code == 404
+
+
+def test_armar_rutas(retail_distribuidora):
+    c = cliente("jefe@valle.demo")
+    carla = _q("SELECT id FROM vendedores WHERE nombre = 'Carla Mendoza'")[0]["id"]
+    rutas = c.get(f"/retail/api/distribuidor/rutas?vendedor={carla}").json()["rutas"]
+    assert [d["nombre"] for d in rutas] == distribuidor.DIAS + ["Sin ruta"]
+    jueves = [x["cliente_id"] for x in rutas[3]["clientes"]]
+    otro = next(x["cliente_id"] for d in rutas[:6] if d["dia"] != 3 for x in d["clientes"])
+    nuevo_orden = list(reversed(jueves + [otro]))                     # se suma un cliente de otro día y se invierte el recorrido
+    r = c.put(f"/retail/api/distribuidor/rutas/{carla}/3", json={"clientes": nuevo_orden})
+    assert r.status_code == 200 and [x["cliente_id"] for x in r.json()["rutas"][3]["clientes"]] == nuevo_orden
+    ajeno = _q("SELECT id FROM clientes_b2b WHERE vendedor_id <> %s LIMIT 1", (carla,))[0]["id"]
+    assert c.put(f"/retail/api/distribuidor/rutas/{carla}/3", json={"clientes": [ajeno]}).status_code == 400
+    assert c.put(f"/retail/api/distribuidor/rutas/{carla}/6", json={"clientes": []}).status_code == 400
+    # La ruta nueva es la que ve Carla hoy (jueves).
+    ruta = cliente("carla@valle.demo").get("/retail/api/distribuidor/mi-cartera").json()["ruta"]
+    assert [p["cliente_id"] for p in ruta] == [x for x in nuevo_orden if x in {p["cliente_id"] for p in ruta}]
+    assert cliente("cobranzas@valle.demo").put(f"/retail/api/distribuidor/rutas/{carla}/3", json={"clientes": []}).status_code == 403
+
+
+def test_importar_comercios_de_la_zona(retail_distribuidora, monkeypatch):
+    from app.retail import api_ingesta
+    monkeypatch.setattr(api_ingesta, "recalcular_en_segundo_plano", lambda org, desde=None: None)
+    c = cliente()
+    texto = f"Nombre;Direccion;Zona;Canal\nAlmacén Nuevo del Cerro;Belgrano 100;Salta Centro;almacen\n{CASOS['perdido']['cliente']};Mitre 1;Salta Centro;autoservicio\n"
+    m = {"nombre": "Nombre", "direccion": "Direccion", "zona": "Zona", "canal": "Canal"}
+    r = _importar(c, "prospectos", "comercios.csv", texto, m)
+    assert r["importadas"] == 1 and r["ya_clientes"] == 1
+    assert _importar(c, "prospectos", "comercios2.csv", texto + "\n", m)["importadas"] == 0

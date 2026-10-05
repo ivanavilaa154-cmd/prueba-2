@@ -70,7 +70,7 @@ PANTALLAS: dict[str, list[str]] = {
 PANTALLAS_MODO_DISTRIBUIDOR: dict[str, list[str]] = {
     "Clientes que dejaron de comprar": ["/distribuidor/clientes"], "Vendedores": ["/distribuidor/vendedores"],
     "Cuenta corriente": ["/distribuidor/cuenta-corriente"], "Pareto de clientes y productos": ["/distribuidor/pareto"],
-    "Pedidos y entregas": ["/distribuidor/pedidos"], "Qué comprar hoy": ["/comprar"], "Mi cartera (vendedor)": ["/distribuidor/mi-cartera"],
+    "Pedidos y entregas": ["/distribuidor/pedidos"], "Rutas y cobertura": ["/distribuidor/rutas?vendedor=1"], "Qué comprar hoy": ["/comprar"], "Mi cartera (vendedor)": ["/distribuidor/mi-cartera"],
 }
 # El panel de marcas lo abre el distribuidor (--email distribuidor@andina.demo).
 PANTALLAS_DISTRIBUIDOR: dict[str, list[str]] = {"Panel de marcas": ["/panel"], "Pedidos de clientes": ["/panel/pedidos"]}

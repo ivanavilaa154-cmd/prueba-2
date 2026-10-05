@@ -187,3 +187,86 @@ def guardar_umbrales(datos: Umbrales, ctx: db.Contexto = Depends(sesiones.contex
         cur.execute("""UPDATE organizaciones SET cliente_factor_riesgo = %s, cliente_factor_perdido = %s, cliente_perdido_min_dias = %s
                        WHERE id = %s""", (datos.riesgo, datos.perdido, datos.min_dias, ctx.org_id))
     return respuesta({"ok": True})
+
+
+# ------------------------------------------------------------------------------------------------ Fase 2 · rutas y cobertura (12B.3)
+@api.get("/rutas")
+def rutas(periodo: str = "mes", vendedor: int | None = None, dias: int | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "ver_vendedores")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        hoy = _hoy(conn)
+        desde, hasta = distribuidor.periodo(periodo, hoy)
+        vendedores = db.filas(conn, "SELECT id, nombre, zona FROM vendedores WHERE activo ORDER BY nombre")
+        return respuesta({"hoy": hoy, "cumplimiento": distribuidor.cumplimiento_visitas(conn, desde, hasta),
+                          "sin_visita": distribuidor.sin_visita(conn, hoy, dias), "cobertura": distribuidor.cobertura(conn, hoy),
+                          "vendedores": vendedores, "rutas": distribuidor.rutas_de(conn, vendedor) if vendedor else None})
+
+
+class Ruta(BaseModel):
+    clientes: list[int] = Field(max_length=500)
+
+
+@api.put("/rutas/{vendedor_id}/{dia}")
+def guardar_ruta(vendedor_id: int, dia: int, datos: Ruta, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_vendedores")
+    if not 0 <= dia <= 5:
+        raise HTTPException(status_code=400, detail="El día va de lunes (0) a sábado (5).")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        if not db.fila(conn, "SELECT 1 FROM vendedores WHERE id = %s", (vendedor_id,)):
+            raise HTTPException(status_code=404, detail="No existe ese vendedor.")
+        try:
+            n = distribuidor.guardar_ruta(conn, ctx.org_id, vendedor_id, dia, datos.clientes, ctx.usuario_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "modificar", "ruta", vendedor_id, {"dia": dia, "clientes": n}, sesiones.ip_de(request))
+        return respuesta({"ok": True, "rutas": distribuidor.rutas_de(conn, vendedor_id)})
+
+
+@api.get("/prospectos")
+def prospectos(zona: str | None = None, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "ver_vendedores")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        return respuesta(db.filas(conn, """SELECT id, razon_social, direccion, localidad, zona, canal, fuente, created_at FROM prospectos
+                                           WHERE cliente_id IS NULL AND (%s::text IS NULL OR zona = %s) ORDER BY zona, razon_social LIMIT 500""",
+                                  (zona, zona)))
+
+
+class Convertir(BaseModel):
+    vendedor_id: int
+
+
+@api.post("/prospectos/{prospecto_id}/convertir")
+def convertir(prospecto_id: int, datos: Convertir, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """El comercio relevado empezó a comprar: pasa a ser cliente del vendedor elegido."""
+    permisos.exigir(ctx, "gestionar_vendedores")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        p = db.fila(conn, "SELECT * FROM prospectos WHERE id = %s AND cliente_id IS NULL", (prospecto_id,))
+        if not p:
+            raise HTTPException(status_code=404, detail="No existe ese comercio o ya es cliente.")
+        if not db.fila(conn, "SELECT 1 FROM vendedores WHERE id = %s", (datos.vendedor_id,)):
+            raise HTTPException(status_code=404, detail="No existe ese vendedor.")
+        c = db.fila(conn, """INSERT INTO clientes_b2b (org_id, razon_social, direccion, localidad, zona, canal, vendedor_id, alta, codigo_externo, created_by)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (ctx.org_id, p["razon_social"], p["direccion"], p["localidad"], p["zona"], p["canal"], datos.vendedor_id, _hoy(conn),
+                     f"prospecto:{p['id']}", ctx.usuario_id))
+        with conn.cursor() as cur:
+            cur.execute("UPDATE prospectos SET cliente_id = %s WHERE id = %s", (c["id"], prospecto_id))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "convertir", "prospecto", prospecto_id, {"cliente_id": c["id"]}, sesiones.ip_de(request))
+    return respuesta({"cliente_id": c["id"]}, 201)
+
+
+class DiasSinVisita(BaseModel):
+    dias: int = Field(ge=3, le=120)
+
+
+@api.put("/rutas/dias-sin-visita")
+def dias_sin_visita(datos: DiasSinVisita, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_vendedores")
+    with db.transaccion(ctx) as conn, conn.cursor() as cur:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        cur.execute("UPDATE organizaciones SET dias_sin_visita = %s WHERE id = %s", (datos.dias, ctx.org_id))
+    return respuesta({"ok": True})

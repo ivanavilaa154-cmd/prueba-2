@@ -415,3 +415,110 @@ def periodo(texto: str | None, hoy: date) -> tuple[date, date]:
         return hoy.replace(day=1), hoy
     return hoy - timedelta(days=dias - 1), hoy
 
+
+
+# ------------------------------------------------------------------------------------------------ Fase 2 · rutas y cobertura (12B.3)
+DIAS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"]
+
+
+def cumplimiento_visitas(conn, desde: date, hasta: date) -> dict:
+    """Visitas planificadas contra realizadas, por vendedor y por día de la semana; efectividad = visitas con pedido / realizadas."""
+    filas = db.filas(conn, """
+        SELECT v.vendedor_id, ve.nombre vendedor, extract(isodow FROM v.fecha)::int - 1 dia,
+               count(*) FILTER (WHERE v.planificada) planificadas, count(*) FILTER (WHERE v.planificada AND v.realizada) realizadas,
+               count(*) FILTER (WHERE v.realizada) realizadas_total, count(*) FILTER (WHERE v.realizada AND v.resultado = 'pedido') con_pedido,
+               count(*) FILTER (WHERE NOT v.planificada AND v.realizada) fuera_de_ruta
+        FROM visitas v JOIN vendedores ve ON ve.id = v.vendedor_id
+        WHERE v.fecha BETWEEN %s AND %s GROUP BY 1, 2, 3 ORDER BY 2, 3""", (desde, hasta))
+    motivos = db.filas(conn, """SELECT coalesce(resultado, 'no_visitado') resultado, count(*) n FROM visitas
+                                WHERE fecha BETWEEN %s AND %s AND (NOT realizada OR resultado <> 'pedido') GROUP BY 1 ORDER BY 2 DESC""", (desde, hasta))
+    por_vendedor: dict[int, dict] = {}
+    for f in filas:
+        v = por_vendedor.setdefault(f["vendedor_id"], {"vendedor_id": f["vendedor_id"], "vendedor": f["vendedor"], "planificadas": 0, "realizadas": 0,
+                                                       "realizadas_total": 0, "con_pedido": 0, "fuera_de_ruta": 0, "dias": {}})
+        for k in ("planificadas", "realizadas", "realizadas_total", "con_pedido", "fuera_de_ruta"):
+            v[k] += f[k]
+        v["dias"][DIAS[f["dia"]] if f["dia"] < 6 else "Domingo"] = {
+            "planificadas": f["planificadas"], "realizadas": f["realizadas"],
+            "cumplimiento": round(f["realizadas"] / f["planificadas"], 4) if f["planificadas"] else None}
+    salida = []
+    for v in por_vendedor.values():
+        v["cumplimiento"] = round(v["realizadas"] / v["planificadas"], 4) if v["planificadas"] else None
+        v["efectividad"] = round(v["con_pedido"] / v["realizadas_total"], 4) if v["realizadas_total"] else None
+        salida.append(v)
+    salida.sort(key=lambda v: (v["cumplimiento"] is None, v["cumplimiento"] or 0))
+    total = {k: sum(v[k] for v in salida) for k in ("planificadas", "realizadas", "realizadas_total", "con_pedido")}
+    total["cumplimiento"] = round(total["realizadas"] / total["planificadas"], 4) if total["planificadas"] else None
+    total["efectividad"] = round(total["con_pedido"] / total["realizadas_total"], 4) if total["realizadas_total"] else None
+    return {"desde": desde, "hasta": hasta, "vendedores": salida, "total": total, "motivos": motivos, "dias": DIAS}
+
+
+def sin_visita(conn, hoy: date, dias: int | None = None) -> dict:
+    """Clientes activos o en riesgo que no recibieron una visita realizada en los últimos X días (o nunca)."""
+    if dias is None:
+        dias = db.fila(conn, "SELECT dias_sin_visita d FROM organizaciones WHERE id = app_org()")["d"]
+    estados = {e["cliente_id"]: e for e in estado_clientes(conn, hoy)}
+    ultimas = {f["cliente_id"]: f["ultima"] for f in db.filas(conn, "SELECT cliente_id, max(fecha) ultima FROM visitas WHERE realizada AND fecha <= %s GROUP BY 1",
+                                                                    (hoy,))}
+    filas = []
+    for cid, e in estados.items():
+        ultima = ultimas.get(cid)
+        if e["estado"] == "sin_compras" or (ultima and (hoy - ultima).days <= dias):
+            continue
+        filas.append({**{k: e[k] for k in ("cliente_id", "cliente", "localidad", "zona", "vendedor_id", "vendedor", "estado", "venta_mensual")},
+                      "ultima_visita": ultima, "dias_sin_visita": (hoy - ultima).days if ultima else None})
+    filas.sort(key=lambda f: (-(f["dias_sin_visita"] or 10**4), -f["venta_mensual"]))
+    return {"dias": dias, "filas": filas, "plata_mensual": round(sum(f["venta_mensual"] for f in filas), 2)}
+
+
+def cobertura(conn, hoy: date) -> dict:
+    """Por zona: clientes que compraron en 90 días sobre el universo conocido (clientes + comercios relevados que no son clientes)."""
+    clientes = db.filas(conn, f"""
+        SELECT coalesce(c.zona, 'Sin zona') zona, count(*) total,
+               count(*) FILTER (WHERE EXISTS (SELECT 1 FROM pedidos_venta p WHERE p.cliente_id = c.id AND {COMPRA} AND p.fecha > %s)) activos
+        FROM clientes_b2b c WHERE c.activo GROUP BY 1""", (hoy - timedelta(days=90),))
+    prospectos = {f["zona"]: f for f in db.filas(conn, """SELECT coalesce(zona, 'Sin zona') zona, count(*) n,
+                                                                 count(*) FILTER (WHERE canal IS NOT NULL) con_canal
+                                                          FROM prospectos WHERE cliente_id IS NULL GROUP BY 1""")}
+    zonas = {}
+    for c in clientes:
+        zonas[c["zona"]] = {"zona": c["zona"], "clientes": c["total"], "activos": c["activos"], "prospectos": 0}
+    for z, p in prospectos.items():
+        zonas.setdefault(z, {"zona": z, "clientes": 0, "activos": 0, "prospectos": 0})["prospectos"] = p["n"]
+    salida = []
+    for z in zonas.values():
+        universo = z["clientes"] + z["prospectos"]
+        z["cobertura"] = round(z["activos"] / universo, 4) if universo else None
+        salida.append(z)
+    salida.sort(key=lambda z: (z["cobertura"] is None, z["cobertura"] or 0))
+    return {"zonas": salida, "hay_prospectos": bool(prospectos)}
+
+
+def rutas_de(conn, vendedor_id: int) -> list[dict]:
+    """Los 6 días de ruta de un vendedor con sus clientes en orden (y los clientes de su cartera que no están en ninguna ruta)."""
+    dias = []
+    en_ruta = set()
+    for d in range(6):
+        clientes = db.filas(conn, """SELECT c.id cliente_id, coalesce(c.nombre_fantasia, c.razon_social) cliente, c.localidad, rc.orden
+                                     FROM rutas r JOIN rutas_clientes rc ON rc.ruta_id = r.id JOIN clientes_b2b c ON c.id = rc.cliente_id
+                                     WHERE r.vendedor_id = %s AND r.dia_semana = %s ORDER BY rc.orden, c.razon_social""", (vendedor_id, d))
+        en_ruta |= {c["cliente_id"] for c in clientes}
+        dias.append({"dia": d, "nombre": DIAS[d], "clientes": clientes})
+    libres = [c for c in db.filas(conn, """SELECT id cliente_id, coalesce(nombre_fantasia, razon_social) cliente, localidad FROM clientes_b2b
+                                          WHERE vendedor_id = %s AND activo ORDER BY razon_social""", (vendedor_id,)) if c["cliente_id"] not in en_ruta]
+    return dias + [{"dia": None, "nombre": "Sin ruta", "clientes": libres}]
+
+
+def guardar_ruta(conn, org_id: int, vendedor_id: int, dia: int, clientes: list[int], usuario_id: int | None) -> int:
+    """Reemplaza los clientes (en ese orden) del día de ruta del vendedor. Solo clientes de su cartera."""
+    validos = {f["id"] for f in db.filas(conn, "SELECT id FROM clientes_b2b WHERE vendedor_id = %s AND id = ANY(%s)", (vendedor_id, clientes))}
+    if set(clientes) - validos:
+        raise ValueError("Hay clientes que no son de la cartera de ese vendedor.")
+    r = db.fila(conn, """INSERT INTO rutas (org_id, vendedor_id, dia_semana, nombre, created_by) VALUES (%s,%s,%s,%s,%s)
+                         ON CONFLICT (vendedor_id, dia_semana) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id""",
+                (org_id, vendedor_id, dia, DIAS[dia], usuario_id))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM rutas_clientes WHERE ruta_id = %s", (r["id"],))
+        for orden, cid in enumerate(dict.fromkeys(clientes), 1):
+            cur.execute("INSERT INTO rutas_clientes (org_id, ruta_id, cliente_id, orden) VALUES (%s,%s,%s,%s)", (org_id, r["id"], cid, orden))
+    return len(clientes)
