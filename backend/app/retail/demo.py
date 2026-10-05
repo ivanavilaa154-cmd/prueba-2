@@ -41,6 +41,11 @@ CASOS = {
     "producto_nuevo": {"producto": "P0383", "dias": 5},
     # Lanzamientos (predicción 26): uno que despega, uno que no y uno en duda. Días desde el lanzamiento y fuerza de venta relativa.
     "lanzamientos": {"productos": ["P0304", "P0314", "P0321"], "dias": [70, 45, 20], "fuerza": [1.6, 0.25, 0.9]},
+    # Problemas de calidad sembrados a propósito (SPEC v2, 5.6): el diagnóstico tiene que encontrarlos todos.
+    # (Productos que ya están en el catálogo reducido de las pruebas, para no cambiar la simulación.)
+    "calidad": {"productos": ["P0010", "P0019", "P0022", "P0025", "P0028", "P0040", "P0049", "P0058"],
+                "duplicado": "P0010", "costo_viejo": ["P0019", "P0022", "P0025"], "sin_categoria": "P0028", "bulto": "P0040",
+                "precio_cero": "P0049", "stock_inmovil": ("P0058", "Salta Centro")},
     "sin_costo": {"producto": "P0120"},
     "stock_negativo": {"producto": "P0200", "ubicacion": "San Salvador de Jujuy", "stock": -3},
     "sobrestock": {"producto": "P0067", "ubicacion": "San Salvador de Jujuy", "dias": 120},
@@ -809,6 +814,7 @@ def cargar(org_id: int | None = None, hoy: date | None = None, escala: Escala | 
             # secuencias
             for tabla in ("tickets", "ordenes_compra", "recepciones", "promociones"):
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{tabla}', 'id'), greatest((SELECT coalesce(max(id), 1) FROM {tabla}), 1))")
+        _problemas_de_calidad(conn, org_id, hoy, prods, ubic)          # después de fijar las secuencias: inserta filas nuevas
         resumen.update({"cargada": True, "org_id": org_id, "productos": len(prods), "tickets": len(f_tickets), "lineas": len(f_lineas),
                         "desde": inicio.isoformat(), "hasta": hoy.isoformat()})
 
@@ -944,6 +950,41 @@ def _online(conn, org_id: int, hoy: date, rng: random.Random, plataformas: dict,
         cur.execute("UPDATE plataformas SET config = config || '{\"demo\": true}' WHERE id = ANY(%s)", (list(ids_plat),))
     from . import stock_publicado
     stock_publicado.proponer(conn)
+
+
+def _problemas_de_calidad(conn, org_id: int, hoy: date, prods: list, ubic: dict) -> None:
+    """Siembra un caso de cada problema de calidad que el diagnóstico debe detectar (el stock negativo ya lo siembra CASOS)."""
+    c = CASOS["calidad"]
+    por_codigo = {p.codigo: p for p in prods}
+    with conn.cursor() as cur:
+        if c["duplicado"] in por_codigo:           # el mismo producto cargado dos veces con otro código
+            p = por_codigo[c["duplicado"]]
+            cur.execute("INSERT INTO productos (org_id, codigo_interno, nombre, categoria_id, unidad) "
+                        "SELECT org_id, %s, upper(nombre) || ' ', categoria_id, unidad FROM productos WHERE id = %s", (p.codigo + "-DUP", p.id))
+        for codigo in c["costo_viejo"]:
+            if codigo in por_codigo:
+                cur.execute("UPDATE producto_proveedores SET updated_at = %s WHERE producto_id = %s",
+                            (datetime.combine(hoy - timedelta(days=200), time(12), ZONA), por_codigo[codigo].id))
+        if c["sin_categoria"] in por_codigo:
+            cur.execute("UPDATE productos SET categoria_id = NULL WHERE id = %s", (por_codigo[c["sin_categoria"]].id,))
+        if c["bulto"] in por_codigo:               # costo del bulto cargado como si fuera de la unidad
+            p = por_codigo[c["bulto"]]
+            cur.execute("UPDATE producto_proveedores SET costo = costo * 12 WHERE producto_id = %s", (p.id,))
+        if c["precio_cero"] in por_codigo:         # un ticket con el producto a precio cero (error de carga en la caja)
+            t = db.fila(conn, """INSERT INTO tickets (org_id, ubicacion_id, canal_id, plataforma_id, punto_venta, cajero, fecha_hora, total, estado, origen, numero_externo)
+                                 SELECT org_id, ubicacion_id, canal_id, plataforma_id, punto_venta, cajero, fecha_hora + interval '1 minute', 0, 'confirmado', origen,
+                                        'PRECIO-CERO-' || id
+                                 FROM tickets WHERE org_id = %s AND cajero = %s AND fecha_hora >= %s ORDER BY fecha_hora DESC LIMIT 1 RETURNING id, ubicacion_id, fecha_hora""",
+                        (org_id, CASOS["cajero_anomalo"]["cajero"], datetime.combine(hoy - timedelta(days=10), time(0), ZONA)))
+            if t:
+                cur.execute("""INSERT INTO tickets_lineas (org_id, ticket_id, ubicacion_id, fecha, producto_id, cantidad, precio_lista, precio_cobrado, descuento, costo_unitario)
+                               VALUES (%s,%s,%s,%s,%s,1,%s,0,0,NULL)""", (org_id, t["id"], t["ubicacion_id"], t["fecha_hora"].astimezone(ZONA).date(),
+                                                                           por_codigo[c["precio_cero"]].id, por_codigo[c["precio_cero"]].precio_hoy))
+        codigo, sucursal = c["stock_inmovil"]
+        if codigo in por_codigo and sucursal in ubic:   # la caja no descuenta stock: queda fijo aunque se vende
+            cur.execute("UPDATE stock_diario SET stock_cierre = 40, con_stock = true WHERE producto_id = %s AND ubicacion_id = %s AND fecha >= %s",
+                        (por_codigo[codigo].id, ubic[sucursal], hoy - timedelta(days=31)))
+            cur.execute("UPDATE stock_actual SET cantidad = 40 WHERE producto_id = %s AND ubicacion_id = %s", (por_codigo[codigo].id, ubic[sucursal]))
 
 
 COMPETIDORES = ["Súper La Estrella", "Mayorista del Norte"]      # nombres inventados

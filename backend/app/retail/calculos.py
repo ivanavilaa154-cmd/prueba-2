@@ -328,9 +328,11 @@ def clasificar_abc(valores: dict, cortes: tuple = CORTES_ABC) -> dict:
     total = sum(positivos.values(), Decimal(0))
     resultado = {}
     acumulado = Decimal(0)
-    for k, v in sorted(positivos.items(), key=lambda kv: (-kv[1], str(kv[0]))):
+    ordenados = sorted(positivos.items(), key=lambda kv: (-kv[1], str(kv[0])))
+    for i, (k, v) in enumerate(ordenados):
         antes = acumulado
-        participacion = v / total
+        # El último se lleva el resto exacto: así la suma da 1 (100 %) sin el error de redondeo de las divisiones.
+        participacion = (Decimal(1) - acumulado) if i == len(ordenados) - 1 else v / total
         acumulado += participacion
         clase = "A" if antes < cortes[0] else ("B" if antes < cortes[1] else "C")
         resultado[k] = (clase, participacion, acumulado)

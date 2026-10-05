@@ -40,6 +40,8 @@ PANTALLAS: dict[str, list[str]] = {
     "Ventas · lanzamientos": ["/lanzamientos"],
     "Ventas · competencia": ["/competencia"],
     "Ventas · góndola": ["/gondola"],
+    "Calidad de datos": ["/calidad"],
+    "Unidades e impuestos": ["/costos/config"],
     "Canales · ganancia": [f"/canales/resultado?{FILTRO}"],
     "Canales · stock y online": ["/canales/stock", "/canales/stock/propuestas", "/canales/ecommerce"],
     "Sucursales · comparar": [f"/sucursales/comparativo?{FILTRO}"],

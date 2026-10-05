@@ -254,9 +254,14 @@ def _vencimientos(conn, ubicaciones: str | None, categoria: int | None, hoy: dat
                 d = C.descuento_minimo(float(no_llegan), demanda, dias, escala)
                 vendidas = Decimal(str(l["cantidad"])) - no_llegan
                 sin_oferta = (vendidas * precio).quantize(Decimal("0.01"))
-                if d:
-                    precio_oferta = _redondear(precio * Decimal(str(1 - d[0])))
-                    con_oferta = (Decimal(str(l["cantidad"])) * precio_oferta).quantize(Decimal("0.01"))
+                precio_oferta = _redondear(precio * Decimal(str(1 - d[0]))) if d else None
+                con_oferta = (Decimal(str(l["cantidad"])) * precio_oferta).quantize(Decimal("0.01")) if d else None
+                if d and con_oferta <= sin_oferta:
+                    # Vender todo con descuento recupera menos que vender menos a precio lleno: no conviene ofertar.
+                    item["oferta"] = {"descuento": None, "recuperable": Decimal(0), "sin_oferta": sin_oferta,
+                                      "texto": f"No conviene ofertar: con {d[0]:.0%} de descuento recuperás menos que vendiendo a precio lleno lo que llega. "
+                                               "Transferí lo que sobra a una sucursal que venda más o pedí cambio al proveedor"}
+                elif d:
                     item["oferta"] = {"descuento": d[0], "precio_oferta": precio_oferta, "sin_oferta": sin_oferta, "con_oferta": con_oferta,
                                       "recuperable": max(Decimal(0), con_oferta - sin_oferta),
                                       "texto": f"{d[0]:.0%} de descuento hasta el {venc.strftime('%d/%m')}: vendés las {float(l['cantidad']):g} "

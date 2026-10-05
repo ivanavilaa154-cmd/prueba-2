@@ -42,6 +42,8 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Bandeja de avisos con prioridad, impacto en pesos, explicación y acción, más el resumen diario por email." },
   { ruta: "/copiloto/", modulo: "avanzado", nombre: "Copiloto",
     que_hace: "Preguntale a tus datos en español; responde solo con cifras de sus herramientas." },
+  { ruta: "/calidad/", nombre: "Calidad de datos",
+    que_hace: "Puntaje de confianza de tus datos, problemas a corregir (stock negativo, costos viejos, duplicados…) y lo que perdés en faltantes." },
   { ruta: "/datos/", nombre: "Datos",
     que_hace: "Importar Excel o CSV, conectar la caja, leer facturas y listas con IA, y emparejar el catálogo." },
   { ruta: "/configuracion/", nombre: "Configuración", que_hace: "Empresa, sucursales, canales, usuarios, límites, auditoría y tu cuenta." },

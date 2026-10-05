@@ -53,10 +53,16 @@ def test_afluencia_y_personal(retail_demo):
 
 
 def test_simulador_de_promocion(retail_demo):
-    pid = _q("""SELECT m.producto_id FROM metricas_producto_actual m JOIN ubicaciones u ON u.id = m.ubicacion_id WHERE u.tipo <> 'deposito'
-                GROUP BY 1 HAVING sum(m.pronostico_diario) > 1 AND sum(m.disponible) > 15 * sum(m.pronostico_diario)
-                ORDER BY sum(m.pronostico_diario) DESC LIMIT 1""")[0]["producto_id"]
+    candidatos = [f["producto_id"] for f in _q("""SELECT m.producto_id FROM metricas_producto_actual m JOIN ubicaciones u ON u.id = m.ubicacion_id
+                WHERE u.tipo <> 'deposito' GROUP BY 1 HAVING sum(m.pronostico_diario) > 1 AND sum(m.disponible) > 15 * sum(m.pronostico_diario)
+                ORDER BY sum(m.pronostico_diario) DESC LIMIT 20""")]
     c = cliente()
+    # El más vendido de los que reaccionan al precio (uno con sensibilidad cero, con razón, no vende más con descuento).
+    from app.retail.api_avanzado import sensibilidades
+    from app.retail.api_comprar import _hoy_datos
+    with db.transaccion(motor.contexto_sistema(1)) as conn:
+        sens = sensibilidades(conn, _hoy_datos(conn))
+    pid = next(p for p in candidatos if (sens.get(p) or {}).get("elasticidad") is None or sens[p]["elasticidad"] < -0.3)
     chica = c.post("/retail/api/promociones/simular", json={"producto_id": pid, "descuento": 0.1, "dias": 7}).json()
     grande = c.post("/retail/api/promociones/simular", json={"producto_id": pid, "descuento": 0.6, "dias": 7}).json()
     assert chica["unidades_con_promo"] > chica["unidades_sin_promo"] and grande["unidades_extra"] >= chica["unidades_extra"]

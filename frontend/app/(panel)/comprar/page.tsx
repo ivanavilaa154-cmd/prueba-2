@@ -2,7 +2,7 @@
 // Qué me falta y qué comprar (sección 6).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, BASE } from "@/lib/api";
 import { fechaCorta, fechaHora, numero, plata, plataCorta } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
 import { Semaforo } from "@/components/Semaforo";
@@ -17,6 +17,7 @@ type Fila = {
   stock: string; vpd: string; dias_stock: string | null; fecha_quiebre: string | null; dia_quiebre: string | null; cantidad_sugerida: string;
   bultos: number; semaforo: string; clase_abc: string; proveedor: string | null; proveedor_id: number | null; monto_sugerido: string;
   ventas_en_riesgo: string | null; confianza: string; stock_negativo: boolean; sin_costo: boolean; tipo_ubicacion: string;
+  confianza_datos?: string; problemas_datos?: string[];
   pronostico_7d: string | null; pronostico_7d_min: string | null; pronostico_7d_max: string | null; prob_quiebre: string | null;
 };
 type Respuesta = {
@@ -65,7 +66,9 @@ export default function Comprar() {
   const varias = yo.usuario.todas_ubicaciones || yo.ubicaciones.length > 1;
   const columnas = useMemo<Columna<Fila>[]>(() => [
     { id: "producto", titulo: "Producto", valor: (f) => f.nombre, render: (f) => (
-      <span><span className="font-medium">{f.nombre}</span><br /><span className="text-xs text-suave">{f.codigo}{f.confianza === "baja" ? " · poca historia" : ""}{f.stock_negativo ? " · stock negativo" : ""}</span></span>) },
+      <span><span className="font-medium">{f.nombre}</span><br /><span className="text-xs text-suave">{f.codigo}{f.confianza === "baja" ? " · poca historia" : ""}{f.stock_negativo ? " · stock negativo" : ""}</span>
+        {f.confianza_datos && f.confianza_datos !== "alta" && <><br /><a href={`${BASE}/calidad/`} className={`text-xs underline ${f.confianza_datos === "baja" ? "text-peligro" : "text-alerta"}`}
+          title={(f.problemas_datos ?? []).join(", ")}>{f.confianza_datos === "baja" ? "▲ datos poco confiables" : "datos a revisar"}</a></>}</span>) },
     ...(varias ? [{ id: "sucursal", titulo: "Sucursal", valor: (f: Fila) => f.ubicacion }] : []),
     { id: "categoria", titulo: "Categoría", valor: (f) => f.categoria, ocultarEnCelular: true },
     { id: "stock", titulo: "Stock", valor: (f) => Number(f.stock), render: (f) => numero(f.stock, 0), derecha: true },

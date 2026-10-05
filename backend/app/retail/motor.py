@@ -159,6 +159,10 @@ def _recalcular(org_id: int, hoy: date | None, tipo: str, desde: date | None = N
             prueba = pronosticos.prueba_sobre_el_pasado(conn, org_id, hoy)
         resumen = _metricas(conn, org_id, hoy)
         resumen["prueba_pasado"] = prueba
+        from . import calidad                 # diagnóstico de calidad de datos: al conectar (primera vez) y cada semana
+        if calidad.toca_revisar(conn) and (tipo == "nocturno" or not db.fila(conn, "SELECT 1 FROM chequeos_calidad LIMIT 1")):
+            primera = not db.fila(conn, "SELECT 1 FROM chequeos_calidad LIMIT 1")
+            resumen["calidad"] = float(calidad.revisar(conn, org_id, hoy, "conexion" if primera else "semanal")["puntaje"])
         resumen["segundos_agregados"] = round(t_agg, 2)
     # Reposición y alertas en su propia transacción (usan las métricas recién guardadas).
     try:

@@ -17,7 +17,7 @@ predicciones con IA y Panel ERP por empresa.
 | 1 | Modos de empresa (comercio / distribuidor / ambos) y roles jefe de ventas, vendedor y cobranzas | hecho (migración 015, cartera del vendedor por RLS) |
 | 2 | Unidades y conversiones exactas, venta por peso | hecho (migración 016, `unidades.py`; el lector de facturas convierte con el factor cargado) |
 | 3 | Costo de reposición e histórico, impuestos (IVA, internos, IIBB), descuentos de proveedor; margen neto | hecho (Configuración → Unidades e impuestos; ganancia y margen sin IVA) |
-| 4 | Diagnóstico de calidad de datos (5.6) | pendiente |
+| 4 | Diagnóstico de calidad de datos (5.6) | hecho (`calidad.py`, pantalla Calidad de datos, confianza por producto en Comprar; la demo siembra un caso de cada problema) |
 | 5 | Agente de sincronización por carpeta (5.1) | pendiente |
 | 6 | Datos del modo distribuidor (12B) desde Odoo y archivos | pendiente |
 | 7 | Los 5 reportes iniciales del distribuidor (12B.7) y vista del vendedor | pendiente |

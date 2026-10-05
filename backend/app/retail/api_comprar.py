@@ -87,8 +87,10 @@ def comprar(ubicaciones: str | None = None, canal: str | None = None, categoria:
                    m.pronostico_7d, m.pronostico_7d_min, m.pronostico_7d_max, m.prob_quiebre,
                    pr.id AS proveedor_id, pr.razon_social AS proveedor, pp.costo, pp.unidades_por_bulto,
                    (m.explicacion->>'stock_negativo')::boolean AS stock_negativo, (m.explicacion->>'sin_costo')::boolean AS sin_costo,
-                   m.explicacion->>'supuesto_proveedor' AS supuesto
+                   m.explicacion->>'supuesto_proveedor' AS supuesto,
+                   coalesce(q.confianza, 'alta') AS confianza_datos, coalesce(q.problemas, '{{}}') AS problemas_datos
             FROM metricas_producto_actual m
+            LEFT JOIN calidad_productos q ON q.producto_id = m.producto_id
             JOIN productos p ON p.id = m.producto_id
             JOIN ubicaciones u ON u.id = m.ubicacion_id
             LEFT JOIN categorias c ON c.id = p.categoria_id LEFT JOIN categorias cp ON cp.id = c.padre_id
