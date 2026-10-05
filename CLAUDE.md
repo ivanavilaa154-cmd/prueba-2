@@ -6,7 +6,9 @@ Claude Code lee este archivo al abrir el proyecto. Contiene todo lo que necesita
 
 Plataforma de IA para **supermercados, mayoristas y distribuidores B2B** de Uruguay y Argentina. Se conecta en **solo lectura** a la base de datos del ERP que el cliente ya usa (Tango, SAP Business One, Odoo, Memory, Zeta o sistemas propios sobre SQL Server, Oracle, PostgreSQL o MySQL). No reemplaza el ERP.
 
-Desde septiembre de 2026 el sistema también atiende **comercios minoristas** (autoservicios, minimercados y supermercados regionales con una o varias sucursales y canales, inicialmente en Argentina): es el módulo **Retail**, especificado en `docs/retail/prompt_maestro.md` y construido por fases (`docs/retail/plan.md`). Es multi-empresa, con base PostgreSQL propia, y no usa WhatsApp (web + email).
+Desde septiembre de 2026 el sistema también atiende **comercios minoristas** (autoservicios, minimercados y supermercados regionales con una o varias sucursales y canales, inicialmente en Argentina): es el módulo **Retail**. Es multi-empresa, con base PostgreSQL propia, y no usa WhatsApp (web + email).
+
+Desde octubre de 2026 la especificación vigente de Retail es **`docs/SPEC.md`** (dos modos: **comercio** y **distribuidor**, con vendedores, rutas y cuenta corriente). Avance en `docs/PROGRESS.md`, decisiones y supuestos en `docs/DECISIONS.md` (se mantiene este stack, no se reescribe en TypeScript; el modo distribuidor vive dentro de Retail). Historia anterior: `docs/retail/prompt_maestro.md` y `docs/retail/plan.md`. El Panel ERP es por empresa (`backend/app/empresas.py`) y usa la misma conexión de Odoo que Retail.
 
 Tres pilares:
 
@@ -60,6 +62,10 @@ backend/tests/    Pruebas con pytest
 - Crear base demo: `cd backend && python -m app.erp.demo`
 - Pruebas: `cd backend && pytest -q`
 - API: `cd backend && uvicorn app.main:app --reload` (docs en http://localhost:8000/docs)
+- Retail (pantallas): `cd frontend && npx tsc --noEmit -p . && npm run build` (exporta a `backend/app/web/retail/`)
+- Retail (demo): se carga sola al arrancar con `RETAIL_CUENTAS=demo`; tiempos de pantallas: `python -m app.retail.tiempos --url http://localhost:8000`
+- Retail (cuentas reales): `cd backend && python -m app.retail.cuentas --reales`
+- Codespace: `bash tools/codespaces/iniciar.sh`
 
 ## Cómo trabajar en este proyecto
 
