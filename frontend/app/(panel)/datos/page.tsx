@@ -21,7 +21,7 @@ export default function Datos() {
 
   useEffect(() => {
     const leer = () => {
-      const id = location.hash.replace("#", "");
+      const id = location.hash.replace("#", "").split("?")[0];        // #importar?lote=12 abre un archivo que quedó esperando
       if (visibles.some((p) => p.id === id)) setActiva(id);
     };
     leer();

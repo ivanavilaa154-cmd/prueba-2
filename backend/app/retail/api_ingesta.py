@@ -77,6 +77,17 @@ async def analizar(request: Request, tipo: str = Form(...), archivo: UploadFile 
     return respuesta(r)
 
 
+@api.get("/importar/{lote_id}/analisis")
+def retomar(lote_id: int, ctx: db.Contexto = Depends(sesiones.contexto)):
+    """Para confirmar las columnas de un archivo que quedó esperando (lo subió el agente de sincronización con un formato nuevo)."""
+    permisos.exigir(ctx, "importar_datos")
+    try:
+        with db.transaccion(ctx) as conn:
+            return respuesta(importar.retomar(conn, lote_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 class Mapeo(BaseModel):
     mapeo: dict[str, str | None]
 

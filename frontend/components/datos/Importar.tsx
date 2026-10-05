@@ -37,6 +37,17 @@ export function Importar() {
     api<Tipo[]>("/importar/tipos").then(setTipos).catch((e) => setError(e.message));
     cargarLotes();
   }, [cargarLotes]);
+  // Un archivo que subió el agente de sincronización con un formato nuevo: se retoma en el paso de columnas.
+  useEffect(() => {
+    const lote = new URLSearchParams(location.hash.split("?")[1] ?? "").get("lote");
+    if (!lote) return;
+    correr(() => api<Analisis & { tipo: string }>(`/importar/${lote}/analisis`)).then((a) => {
+      if (!a) return;
+      setTipo(a.tipo);
+      setAnalisis(a);
+      setMapeo(a.mapeo);
+    });
+  }, []);
 
   async function correr<T>(f: () => Promise<T>): Promise<T | undefined> {
     setOcupado(true);

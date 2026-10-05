@@ -1,0 +1,15 @@
+; Copiá este archivo como agente.ini (en la misma carpeta que el agente) y completalo.
+[agente]
+; Dirección de la plataforma (siempre https://)
+url = https://tu-plataforma.ejemplo.com
+; Token del agente: Retail → Datos → Conectar caja y tiendas → Agente de sincronización → Crear (se muestra una sola vez)
+token = ag_pegá-acá-el-token
+; Carpeta donde tu sistema de caja deja las exportaciones
+carpeta = C:\Exportaciones\Caja
+; Cada cuántos minutos revisa la carpeta
+cada_minutos = 15
+
+; Si tu sistema no nombra los archivos ventas_…, stock_…, productos_…, compras_… o precios_…, indicá acá el comienzo del nombre:
+[tipos]
+; vtas = ventas
+; existencias = stock

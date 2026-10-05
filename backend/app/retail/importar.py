@@ -192,8 +192,9 @@ def analizar(conn, ctx, tipo: str, nombre: str, contenido: bytes) -> dict:
         raise ValueError("El archivo tiene más de 200.000 filas: dividilo en partes (por mes, por ejemplo).")
     f = firma(encabezados)
     recordado = db.fila(conn, "SELECT mapeo FROM mapeos_columnas WHERE tipo=%s AND firma=%s", (tipo, f))
-    lote = db.fila(conn, "INSERT INTO lotes_importacion (org_id, tipo, origen, nombre_archivo, huella, estado, filas_total, created_by) "
-                         "VALUES (%s,%s,'archivo',%s,%s,'pendiente',%s,%s) RETURNING id", (ctx.org_id, tipo, nombre, huella, len(filas), ctx.usuario_id))
+    lote = db.fila(conn, "INSERT INTO lotes_importacion (org_id, tipo, origen, nombre_archivo, huella, estado, filas_total, created_by, encabezados) "
+                         "VALUES (%s,%s,'archivo',%s,%s,'pendiente',%s,%s,%s) RETURNING id",
+                   (ctx.org_id, tipo, nombre, huella, len(filas), ctx.usuario_id, json.dumps(encabezados, ensure_ascii=False)))
     db.copiar(conn, "staging_filas", ["org_id", "lote_id", "numero", "datos"],
               [(ctx.org_id, lote["id"], i + 2, json.dumps(dict(zip(encabezados, [_serializable(v) for v in fila])), ensure_ascii=False))
                for i, fila in enumerate(filas)])
@@ -201,6 +202,20 @@ def analizar(conn, ctx, tipo: str, nombre: str, contenido: bytes) -> dict:
             "filas": len(filas), "campos": [{"campo": c, "etiqueta": e, "obligatorio": o} for c, e, o in CAMPOS[tipo]],
             "mapeo": recordado["mapeo"] if recordado else sugerir_mapeo(tipo, encabezados), "mapeo_recordado": bool(recordado),
             "ya_importado": {"lote": previo["id"], "fecha": previo["created_at"], "filas": previo["filas_ok"]} if previo else None}
+
+
+def retomar(conn, lote_id: int) -> dict:
+    """El mismo resultado de analizar() para un lote que quedó pendiente (por ejemplo, uno que subió el agente con un formato nuevo)."""
+    lote = db.fila(conn, "SELECT id, tipo, estado, filas_total, encabezados FROM lotes_importacion WHERE id=%s", (lote_id,))
+    if not lote or lote["estado"] != "pendiente" or not lote["encabezados"]:
+        raise ValueError("Ese archivo ya no está esperando: subilo de nuevo.")
+    encabezados = lote["encabezados"]
+    recordado = db.fila(conn, "SELECT mapeo FROM mapeos_columnas WHERE tipo=%s AND firma=%s", (lote["tipo"], firma(encabezados)))
+    muestra = [f["datos"] for f in db.filas(conn, "SELECT datos FROM staging_filas WHERE lote_id=%s ORDER BY numero LIMIT 8", (lote_id,))]
+    return {"lote_id": lote_id, "tipo": lote["tipo"], "encabezados": encabezados, "muestra": muestra, "filas": lote["filas_total"],
+            "campos": [{"campo": c, "etiqueta": e, "obligatorio": o} for c, e, o in CAMPOS[lote["tipo"]]],
+            "mapeo": recordado["mapeo"] if recordado else sugerir_mapeo(lote["tipo"], encabezados), "mapeo_recordado": bool(recordado),
+            "ya_importado": None}
 
 
 def _serializable(v):

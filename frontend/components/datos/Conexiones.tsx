@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fechaHora, numero } from "@/lib/formato";
 import { useSesion } from "@/components/Sesion";
+import { AgenteSincronizacion } from "@/components/datos/Agente";
 import { Aviso, Boton, Campo, Entrada, Etiqueta, Selector, Tabla, Tarjeta } from "@/components/ui";
 
 type Conexion = { id: number; tipo: string; nombre: string; activa: boolean; config: { url: string; base: string; usuario: string; almacenes?: Record<string, number>; store_id?: string; tienda?: string; cuenta?: string };
@@ -284,6 +285,7 @@ export function Conexiones() {
           </div>
         )}
       </Tarjeta>
+      <AgenteSincronizacion />
       <TiendaOnline alGuardar={(texto) => { setMensaje({ tipo: "ok", texto }); cargar(); }} />
     </div>
   );
