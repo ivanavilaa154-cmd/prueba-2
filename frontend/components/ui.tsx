@@ -87,10 +87,11 @@ export function Vacio({ titulo, children }: { titulo: string; children?: ReactNo
   );
 }
 
-export function Tabla({ columnas, children }: { columnas: string[]; children: ReactNode }) {
+// compacta: sin ancho mínimo, para tablas de 2 o 3 columnas dentro de una tarjeta angosta.
+export function Tabla({ columnas, children, compacta = false }: { columnas: string[]; children: ReactNode; compacta?: boolean }) {
   return (
     <div className="relative -mx-4 overflow-x-auto sm:mx-0">
-      <table className="w-full min-w-[560px] border-collapse text-sm">
+      <table className={cx("w-full border-collapse text-sm", !compacta && "min-w-[560px]")}>
         <thead>
           <tr className="border-b border-borde text-left text-xs uppercase tracking-wide text-suave">
             {columnas.map((c) => <th key={c} className="px-3 py-2 font-medium">{c}</th>)}

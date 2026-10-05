@@ -294,6 +294,9 @@ def test_odoo_trae_clientes_pedidos_y_cuenta_corriente(retail_distribuidora, mon
             {"id": 51, "name": "NC-A 0001-00000003", "partner_id": M2O(1), "move_type": "out_refund", "invoice_date": "2026-09-22",
              "invoice_date_due": "2026-09-22", "amount_total": 100.0, "amount_residual": 0.0, "state": "posted", "write_date": "2026-09-22 10:00:00"},
         ],
+        "stock.picking": [{"id": 80, "sale_id": M2O(10), "date_done": "2026-09-22 15:00:00", "state": "done", "picking_type_code": "outgoing"},
+                          {"id": 81, "sale_id": M2O(10), "date_done": "2026-09-23 11:00:00", "state": "done", "picking_type_code": "outgoing"},
+                          {"id": 82, "sale_id": M2O(10), "date_done": "2026-09-25 11:00:00", "state": "done", "picking_type_code": "incoming"}],
         "account.payment": [{"id": 70, "name": "PAGO/1", "partner_id": M2O(1), "date": "2026-09-23", "amount": 300.0, "partner_type": "customer",
                              "state": "posted", "payment_type": "inbound"}],
     }
@@ -317,6 +320,8 @@ def test_odoo_trae_clientes_pedidos_y_cuenta_corriente(retail_distribuidora, mon
     assert pedidos["S0010"]["cliente_id"] == cli["id"]           # el pedido del contacto hijo es de su empresa
     assert (pedidos["S0010"]["estado"], pedidos["S0010"]["total"], pedidos["S0010"]["total_entregado"]) == ("entregado_parcial", 900, 720)
     assert pedidos["S0011"]["estado"] == "anulado" and pedidos["S0010"]["ubicacion_id"] == dep
+    assert r["entregas"] == 1 and _q("SELECT e.fecha FROM entregas e JOIN pedidos_venta p ON p.id = e.pedido_id WHERE p.numero='S0010'") == \
+        [{"fecha": date(2026, 9, 23)}]                               # la última salida terminada; la devolución (entrada) no cuenta
     linea = _q("SELECT precio_lista, precio, cantidad_entregada FROM pedidos_venta_lineas l JOIN pedidos_venta p ON p.id = l.pedido_id WHERE p.numero='S0010'")
     assert len(linea) == 1 and (linea[0]["precio_lista"], linea[0]["precio"], linea[0]["cantidad_entregada"]) == (100, 90, 8)
     docs = {f["tipo"]: (f["importe"], f["saldo"]) for f in _q("SELECT tipo, importe, saldo FROM documentos_cc WHERE origen='odoo'")}
@@ -430,3 +435,58 @@ def test_importar_comercios_de_la_zona(retail_distribuidora, monkeypatch):
     r = _importar(c, "prospectos", "comercios.csv", texto, m)
     assert r["importadas"] == 1 and r["ya_clientes"] == 1
     assert _importar(c, "prospectos", "comercios2.csv", texto + "\n", m)["importadas"] == 0
+
+
+# ------------------------------------------------------------------------------------------- Fase 2 · logística (12B.5)
+def test_tiempos_de_entrega_y_repartidores(retail_distribuidora):
+    r = cliente("jefe@valle.demo").get("/retail/api/distribuidor/pedidos?periodo=90d").json()
+    t = r["tiempos"]
+    filas = _q("""SELECT e.fecha - p.fecha d, e.fecha <= p.fecha_entrega_prometida a FROM entregas e JOIN pedidos_venta p ON p.id = e.pedido_id
+                  WHERE e.resultado <> 'rechazado' AND e.fecha BETWEEN %s AND %s""", (HOY - timedelta(days=89), HOY))
+    assert t["entregas"] == len(filas) == sum(t["distribucion"].values())
+    assert abs(t["dias_promedio"] - sum(f["d"] for f in filas) / len(filas)) < 0.01
+    assert abs(t["a_tiempo"] - sum(f["a"] for f in filas) / len(filas)) < 1e-3 and 0.5 < t["a_tiempo"] < 1
+    rep = {x["nombre"]: x for x in r["repartidores"]}
+    assert set(rep) == {n for n, _ in demo.REPARTIDORES.values()}
+    lento = rep[demo.REPARTIDOR_LENTO]
+    otros = [x for n, x in rep.items() if n != demo.REPARTIDOR_LENTO]
+    assert lento["a_tiempo"] < min(x["a_tiempo"] for x in otros) and lento["dias_promedio"] > max(x["dias_promedio"] for x in otros)
+    assert lento["rechazo"] > max(x["rechazo"] for x in otros)
+
+
+def test_rechazos_y_devoluciones_por_dimension(retail_distribuidora):
+    r = cliente("jefe@valle.demo").get("/retail/api/distribuidor/pedidos?periodo=90d").json()
+    devuelto = _q("""SELECT sum(l.cantidad_devuelta * l.precio) t FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id
+                     WHERE p.fecha BETWEEN %s AND %s""", (HOY - timedelta(days=89), HOY))[0]["t"]
+    assert devuelto > 0 and abs(r["devuelto"] - float(devuelto)) < 0.05
+    motivos = {x["nombre"] for x in r["por"]["motivo"]["devoluciones"]}
+    assert motivos <= set(demo.MOTIVOS_DEVOLUCION) and motivos
+    assert abs(sum(float(x["plata"]) for x in r["por"]["motivo"]["devoluciones"]) - r["devuelto"]) < 0.05
+    for dim in ("cliente", "producto", "repartidor"):
+        assert r["por"][dim]["devoluciones"], dim
+    assert r["por"]["repartidor"]["devoluciones"][0]["nombre"] == demo.REPARTIDOR_LENTO
+    rechazos = r["por"]["motivo"]["rechazos"]
+    assert "Llegó tarde: el comercio ya había cerrado" in {x["nombre"] for x in rechazos}
+    assert sum(x["pedidos"] for x in rechazos) == sum(x["pedidos"] for x in r["por"]["repartidor"]["rechazos"])
+    # Lo devuelto no se factura: lo entregado (y facturado) ya lo descuenta.
+    l = _q("SELECT cantidad_pedida, cantidad_entregada, faltante_stock, cantidad_devuelta FROM pedidos_venta_lineas WHERE cantidad_devuelta > 0 LIMIT 20")
+    assert all(x["cantidad_entregada"] + x["cantidad_devuelta"] + x["faltante_stock"] <= x["cantidad_pedida"] for x in l)
+
+
+def test_importar_pedidos_con_repartidor_y_devoluciones(retail_distribuidora, monkeypatch):
+    from app.retail import api_ingesta
+    monkeypatch.setattr(api_ingesta, "recalcular_en_segundo_plano", lambda org, desde=None: None)
+    c = cliente()
+    cod = _q("SELECT codigo_interno FROM productos WHERE org_id = %s ORDER BY id LIMIT 1", (_org(),))[0]["codigo_interno"]
+    cli = _q("SELECT codigo_externo FROM clientes_b2b WHERE codigo_externo LIKE 'demo:%%' ORDER BY id LIMIT 1")[0]["codigo_externo"].split(":")[-1]
+    texto = (f"Pedido;Fecha;Cliente;Producto;Cant;Entregada;Devuelta;Motivo dev;Precio;Fecha entrega;Prometida;Repartidor\n"
+             f"Y-1;20/09/2026;{cli};{cod};10;8;2;Mercadería dañada;100;23/09/2026;21/09/2026;Fletes Ruiz\n")
+    m = {"pedido": "Pedido", "fecha": "Fecha", "cliente": "Cliente", "producto": "Producto", "cantidad": "Cant", "entregada": "Entregada",
+         "devuelta": "Devuelta", "motivo_devolucion": "Motivo dev", "precio": "Precio", "fecha_entrega": "Fecha entrega",
+         "fecha_prometida": "Prometida", "repartidor": "Repartidor"}
+    assert _importar(c, "pedidos", "pedidos.csv", texto, m)["importadas"] == 1
+    x = _q("""SELECT p.estado, p.fecha_entrega_prometida, e.fecha, r.nombre, l.cantidad_devuelta, l.motivo_devolucion FROM pedidos_venta p
+              JOIN entregas e ON e.pedido_id = p.id JOIN repartidores r ON r.id = e.repartidor_id JOIN pedidos_venta_lineas l ON l.pedido_id = p.id
+              WHERE p.numero = 'Y-1'""")[0]
+    assert x == {"estado": "entregado_parcial", "fecha_entrega_prometida": date(2026, 9, 21), "fecha": date(2026, 9, 23), "nombre": "Fletes Ruiz",
+                 "cantidad_devuelta": 2, "motivo_devolucion": "Mercadería dañada"}

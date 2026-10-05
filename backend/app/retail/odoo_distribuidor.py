@@ -94,7 +94,7 @@ def _pedidos(conn, ctx, c: ClienteOdoo, plataforma_id: int, almacenes: dict, pro
     campos = c._solo_existentes("sale.order", ["name", "partner_id", "user_id", "date_order", "state", "warehouse_id", "amount_untaxed", "commitment_date"])
     ordenes = list(c.leer_todo("sale.order", [("state", "in", ["sale", "done", "cancel"]), ("write_date", ">=", desde.strftime(FORMATO))], campos))
     if not ordenes:
-        return {"pedidos_nuevos": 0, "pedidos_actualizados": 0, "desde_pedidos": None}
+        return {"pedidos_nuevos": 0, "pedidos_actualizados": 0, "entregas": 0, "desde_pedidos": None}
     campos_l = c._solo_existentes("sale.order.line", ["order_id", "product_id", "product_uom_qty", "qty_delivered", "price_unit", "discount",
                                                       "price_subtotal", "purchase_price", "display_type"])
     lineas: dict[int, list] = {}
@@ -106,6 +106,7 @@ def _pedidos(conn, ctx, c: ClienteOdoo, plataforma_id: int, almacenes: dict, pro
             lineas.setdefault(_id(l["order_id"]), []).append(l)
     nuevos = actualizados = 0
     fechas = []
+    estados: dict[int, tuple[int, str]] = {}
     mapa_productos = productos["mapa"]
     with conn.cursor() as cur:
         for o in ordenes:
@@ -152,7 +153,33 @@ def _pedidos(conn, ctx, c: ClienteOdoo, plataforma_id: int, almacenes: dict, pro
             nuevos += r["nuevo"]
             actualizados += not r["nuevo"]
             fechas.append(fecha)
-    return {"pedidos_nuevos": nuevos, "pedidos_actualizados": actualizados, "desde_pedidos": min(fechas) if fechas else None}
+            estados[o["id"]] = (r["id"], estado)
+    entregas = _entregas(conn, ctx, c, estados)
+    return {"pedidos_nuevos": nuevos, "pedidos_actualizados": actualizados, "entregas": entregas, "desde_pedidos": min(fechas) if fechas else None}
+
+
+def _entregas(conn, ctx, c: ClienteOdoo, estados: dict[int, tuple[int, str]]) -> int:
+    """Fecha real de entrega (12B.5): la última salida terminada (stock.picking de tipo «outgoing», state done) de cada pedido entregado."""
+    entregados = {oid: v for oid, v in estados.items() if v[1] in ("entregado", "entregado_parcial")}
+    if not entregados or "date_done" not in c.campos("stock.picking"):      # Odoo sin el módulo de inventario
+        return 0
+    campos = c._solo_existentes("stock.picking", ["sale_id", "date_done", "state", "picking_type_code"])
+    ultima: dict[int, date] = {}
+    ids = list(entregados)
+    for i in range(0, len(ids), 500):
+        for pk in c.leer_todo("stock.picking", [("sale_id", "in", ids[i:i + 500]), ("state", "=", "done")], campos):
+            if pk.get("picking_type_code", "outgoing") != "outgoing" or not pk.get("date_done"):
+                continue
+            oid, cuando = _id(pk["sale_id"]), _fecha(pk["date_done"])
+            if oid in entregados and (oid not in ultima or cuando > ultima[oid]):
+                ultima[oid] = cuando
+    with conn.cursor() as cur:
+        for oid, cuando in ultima.items():
+            pedido_id, estado = entregados[oid]
+            cur.execute("DELETE FROM entregas WHERE pedido_id = %s", (pedido_id,))
+            cur.execute("INSERT INTO entregas (org_id, pedido_id, fecha, resultado, created_by) VALUES (%s,%s,%s,%s,%s)",
+                        (ctx.org_id, pedido_id, cuando, "entregado" if estado == "entregado" else "parcial", ctx.usuario_id or None))
+    return len(ultima)
 
 
 def _cuenta_corriente(conn, ctx, c: ClienteOdoo, plataforma_id: int, clientes: dict, desde: datetime) -> dict:

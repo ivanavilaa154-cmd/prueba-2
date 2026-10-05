@@ -57,6 +57,11 @@ CUMPLIMIENTO = {"Hernán Ibarra": 0.8}       # visitas realizadas / planificadas
 SIN_SABADOS = "Hernán Ibarra"                # no hace la ruta del sábado: esas visitas no se hacen y se pierden pedidos
 # Comercios relevados que todavía no son clientes, por zona (cada 350 clientes): en Valle de Lerma hay mucho por ganar.
 PROSPECTOS = {"Salta Centro": 25, "Salta Norte": 30, "Valle de Lerma": 70, "San Salvador de Jujuy": 35}
+# Un repartidor por zona; Lucas (Salta Centro) llega tarde más seguido, tiene más rechazos y más devoluciones.
+REPARTIDORES = {"Salta Centro": ("Lucas Gómez", "Camión"), "Salta Norte": ("Ramiro Díaz", "Camión"),
+                "Valle de Lerma": ("Sergio Vera", "Utilitario"), "San Salvador de Jujuy": ("Matías Ruiz", "Camión")}
+REPARTIDOR_LENTO = "Lucas Gómez"
+MOTIVOS_DEVOLUCION = ["Mercadería dañada", "Vencimiento corto", "Error de pedido", "El cliente no lo pidió"]
 QUIEBRES = 3              # productos populares sin stock en los últimos días (pedidos con faltantes)
 
 
@@ -325,6 +330,9 @@ def _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy,
     marcas_clientes = defaultdict(set)
     numero = 0
     sin_sabados = vendedores[SIN_SABADOS]["id"]
+    rl = random.Random(4242)                 # logística aparte, para no mover el resto de la demo
+    repartidores = {zona: db.fila(conn, "INSERT INTO repartidores (org_id, nombre, vehiculo, zona) VALUES (%s,%s,%s,%s) RETURNING id",
+                                  (oid, nombre, vehiculo, zona))["id"] for zona, (nombre, vehiculo) in REPARTIDORES.items()}
     for c in clientes:
         # Primera compra: el primer día de ruta desde su alta, con un desfase según su frecuencia.
         d = c.alta + timedelta(days=(c.dia - c.alta.weekday()) % 7 + 7 * rng.randint(0, c.frecuencia // 7 - 1))
@@ -361,18 +369,28 @@ def _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy,
             if not detalle:
                 d += timedelta(days=c.frecuencia)
                 continue
+            lento = REPARTIDORES[c.zona][0] == REPARTIDOR_LENTO
+            motivo_rechazo = None
+            if estado == "entregado" and lento and rl.random() < 0.03:
+                estado, motivo_rechazo = "rechazado", "Llegó tarde: el comercio ya había cerrado"
             if estado == "entregado" and any(x[2] for x in detalle):
                 estado = "entregado_parcial"
+            atraso = rl.choices([1, 2, 3], [0.7, 0.2, 0.1] if lento else [0.95, 0.04, 0.01])[0]
             pedidos.append([None, oid, f"PV-{numero:06d}", c.id, c.vendedor, deposito, d, d + timedelta(days=1), estado, 0, 0, 0, "demo", f"demo:{numero}"])
             total = entregado = descuento = 0.0
             for p, pedida, faltante, lista, precio, costo in detalle:
                 entregada = 0 if estado == "rechazado" else (pedida - faltante if estado in ("entregado", "entregado_parcial") else 0)
+                devuelta, motivo_dev = 0, None              # devoluciones en el momento de la entrega
+                if entregada > 0 and rl.random() < (0.04 if lento else 0.012):
+                    devuelta = min(entregada, rl.randint(1, 3))
+                    motivo_dev = rl.choice(MOTIVOS_DEVOLUCION)
+                    entregada -= devuelta
                 facturable = entregada if estado in ("entregado", "entregado_parcial") else (pedida if estado in ("tomado", "preparado") else 0)
                 total += pedida * precio
                 entregado += entregada * precio
                 descuento += (lista - precio) * pedida
                 lineas.append([len(pedidos) - 1, p["id"], pedida, entregada, faltante if estado != "rechazado" else 0, lista, precio,
-                               round((lista - precio) * pedida, 2), costo])
+                               round((lista - precio) * pedida, 2), costo, devuelta, motivo_dev])
                 if facturable + faltante and d > hoy - timedelta(days=90):
                     diaria[p["id"]] += (facturable + faltante) / 90
                 marcas[p["marca"]][d] += facturable
@@ -382,11 +400,13 @@ def _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy,
             fechas_pedido[c.id].add(d)
             venta_mes[(c.vendedor, d.replace(day=1))] += entregado if estado != "tomado" and estado != "preparado" else total
             if estado in ("entregado", "entregado_parcial", "rechazado"):
-                entregas.append([len(pedidos) - 1, d + timedelta(days=1), {"entregado": "entregado", "entregado_parcial": "parcial",
-                                                                          "rechazado": "rechazado"}[estado],
-                                 rng.choice(MOTIVOS_RECHAZO) if estado == "rechazado" else ("Faltante de stock" if estado == "entregado_parcial" else None)])
+                motivo = motivo_rechazo or (rng.choice(MOTIVOS_RECHAZO) if estado == "rechazado" else
+                                            ("Faltante de stock" if estado == "entregado_parcial" else None))
+                cuando = min(hoy, d + timedelta(days=atraso))
+                entregas.append([len(pedidos) - 1, cuando, {"entregado": "entregado", "entregado_parcial": "parcial", "rechazado": "rechazado"}[estado],
+                                 motivo, repartidores[c.zona]])
                 if entregado > 0:
-                    docs.append((c, len(pedidos) - 1, d + timedelta(days=1), round(entregado * 1.21, 2)))
+                    docs.append((c, len(pedidos) - 1, cuando, round(entregado * 1.21, 2)))
             d += timedelta(days=c.frecuencia)
     ids = _ids(conn, "pedidos_venta_id_seq", len(pedidos))
     for p, i in zip(pedidos, ids):
@@ -394,9 +414,9 @@ def _pedidos(conn, rng, oid, deposito, clientes, prods, vendedores, inicio, hoy,
     db.copiar(conn, "pedidos_venta", ["id", "org_id", "numero", "cliente_id", "vendedor_id", "ubicacion_id", "fecha", "fecha_entrega_prometida", "estado",
                                       "total", "total_entregado", "descuento", "origen", "numero_externo"], [tuple(p) for p in pedidos])
     db.copiar(conn, "pedidos_venta_lineas", ["org_id", "pedido_id", "producto_id", "cantidad_pedida", "cantidad_entregada", "faltante_stock",
-                                             "precio_lista", "precio", "descuento", "costo_unitario"],
+                                             "precio_lista", "precio", "descuento", "costo_unitario", "cantidad_devuelta", "motivo_devolucion"],
               [(oid, ids[k], *rest) for k, *rest in lineas])
-    db.copiar(conn, "entregas", ["org_id", "pedido_id", "fecha", "resultado", "motivo"], [(oid, ids[k], *rest) for k, *rest in entregas])
+    db.copiar(conn, "entregas", ["org_id", "pedido_id", "fecha", "resultado", "motivo", "repartidor_id"], [(oid, ids[k], *rest) for k, *rest in entregas])
     _cuenta_corriente(conn, rng, oid, docs, ids, hoy)
     return {"pedidos": len(pedidos), "lineas": len(lineas), "diaria": diaria, "fechas_pedido": fechas_pedido, "venta_mes": venta_mes,
             "marcas": (marcas, marcas_clientes)}

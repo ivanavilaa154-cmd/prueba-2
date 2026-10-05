@@ -371,7 +371,61 @@ def pedidos(conn, desde: date, hasta: date) -> dict:
             "fill_rate_unidades": round(_f(r["entregadas"]) / pedidas, 4) if pedidas else None,
             "fill_rate_lineas": round(r["lineas_completas"] / r["lineas"], 4) if r["lineas"] else None,
             "no_facturado_faltantes": round(_f(r["no_facturado_faltantes"]), 2), "estados": estados, "rechazos": rechazos,
-            "faltantes": faltantes, "recientes": recientes}
+            "faltantes": faltantes, "recientes": recientes, **logistica(conn, desde, hasta)}
+
+
+# ------------------------------------------------------------------------------------------------ Fase 2 · logística (12B.5)
+def logistica(conn, desde: date, hasta: date) -> dict:
+    """Tiempo entre pedido y entrega (y si llegó para la fecha prometida), rechazos y devoluciones por motivo, cliente, producto y
+    repartidor, y el resumen de cada repartidor."""
+    entregas = db.filas(conn, """
+        SELECT e.fecha - p.fecha dias, (p.fecha_entrega_prometida IS NULL OR e.fecha <= p.fecha_entrega_prometida) a_tiempo
+        FROM entregas e JOIN pedidos_venta p ON p.id = e.pedido_id
+        WHERE e.resultado <> 'rechazado' AND e.fecha BETWEEN %s AND %s""", (desde, hasta))
+    tramos = {"mismo_dia": 0, "1_dia": 0, "2_dias": 0, "3_o_mas": 0}
+    for e in entregas:
+        tramos["mismo_dia" if e["dias"] <= 0 else "1_dia" if e["dias"] == 1 else "2_dias" if e["dias"] == 2 else "3_o_mas"] += 1
+    tiempos = {"entregas": len(entregas), "dias_promedio": round(sum(e["dias"] for e in entregas) / len(entregas), 2) if entregas else None,
+               "a_tiempo": round(sum(e["a_tiempo"] for e in entregas) / len(entregas), 4) if entregas else None, "distribucion": tramos}
+    # Devoluciones en la entrega (líneas) y rechazos del pedido entero: «plata» es lo que no se facturó.
+    devoluciones = f"""
+        SELECT {{clave}}, sum(l.cantidad_devuelta) unidades, sum(l.cantidad_devuelta * l.precio) plata, count(DISTINCT p.id) pedidos
+        FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id {{union}}
+        WHERE l.cantidad_devuelta > 0 AND p.fecha BETWEEN %s AND %s GROUP BY 1 ORDER BY 3 DESC LIMIT 15"""
+    rechazos = """
+        SELECT {clave}, count(DISTINCT p.id) pedidos, sum(p.total) plata
+        FROM entregas e JOIN pedidos_venta p ON p.id = e.pedido_id {union}
+        WHERE e.resultado = 'rechazado' AND e.fecha BETWEEN %s AND %s GROUP BY 1 ORDER BY 3 DESC LIMIT 15"""
+    dims = {
+        "motivo": ("coalesce(l.motivo_devolucion, 'Sin motivo') nombre", "", "coalesce(e.motivo, 'Sin motivo') nombre", ""),
+        "cliente": ("coalesce(c.nombre_fantasia, c.razon_social) nombre", "JOIN clientes_b2b c ON c.id = p.cliente_id",
+                    "coalesce(c.nombre_fantasia, c.razon_social) nombre", "JOIN clientes_b2b c ON c.id = p.cliente_id"),
+        "producto": ("pr.nombre", "JOIN productos pr ON pr.id = l.producto_id", None, None),
+        "repartidor": ("coalesce(r.nombre, 'Sin repartidor') nombre",
+                       "LEFT JOIN entregas e ON e.pedido_id = p.id LEFT JOIN repartidores r ON r.id = e.repartidor_id",
+                       "coalesce(r.nombre, 'Sin repartidor') nombre", "LEFT JOIN repartidores r ON r.id = e.repartidor_id"),
+    }
+    por = {}
+    for dim, (cd, ud, cr, ur) in dims.items():
+        por[dim] = {"devoluciones": db.filas(conn, devoluciones.format(clave=cd, union=ud), (desde, hasta)),
+                    "rechazos": db.filas(conn, rechazos.format(clave=cr, union=ur), (desde, hasta)) if cr else []}
+    repartidores = db.filas(conn, """
+        SELECT r.id, r.nombre, r.zona, count(e.id) entregas,
+               count(e.id) FILTER (WHERE e.resultado = 'rechazado') rechazadas,
+               avg(e.fecha - p.fecha) FILTER (WHERE e.resultado <> 'rechazado') dias_promedio,
+               avg(CASE WHEN p.fecha_entrega_prometida IS NULL OR e.fecha <= p.fecha_entrega_prometida THEN 1 ELSE 0 END)
+                   FILTER (WHERE e.resultado <> 'rechazado') a_tiempo,
+               coalesce(sum((SELECT sum(l.cantidad_devuelta * l.precio) FROM pedidos_venta_lineas l WHERE l.pedido_id = p.id)), 0) devuelto
+        FROM repartidores r LEFT JOIN entregas e ON e.repartidor_id = r.id AND e.fecha BETWEEN %s AND %s
+        LEFT JOIN pedidos_venta p ON p.id = e.pedido_id
+        WHERE r.activo GROUP BY 1, 2, 3 ORDER BY 2""", (desde, hasta))
+    for x in repartidores:
+        x["rechazo"] = round(x["rechazadas"] / x["entregas"], 4) if x["entregas"] else None
+        x["dias_promedio"] = round(float(x["dias_promedio"]), 2) if x["dias_promedio"] is not None else None
+        x["a_tiempo"] = round(float(x["a_tiempo"]), 4) if x["a_tiempo"] is not None else None
+    total_devuelto = _f(db.fila(conn, """SELECT sum(l.cantidad_devuelta * l.precio) t FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id
+                                         WHERE p.fecha BETWEEN %s AND %s""", (desde, hasta))["t"])
+    return {"tiempos": tiempos, "por": por, "repartidores": repartidores, "devuelto": round(total_devuelto, 2)}
 
 
 # ------------------------------------------------------------------------------------------------ vista del vendedor

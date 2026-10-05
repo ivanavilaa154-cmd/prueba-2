@@ -12,7 +12,13 @@ import { Aviso, ComoSeCalcula, Etiqueta, Selector, Tabla, Tarjeta } from "@/comp
 type R = { desde: string; hasta: string; fill_rate_unidades: number | null; fill_rate_lineas: number | null; no_facturado_faltantes: number;
   estados: { estado: string; n: number; total: string }[]; rechazos: { motivo: string; n: number; total: string }[];
   faltantes: { producto_id: number; producto: string; unidades: string; plata: string }[];
-  recientes: { id: number; numero: string; fecha: string; estado: string; total: string; total_entregado: string; cliente: string; vendedor: string | null }[] };
+  recientes: { id: number; numero: string; fecha: string; estado: string; total: string; total_entregado: string; cliente: string; vendedor: string | null }[];
+  tiempos: { entregas: number; dias_promedio: number | null; a_tiempo: number | null; distribucion: Record<string, number> };
+  por: Record<string, { devoluciones: { nombre: string; unidades: string; plata: string; pedidos: number }[]; rechazos: { nombre: string; pedidos: number; plata: string }[] }>;
+  repartidores: { id: number; nombre: string; zona: string | null; entregas: number; rechazadas: number; rechazo: number | null; dias_promedio: number | null;
+    a_tiempo: number | null; devuelto: string }[]; devuelto: number };
+const DIMENSIONES = [["motivo", "Motivo"], ["cliente", "Cliente"], ["producto", "Producto"], ["repartidor", "Repartidor"]] as const;
+const TRAMOS_ENTREGA: [string, string][] = [["mismo_dia", "Mismo día"], ["1_dia", "Al día siguiente"], ["2_dias", "A los 2 días"], ["3_o_mas", "3 días o más"]];
 const ESTADOS: Record<string, [string, "ok" | "alerta" | "peligro" | "gris" | "acento"]> = {
   tomado: ["Tomado", "acento"], preparado: ["Preparado", "acento"], despachado: ["En reparto", "acento"], entregado: ["Entregado", "ok"],
   entregado_parcial: ["Entrega parcial", "alerta"], rechazado: ["Rechazado", "peligro"], anulado: ["Anulado", "gris"],
@@ -22,6 +28,7 @@ export default function Pedidos() {
   const [periodo, setPeriodo] = useState("mes");
   const [r, setR] = useState<R | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dim, setDim] = useState<(typeof DIMENSIONES)[number][0]>("motivo");
   useEffect(() => { api<R>(`/distribuidor/pedidos?periodo=${periodo}`).then(setR).catch((e) => setError(e.message)); }, [periodo]);
   const pct = (v: number | null) => (v === null ? "—" : `${numero(v * 100, 1)} %`);
   return (
@@ -47,22 +54,59 @@ export default function Pedidos() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Tarjeta titulo="Faltantes de stock que frenaron ventas" accion={<Link href="/comprar/" className="text-sm text-acento underline">Qué comprar hoy →</Link>}>
             {r.faltantes.length === 0 ? <p className="text-sm text-suave">No hubo faltantes en el período.</p> : (
-              <Tabla columnas={["Producto", "Unidades", "No facturado"]}>
+              <Tabla columnas={["Producto", "Unidades", "No facturado"]} compacta>
                 {r.faltantes.map((f) => (
-                  <tr key={f.producto_id}><td>{f.producto}</td><td className="text-right">{numero(f.unidades)}</td><td className="text-right">{plata(Math.round(Number(f.plata)))}</td></tr>
+                  <tr key={f.producto_id}><td>{f.producto}</td><td className="text-right">{numero(f.unidades)}</td><td className="whitespace-nowrap text-right">{plataCorta(Number(f.plata))}</td></tr>
                 ))}
               </Tabla>
             )}
             <p className="mt-2 text-xs text-suave">Lo que tus clientes pidieron y no se entregó cuenta como demanda en «Comprar y reponer»: así el pedido sugerido no se achica por haberte quedado sin stock.</p>
           </Tarjeta>
-          <Tarjeta titulo="Rechazos en la entrega">
-            {r.rechazos.length === 0 ? <p className="text-sm text-suave">No hubo rechazos en el período.</p> : (
-              <Tabla columnas={["Motivo", "Pedidos", "Monto"]}>
-                {r.rechazos.map((x) => <tr key={x.motivo}><td>{x.motivo}</td><td className="text-right">{x.n}</td><td className="text-right">{plata(Math.round(Number(x.total)))}</td></tr>)}
-              </Tabla>
-            )}
+          <Tarjeta titulo="Tiempo de entrega">
+            <p className="text-sm">{r.tiempos.dias_promedio === null ? "Sin entregas en el período." : <>Los pedidos llegan en <strong>{numero(r.tiempos.dias_promedio, 1)} días</strong> en promedio;
+              el <strong>{pct(r.tiempos.a_tiempo)}</strong> llega para la fecha prometida.</>}</p>
+            <ul className="mt-3 grid gap-1.5 text-sm">
+              {TRAMOS_ENTREGA.map(([k, n]) => {
+                const v = r.tiempos.distribucion[k] ?? 0;
+                return <li key={k} className="grid grid-cols-[8rem_1fr_3rem] items-center gap-2"><span>{n}</span>
+                  <span className="h-2 rounded-full bg-panel-2"><span className="block h-2 rounded-full bg-acento" style={{ width: `${r.tiempos.entregas ? (v / r.tiempos.entregas) * 100 : 0}%` }} /></span>
+                  <span className="text-right">{numero(v)}</span></li>;
+              })}
+            </ul>
           </Tarjeta>
         </div>
+        <Tarjeta titulo="Repartidores">
+          <Tabla columnas={["Repartidor", "Entregas", "Rechazos", "A tiempo", "Días promedio", "Devuelto en la entrega"]}>
+            {r.repartidores.map((x) => (
+              <tr key={x.id}><td><span className="font-medium">{x.nombre}</span><div className="text-xs text-suave">{x.zona}</div></td>
+                <td className="text-right">{numero(x.entregas)}</td>
+                <td className={`text-right ${(x.rechazo ?? 0) > 0.04 ? "font-semibold text-peligro" : ""}`}>{pct(x.rechazo)}</td>
+                <td className={`text-right ${(x.a_tiempo ?? 1) < 0.85 ? "font-semibold text-peligro" : ""}`}>{pct(x.a_tiempo)}</td>
+                <td className="text-right">{x.dias_promedio === null ? "—" : numero(x.dias_promedio, 1)}</td>
+                <td className="text-right">{plata(Math.round(Number(x.devuelto)))}</td></tr>
+            ))}
+          </Tabla>
+        </Tarjeta>
+        <Tarjeta titulo={`Rechazos y devoluciones · ${plataCorta(r.devuelto)} devueltos en la entrega`} accion={
+          <Selector className="w-40" value={dim} onChange={(e) => setDim(e.target.value as typeof dim)} aria-label="Ver por">
+            {DIMENSIONES.map(([k, n]) => <option key={k} value={k}>Por {n.toLowerCase()}</option>)}
+          </Selector>}>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div><h3 className="mb-1 text-sm font-semibold">Pedidos rechazados</h3>
+              {dim === "producto" ? <p className="text-sm text-suave">El rechazo es del pedido entero: miralo por motivo, cliente o repartidor.</p>
+                : r.por[dim].rechazos.length === 0 ? <p className="text-sm text-suave">Sin rechazos en el período.</p> : (
+                <Tabla columnas={[DIMENSIONES.find(([k]) => k === dim)![1], "Pedidos", "Monto"]} compacta>
+                  {r.por[dim].rechazos.map((x) => <tr key={x.nombre}><td>{x.nombre}</td><td className="text-right">{x.pedidos}</td><td className="text-right">{plataCorta(Number(x.plata))}</td></tr>)}
+                </Tabla>)}
+            </div>
+            <div><h3 className="mb-1 text-sm font-semibold">Devuelto en la entrega</h3>
+              {r.por[dim].devoluciones.length === 0 ? <p className="text-sm text-suave">Sin devoluciones en el período.</p> : (
+                <Tabla columnas={[DIMENSIONES.find(([k]) => k === dim)![1], "Unidades", "Monto"]} compacta>
+                  {r.por[dim].devoluciones.map((x) => <tr key={x.nombre}><td>{x.nombre}</td><td className="text-right">{numero(x.unidades)}</td><td className="text-right">{plataCorta(Number(x.plata))}</td></tr>)}
+                </Tabla>)}
+            </div>
+          </div>
+        </Tarjeta>
         <Tarjeta titulo="Últimos pedidos">
           <TablaDatos filas={r.recientes} idFila={(f) => String(f.id)} nombreArchivo="pedidos" porPagina={15}
             columnas={[

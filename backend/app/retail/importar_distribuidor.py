@@ -22,7 +22,9 @@ CAMPOS = {
                 ("producto", "Producto (código, EAN o nombre)", True), ("cantidad", "Cantidad pedida", True), ("precio", "Precio unitario sin IVA", True),
                 ("entregada", "Cantidad entregada", False), ("faltante", "Faltante por falta de stock", False), ("precio_lista", "Precio de lista", False),
                 ("costo", "Costo unitario sin IVA", False), ("vendedor", "Vendedor", False), ("estado", "Estado", False),
-                ("fecha_entrega", "Fecha de entrega", False), ("motivo", "Motivo de rechazo", False), ("deposito", "Depósito", False)],
+                ("fecha_entrega", "Fecha de entrega", False), ("motivo", "Motivo de rechazo", False), ("deposito", "Depósito", False),
+                ("repartidor", "Repartidor", False), ("devuelta", "Cantidad devuelta en la entrega", False),
+                ("motivo_devolucion", "Motivo de la devolución", False), ("fecha_prometida", "Fecha de entrega prometida", False)],
     "cuenta_corriente": [("cliente", "Cliente (código, CUIT o nombre)", True), ("tipo", "Tipo de comprobante", True), ("numero", "Número", True),
                          ("fecha", "Fecha", True), ("importe", "Importe", True), ("vencimiento", "Vencimiento", False), ("saldo", "Saldo pendiente", False)],
 }
@@ -32,7 +34,8 @@ TITULOS = {"prospectos": "Comercios de la zona que todavía no son clientes", "c
 SINONIMOS = {
     "razon_social": ["razon social", "cliente", "nombre"], "nombre_fantasia": ["nombre fantasia", "fantasia", "comercio"], "cuit": ["cuit", "cuil", "documento"],
     "direccion": ["direccion", "domicilio", "calle"], "localidad": ["localidad", "ciudad"], "zona": ["zona", "region", "recorrido"],
-    "vendedor": ["vendedor", "preventista", "representante"], "fuente": ["fuente", "origen"], "lista": ["lista", "lista precios"], "limite_credito": ["limite", "limite credito", "credito"],
+    "vendedor": ["vendedor", "preventista", "representante"], "fuente": ["fuente", "origen"], "repartidor": ["repartidor", "chofer", "fletero"],
+    "devuelta": ["devuelta", "devolucion", "cantidad devuelta"], "motivo_devolucion": ["motivo devolucion"], "fecha_prometida": ["fecha prometida", "prometida"], "lista": ["lista", "lista precios"], "limite_credito": ["limite", "limite credito", "credito"],
     "condicion_pago": ["condicion pago", "dias pago", "plazo"], "cliente": ["cliente", "codigo cliente", "razon social"],
     "entregada": ["entregada", "cantidad entregada", "entregado"], "faltante": ["faltante", "sin stock"], "fecha_entrega": ["fecha entrega", "entrega"],
     "motivo": ["motivo", "motivo rechazo", "observacion"], "deposito": ["deposito", "almacen"], "importe": ["importe", "total", "monto"],
@@ -74,7 +77,9 @@ def validar_fila(conn, tipo: str, v: dict, cat: dict, sin_producto: dict) -> str
             return "Falta la cantidad o el precio"
         numero(v.get("entregada"))
         numero(v.get("faltante"))
+        numero(v.get("devuelta"))
         fecha(v.get("fecha_entrega"))
+        fecha(v.get("fecha_prometida"))
         if v.get("estado") and _norm(v["estado"]) not in ESTADOS:
             return f"Estado «{v['estado']}» desconocido (tomado, preparado, despachado, entregado, parcial, rechazado o anulado)"
         pid, _ = _producto(conn, cat, v["producto"])
@@ -99,6 +104,17 @@ def _vendedor(conn, ctx, cat: dict, nombre) -> int | None:
         cat["vendedores"][clave] = db.fila(conn, "INSERT INTO vendedores (org_id, nombre, created_by) VALUES (%s,%s,%s) RETURNING id",
                                            (ctx.org_id, str(nombre).strip(), ctx.usuario_id))["id"]
     return cat["vendedores"][clave]
+
+
+def _repartidor(conn, ctx, cat: dict, nombre) -> int | None:
+    if not nombre or not str(nombre).strip():
+        return None
+    memo = cat.setdefault("repartidores", {_norm(r["nombre"]): r["id"] for r in db.filas(conn, "SELECT id, nombre FROM repartidores")})
+    clave = _norm(nombre)
+    if clave not in memo:
+        memo[clave] = db.fila(conn, "INSERT INTO repartidores (org_id, nombre, created_by) VALUES (%s,%s,%s) RETURNING id",
+                              (ctx.org_id, str(nombre).strip(), ctx.usuario_id))["id"]
+    return memo[clave]
 
 
 def clientes(conn, ctx, lote, filas, cat, zona) -> dict:
@@ -154,7 +170,8 @@ def pedidos(conn, ctx, lote, filas, cat, zona) -> dict:
                 pid, _ = _producto(conn, cat, v["producto"])
                 pedida, precio = numero(v["cantidad"]), numero(v["precio"])
                 entregada = numero(v.get("entregada"))
-                detalle.append((pid, pedida, entregada, numero(v.get("faltante")) or 0, numero(v.get("precio_lista")) or precio, precio, numero(v.get("costo"))))
+                detalle.append((pid, pedida, entregada, numero(v.get("faltante")) or 0, numero(v.get("precio_lista")) or precio, precio, numero(v.get("costo")),
+                                numero(v.get("devuelta")) or 0, v.get("motivo_devolucion") or None))
             if estado is None:          # sin estado: se deduce de lo entregado
                 if all(d[2] is None for d in detalle):
                     estado = "tomado"
@@ -164,27 +181,30 @@ def pedidos(conn, ctx, lote, filas, cat, zona) -> dict:
             f = fecha(v0["fecha"])
             total = sum(d[1] * d[5] for d in detalle)
             total_entregado = sum((d[2] if d[2] is not None else (d[1] if estado == "entregado" else 0)) * d[5] for d in detalle)
-            p = db.fila(conn, """INSERT INTO pedidos_venta (org_id, numero, cliente_id, vendedor_id, ubicacion_id, fecha, estado, total, total_entregado,
-                                                            descuento, origen, numero_externo, created_by)
-                                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'archivo',%s,%s) ON CONFLICT (org_id, origen, numero_externo) DO NOTHING RETURNING id""",
-                        (ctx.org_id, numero_pedido, cliente_id, vendedor_id, depositos.get(_norm(v0.get("deposito") or "")), f, estado, total, total_entregado,
+            p = db.fila(conn, """INSERT INTO pedidos_venta (org_id, numero, cliente_id, vendedor_id, ubicacion_id, fecha, fecha_entrega_prometida, estado, total,
+                                                            total_entregado, descuento, origen, numero_externo, created_by)
+                                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'archivo',%s,%s) ON CONFLICT (org_id, origen, numero_externo) DO NOTHING RETURNING id""",
+                        (ctx.org_id, numero_pedido, cliente_id, vendedor_id, depositos.get(_norm(v0.get("deposito") or "")), f, fecha(v0.get("fecha_prometida")),
+                         estado, total, total_entregado,
                          sum(max(0, d[4] - d[5]) * d[1] for d in detalle), numero_pedido, ctx.usuario_id))
             if not p:
                 duplicados += 1
                 continue
             fechas.append(f)
-            for pid, pedida, entregada, faltante, lista, precio, costo in detalle:
+            for pid, pedida, entregada, faltante, lista, precio, costo, devuelta, motivo_dev in detalle:
                 if entregada is None:
                     entregada = pedida if estado == "entregado" else 0
                 cur.execute("""INSERT INTO pedidos_venta_lineas (org_id, pedido_id, producto_id, cantidad_pedida, cantidad_entregada, faltante_stock,
-                                                                 precio_lista, precio, descuento, costo_unitario)
-                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                            (ctx.org_id, p["id"], pid, pedida, entregada, faltante, lista, precio, max(0, lista - precio) * pedida, costo))
+                                                                 precio_lista, precio, descuento, costo_unitario, cantidad_devuelta, motivo_devolucion)
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            (ctx.org_id, p["id"], pid, pedida, entregada, faltante, lista, precio, max(0, lista - precio) * pedida, costo, devuelta,
+                             motivo_dev if devuelta else None))
                 lineas += 1
             if estado in ("entregado", "entregado_parcial", "rechazado"):
-                cur.execute("INSERT INTO entregas (org_id, pedido_id, fecha, resultado, motivo, created_by) VALUES (%s,%s,%s,%s,%s,%s)",
+                cur.execute("INSERT INTO entregas (org_id, pedido_id, fecha, resultado, motivo, repartidor_id, created_by) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                             (ctx.org_id, p["id"], fecha(v0.get("fecha_entrega")) or f,
-                             {"entregado": "entregado", "entregado_parcial": "parcial", "rechazado": "rechazado"}[estado], v0.get("motivo"), ctx.usuario_id))
+                             {"entregado": "entregado", "entregado_parcial": "parcial", "rechazado": "rechazado"}[estado], v0.get("motivo"),
+                             _repartidor(conn, ctx, cat, v0.get("repartidor")), ctx.usuario_id))
             importados += 1
     return {"importadas": importados, "duplicadas": duplicados, "lineas": lineas, "desde": min(fechas) if fechas else None,
             "mensaje": f"{importados} pedidos ({lineas} líneas)" + (f"; {duplicados} ya estaban cargados" if duplicados else "") + "."}

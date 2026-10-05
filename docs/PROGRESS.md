@@ -31,6 +31,6 @@ predicciones con IA y Panel ERP por empresa.
 | # | Paso | Estado |
 |---|---|---|
 | F2.1 | Rutas y cobertura (12B.3) | hecho (migración 022; pantalla Rutas: cumplimiento por vendedor y día, efectividad, clientes sin visita en X días, cobertura por zona con comercios relevados, armado de rutas; importación «Comercios de la zona») |
-| F2.2 | Logística (12B.5): repartidores, devoluciones, rechazos, tiempo de entrega | pendiente |
+| F2.2 | Logística (12B.5): repartidores, devoluciones, rechazos, tiempo de entrega | hecho (migración 023; en Pedidos y entregas: tiempo de entrega y % a tiempo, repartidores, rechazos y devoluciones por motivo, cliente, producto y repartidor; Odoo trae la fecha real de entrega; la importación de pedidos acepta repartidor, devoluciones y fecha prometida) |
 | F2.3 | Marcas representadas (12B.6) | pendiente |
 | F2.4 | Agente: lectura directa de bases locales (SQLite, DBF, ODBC) | pendiente |
