@@ -576,3 +576,44 @@ def guardar_ruta(conn, org_id: int, vendedor_id: int, dia: int, clientes: list[i
         for orden, cid in enumerate(dict.fromkeys(clientes), 1):
             cur.execute("INSERT INTO rutas_clientes (org_id, ruta_id, cliente_id, orden) VALUES (%s,%s,%s,%s)", (org_id, r["id"], cid, orden))
     return len(clientes)
+
+
+# ------------------------------------------------------------------------------------------------ Fase 2 · marcas representadas (12B.6)
+def marcas(conn, desde: date, hasta: date, hoy: date) -> dict:
+    """Por marca: venta y ganancia (contra el período anterior), cobertura (clientes que la compran sobre los clientes que compraron algo),
+    mix (productos vendidos sobre los de la marca), participación y la venta de los últimos 12 meses."""
+    dias = (hasta - desde).days + 1
+
+    def periodo(d, h):
+        return {f["marca"]: f for f in db.filas(conn, f"""
+            SELECT coalesce(pr.marca, 'Sin marca') marca, sum(l.precio * {FACTURABLE}) venta,
+                   sum((l.precio - coalesce(l.costo_unitario, l.precio)) * {FACTURABLE}) ganancia, sum({FACTURABLE}) unidades,
+                   count(DISTINCT p.cliente_id) FILTER (WHERE {FACTURABLE} > 0) clientes, count(DISTINCT l.producto_id) FILTER (WHERE {FACTURABLE} > 0) productos
+            FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id JOIN productos pr ON pr.id = l.producto_id
+            WHERE {COMPRA} AND p.fecha BETWEEN %s AND %s GROUP BY 1""", (d, h))}
+    actual, anterior = periodo(desde, hasta), periodo(desde - timedelta(days=dias), desde - timedelta(days=1))
+    compradores = db.fila(conn, f"SELECT count(DISTINCT p.cliente_id) n FROM pedidos_venta p WHERE {COMPRA} AND p.fecha BETWEEN %s AND %s",
+                          (desde, hasta))["n"] or 0
+    catalogo = {f["marca"]: f["n"] for f in db.filas(conn, "SELECT coalesce(marca, 'Sin marca') marca, count(*) n FROM productos WHERE activo GROUP BY 1")}
+    mensual = defaultdict(list)
+    for f in db.filas(conn, f"""SELECT coalesce(pr.marca, 'Sin marca') marca, date_trunc('month', p.fecha)::date mes, sum(l.precio * {FACTURABLE}) venta
+                                FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id JOIN productos pr ON pr.id = l.producto_id
+                                WHERE {COMPRA} AND p.fecha > %s GROUP BY 1, 2 ORDER BY 2""", (hoy.replace(day=1) - timedelta(days=335),)):
+        mensual[f["marca"]].append({"mes": f["mes"], "venta": round(_f(f["venta"]), 2)})
+    total = sum(_f(f["venta"]) for f in actual.values())
+    objetivos = {}
+    for o in objetivos_marcas(conn, hoy):
+        objetivos.setdefault(o["marca"].lower(), []).append(o)
+    filas = []
+    for marca, f in actual.items():
+        venta, ant = _f(f["venta"]), _f(anterior.get(marca, {}).get("venta"))
+        filas.append({"marca": marca, "venta": round(venta, 2), "ganancia": round(_f(f["ganancia"]), 2),
+                      "margen": round(_f(f["ganancia"]) / venta, 4) if venta else None, "unidades": _f(f["unidades"]),
+                      "participacion": round(venta / total, 4) if total else None, "variacion": round(venta / ant - 1, 4) if ant else None,
+                      "clientes": f["clientes"], "cobertura": round(f["clientes"] / compradores, 4) if compradores else None,
+                      "productos_vendidos": f["productos"], "productos_marca": catalogo.get(marca, f["productos"]),
+                      "mix": round(f["productos"] / catalogo[marca], 4) if catalogo.get(marca) else None,
+                      "mensual": mensual.get(marca, []), "objetivos": objetivos.get(marca.lower(), [])})
+    filas.sort(key=lambda x: -x["venta"])
+    return {"desde": desde, "hasta": hasta, "marcas": filas, "clientes_compradores": compradores, "objetivos": objetivos_marcas(conn, hoy),
+            "todos_los_objetivos": db.filas(conn, "SELECT * FROM objetivos_marca ORDER BY hasta DESC, marca")}

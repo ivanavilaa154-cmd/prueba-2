@@ -27,6 +27,8 @@ ETIQUETAS = {
     "aumento_proveedor": "Aumento de proveedor", "caja": "Anomalía de caja", "inventario": "Diferencia de inventario",
     "caida_a": "Caída de un producto A", "fiado": "Deuda vencida de clientes",
     "sobreventa": "Sobreventa online", "meta": "Meta en riesgo",
+    "clientes_perdidos": "Clientes que dejaron de comprar", "deuda_cliente": "Compran con deuda vencida",
+    "bonificacion": "Bonificación de marca en riesgo",
 }
 DESTINOS = {
     "quiebre": ["dueno", "comprador", "encargado"], "gondola": ["encargado", "dueno"], "stock_fantasma": ["encargado", "dueno"],
@@ -35,6 +37,8 @@ DESTINOS = {
     "margen": ["comprador", "dueno"], "aumento_proveedor": ["comprador", "dueno"], "caja": ["dueno"], "inventario": ["dueno", "encargado"],
     "caida_a": ["comprador", "dueno"], "fiado": ["dueno", "encargado"],
     "sobreventa": ["dueno", "comprador", "encargado"], "meta": ["dueno", "encargado"],
+    "clientes_perdidos": ["dueno", "jefe_ventas"], "deuda_cliente": ["dueno", "jefe_ventas", "cobranzas"],
+    "bonificacion": ["dueno", "jefe_ventas"],
 }
 MINIMO_IMPACTO = Decimal("1000")      # por debajo de esto, no vale la pena molestar (configurable en parámetros)
 
@@ -224,6 +228,7 @@ def _generar(conn, org_id: int, hoy: date) -> dict:
     alertas.extend(_fiado(conn, hoy))
     alertas.extend(_sobreventa(conn, hoy))
     alertas.extend(_metas(conn, hoy))
+    alertas.extend(_distribuidor(conn, org_id, hoy, minimo))
     for d in db.filas(conn, """SELECT r.ubicacion_id, u.nombre, count(*) n, -sum(l.diferencia_pesos) monto FROM recuentos_lineas l
                                JOIN recuentos r ON r.id = l.recuento_id JOIN ubicaciones u ON u.id = r.ubicacion_id
                                WHERE r.fecha > %s AND l.diferencia < 0 GROUP BY 1, 2""", (hoy - timedelta(days=7),)):
@@ -397,3 +402,42 @@ def _guardar(conn, org_id: int, alertas: list[dict], hoy: date) -> dict:
                        updated_at=now() WHERE estado IN ('nueva', 'vista') AND vence < %s""", (hoy,))
         escaladas = cur.rowcount
     return {"nuevas": nuevas, "actualizadas": actualizadas, "resueltas_solas": len(resueltas), "escaladas": escaladas}
+
+
+def _distribuidor(conn, org_id: int, hoy: date, minimo: Decimal) -> list[dict]:
+    """Modo distribuidor (12B): clientes que dejaron de comprar (con la plata que ya no entra), clientes que siguen comprando con deuda
+    vencida y bonificaciones de marcas en riesgo."""
+    if "distribuidor" not in db.fila(conn, "SELECT modos FROM organizaciones WHERE id = %s", (org_id,))["modos"]:
+        return []
+    from . import distribuidor as D
+    if not db.fila(conn, "SELECT 1 FROM pedidos_venta LIMIT 1"):
+        return []
+    hoy = max(hoy, db.fila(conn, "SELECT max(fecha) m FROM pedidos_venta")["m"] or hoy)
+    salida = []
+    estados = D.estado_clientes(conn, hoy)
+    perdidos = sorted((e for e in estados if e["estado"] == "perdido" and e["dias_sin_comprar"] <= 120), key=lambda e: -e["deja_de_facturar_mes"])
+    plata = Decimal(str(round(sum(e["deja_de_facturar_mes"] for e in perdidos), 2)))
+    if perdidos and plata >= minimo:
+        nombres = ", ".join(e["cliente"] for e in perdidos[:3]) + (f" y {len(perdidos) - 3} más" if len(perdidos) > 3 else "")
+        salida.append(_nueva("clientes_perdidos", "urgente" if plata >= minimo * 100 else "normal",
+                             f"{len(perdidos)} clientes dejaron de comprar: {pesos(plata)} por mes que ya no se facturan",
+                             f"{nombres}. Cada uno lleva más de 3 veces su ritmo habitual sin comprar. Pasale la lista a cada vendedor para recuperarlos.",
+                             plata, "perdida", {"etiqueta": "Ver clientes", "tipo": "ir", "destino": "/clientes/"},
+                             f"clientes_perdidos:{hoy.isocalendar()[0]}-{hoy.isocalendar()[1]}", vence=hoy + timedelta(days=7)))
+    cc = D.cuenta_corriente(conn, hoy)
+    morosos = [c for c in cc["clientes"] if c["sigue_comprando"]]
+    deuda = Decimal(str(round(sum(c["vencido"] for c in morosos), 2)))
+    if morosos and deuda >= minimo:
+        salida.append(_nueva("deuda_cliente", "normal", f"{len(morosos)} clientes siguen comprando con deuda vencida: {pesos(deuda)}",
+                             f"{', '.join(c['cliente'] for c in morosos[:3])}{' y otros' if len(morosos) > 3 else ''}. Antes del próximo pedido, "
+                             "conviene cobrar o pedir un compromiso de pago.", deuda, "en_riesgo",
+                             {"etiqueta": "Ver cuenta corriente", "tipo": "ir", "destino": "/cuenta-corriente/"},
+                             f"deuda_cliente:{hoy.isocalendar()[0]}-{hoy.isocalendar()[1]}", vence=hoy + timedelta(days=7)))
+    for m in D.objetivos_marcas(conn, hoy):
+        if m["en_riesgo"] and m["bonificacion"] >= float(minimo):
+            salida.append(_nueva("bonificacion", "normal", f"{m['marca']}: bonificación de {pesos(m['bonificacion'])} en riesgo",
+                                 f"{m['mensaje']} Al ritmo actual cierra en {num(m['proyectado'], 0)} de {num(m['objetivo'], 0)}.",
+                                 Decimal(str(m["bonificacion"])), "en_riesgo", {"etiqueta": "Ver marcas", "tipo": "ir", "destino": "/marcas/"},
+                                 f"bonificacion:{m['marca']}:{m['desde']}", vence=m["hasta"]))
+    return salida
+

@@ -490,3 +490,53 @@ def test_importar_pedidos_con_repartidor_y_devoluciones(retail_distribuidora, mo
               WHERE p.numero = 'Y-1'""")[0]
     assert x == {"estado": "entregado_parcial", "fecha_entrega_prometida": date(2026, 9, 21), "fecha": date(2026, 9, 23), "nombre": "Fletes Ruiz",
                  "cantidad_devuelta": 2, "motivo_devolucion": "Mercadería dañada"}
+
+
+# ------------------------------------------------------------------------------------------- Fase 2 · marcas representadas (12B.6)
+def test_venta_cobertura_y_mix_por_marca(retail_distribuidora):
+    r = cliente().get("/retail/api/distribuidor/marcas?periodo=90d").json()
+    marcas = r["marcas"]
+    total = _q(f"""SELECT sum(l.precio * {distribuidor.FACTURABLE}) t FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id
+                   WHERE {distribuidor.COMPRA} AND p.fecha BETWEEN %s AND %s""", (HOY - timedelta(days=89), HOY))[0]["t"]
+    assert abs(sum(m["venta"] for m in marcas) - float(total)) < 1
+    assert abs(sum(m["participacion"] for m in marcas) - 1) < 1e-3 and marcas == sorted(marcas, key=lambda m: -m["venta"])
+    for m in marcas:
+        assert abs(m["cobertura"] - m["clientes"] / r["clientes_compradores"]) < 1e-3 and 0 < m["mix"] <= 1
+        assert m["productos_vendidos"] <= m["productos_marca"] and m["mensual"]
+    top = marcas[0]
+    clientes = _q(f"""SELECT count(DISTINCT p.cliente_id) n FROM pedidos_venta p JOIN pedidos_venta_lineas l ON l.pedido_id = p.id
+                      JOIN productos pr ON pr.id = l.producto_id WHERE {distribuidor.COMPRA} AND p.fecha BETWEEN %s AND %s AND pr.marca = %s
+                      AND {distribuidor.FACTURABLE} > 0""", (HOY - timedelta(days=89), HOY, top["marca"]))[0]["n"]
+    assert top["clientes"] == clientes
+    assert len(r["objetivos"]) == 3 and any(o["en_riesgo"] for o in r["objetivos"])
+    assert any(m["objetivos"] for m in marcas)
+
+
+def test_alta_edicion_y_baja_de_objetivos(retail_distribuidora):
+    c = cliente("jefe@valle.demo")
+    marca = c.get("/retail/api/distribuidor/marcas").json()["marcas"][-1]["marca"]
+    nuevo = {"marca": marca, "desde": "2026-09-01", "hasta": "2026-09-30", "tipo": "cobertura", "objetivo": 9999, "bonificacion": 120000}
+    assert c.post("/retail/api/distribuidor/objetivos-marca", json={**nuevo, "marca": "Marca inexistente"}).status_code == 400
+    assert c.post("/retail/api/distribuidor/objetivos-marca", json={**nuevo, "hasta": "2026-08-01"}).status_code == 400
+    r = c.post("/retail/api/distribuidor/objetivos-marca", json=nuevo)
+    assert r.status_code == 201
+    oid = r.json()["id"]
+    o = next(x for x in c.get("/retail/api/distribuidor/marcas").json()["objetivos"] if x["marca"] == marca)
+    assert o["en_riesgo"] and o["falta"] > 0 and o["mensaje"].startswith("Faltan")
+    assert c.put(f"/retail/api/distribuidor/objetivos-marca/{oid}", json={**nuevo, "objetivo": 1}).status_code == 200
+    o = next(x for x in c.get("/retail/api/distribuidor/marcas").json()["objetivos"] if x["marca"] == marca)
+    assert o["falta"] == 0 and o["mensaje"] == "Objetivo cumplido."
+    assert cliente("carla@valle.demo").delete(f"/retail/api/distribuidor/objetivos-marca/{oid}").status_code == 403
+    assert c.delete(f"/retail/api/distribuidor/objetivos-marca/{oid}").status_code == 200
+    assert c.delete(f"/retail/api/distribuidor/objetivos-marca/{oid}").status_code == 404
+
+
+def test_avisos_del_distribuidor(retail_distribuidora):
+    """Clientes perdidos (con la plata), deuda vencida de quien sigue comprando y bonificación en riesgo llegan como avisos."""
+    avisos = {a["tipo"]: a for a in _q("SELECT tipo, titulo, impacto, destinatarios, accion FROM alertas WHERE estado IN ('nueva', 'vista')")}
+    assert {"clientes_perdidos", "deuda_cliente", "bonificacion"} <= set(avisos)
+    perdidos = avisos["clientes_perdidos"]
+    assert perdidos["impacto"] > 0 and "dejaron de comprar" in perdidos["titulo"] and perdidos["accion"]["destino"] == "/clientes/"
+    assert "cobranzas" in avisos["deuda_cliente"]["destinatarios"] and "jefe_ventas" in avisos["bonificacion"]["destinatarios"]
+    vistos = {a["tipo"] for a in cliente("jefe@valle.demo").get("/retail/api/avisos?estado=abiertas").json()["avisos"]}
+    assert {"clientes_perdidos", "bonificacion", "deuda_cliente"} <= vistos

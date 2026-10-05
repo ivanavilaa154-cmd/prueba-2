@@ -270,3 +270,70 @@ def dias_sin_visita(datos: DiasSinVisita, ctx: db.Contexto = Depends(sesiones.co
         permisos.exigir_modo(conn, ctx, "distribuidor")
         cur.execute("UPDATE organizaciones SET dias_sin_visita = %s WHERE id = %s", (datos.dias, ctx.org_id))
     return respuesta({"ok": True})
+
+
+# ------------------------------------------------------------------------------------------------ Fase 2 · marcas representadas (12B.6)
+@api.get("/marcas")
+def marcas(periodo: str = "90d", ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "ver_ventas")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        hoy = _hoy(conn)
+        desde, hasta = distribuidor.periodo(periodo, hoy)
+        return respuesta(distribuidor.marcas(conn, desde, hasta, hoy))
+
+
+class ObjetivoMarca(BaseModel):
+    marca: str = Field(min_length=1, max_length=120)
+    desde: date
+    hasta: date
+    tipo: str = Field(pattern="^(volumen|cobertura|mix)$")
+    objetivo: float = Field(gt=0)
+    bonificacion: float = Field(default=0, ge=0)
+
+
+def _validar_objetivo(conn, datos: ObjetivoMarca) -> None:
+    if datos.hasta < datos.desde:
+        raise HTTPException(status_code=400, detail="La fecha de fin tiene que ser posterior a la de inicio.")
+    if not db.fila(conn, "SELECT 1 FROM productos WHERE lower(marca) = lower(%s) LIMIT 1", (datos.marca.strip(),)):
+        raise HTTPException(status_code=400, detail=f"No hay productos de la marca «{datos.marca}».")
+
+
+@api.post("/objetivos-marca")
+def crear_objetivo(datos: ObjetivoMarca, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_vendedores")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        _validar_objetivo(conn, datos)
+        o = db.fila(conn, """INSERT INTO objetivos_marca (org_id, marca, desde, hasta, tipo, objetivo, bonificacion, created_by)
+                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (ctx.org_id, datos.marca.strip(), datos.desde, datos.hasta, datos.tipo, datos.objetivo, datos.bonificacion, ctx.usuario_id))
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "crear", "objetivo_marca", o["id"], datos.model_dump(mode="json"), sesiones.ip_de(request))
+    return respuesta({"id": o["id"]}, 201)
+
+
+@api.put("/objetivos-marca/{objetivo_id}")
+def editar_objetivo(objetivo_id: int, datos: ObjetivoMarca, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_vendedores")
+    with db.transaccion(ctx) as conn:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        _validar_objetivo(conn, datos)
+        with conn.cursor() as cur:
+            cur.execute("""UPDATE objetivos_marca SET marca = %s, desde = %s, hasta = %s, tipo = %s, objetivo = %s, bonificacion = %s WHERE id = %s""",
+                        (datos.marca.strip(), datos.desde, datos.hasta, datos.tipo, datos.objetivo, datos.bonificacion, objetivo_id))
+            if not cur.rowcount:
+                raise HTTPException(status_code=404, detail="No existe ese objetivo.")
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "modificar", "objetivo_marca", objetivo_id, datos.model_dump(mode="json"), sesiones.ip_de(request))
+    return respuesta({"ok": True})
+
+
+@api.delete("/objetivos-marca/{objetivo_id}")
+def borrar_objetivo(objetivo_id: int, request: Request, ctx: db.Contexto = Depends(sesiones.contexto)):
+    permisos.exigir(ctx, "gestionar_vendedores")
+    with db.transaccion(ctx) as conn, conn.cursor() as cur:
+        permisos.exigir_modo(conn, ctx, "distribuidor")
+        cur.execute("DELETE FROM objetivos_marca WHERE id = %s", (objetivo_id,))
+        if not cur.rowcount:
+            raise HTTPException(status_code=404, detail="No existe ese objetivo.")
+        sesiones.auditar(conn, ctx, ctx.usuario_id, "borrar", "objetivo_marca", objetivo_id, None, sesiones.ip_de(request))
+    return respuesta({"ok": True})

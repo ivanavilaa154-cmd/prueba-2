@@ -23,6 +23,8 @@ export const SECCIONES: Seccion[] = [
     que_hace: "Visitas planificadas contra realizadas, efectividad, clientes sin visita, cobertura por zona y armado de rutas." },
   { ruta: "/pedidos/", nombre: "Pedidos y entregas", modo: "distribuidor", permiso: "ver_ventas",
     que_hace: "Pedidos por estado, entregas completas, parciales y rechazos; lo que no se facturó por faltantes." },
+  { ruta: "/marcas/", nombre: "Marcas", modo: "distribuidor", permiso: "ver_ventas",
+    que_hace: "Venta, cobertura y mix por marca representada, y los objetivos con la bonificación en riesgo." },
   { ruta: "/cuenta-corriente/", nombre: "Cuenta corriente", modo: "distribuidor", permiso: "ver_cuenta_corriente",
     que_hace: "Deuda por cliente y antigüedad, clientes que compran con deuda vencida o pasan su límite, compromisos de pago." },
   { ruta: "/comprar/", nombre: "Comprar y reponer",
