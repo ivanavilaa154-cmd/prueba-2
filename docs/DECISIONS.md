@@ -41,3 +41,12 @@ Se actualizan producto, estructura, comandos y referencias; las reglas numeradas
 - **Oportunidades por cliente:** categorías que compra al menos el 40 % de los clientes parecidos (misma zona y canal; si son menos de
   5, mismo canal) en 90 días y este no; se sugiere el producto más elegido y la mediana de unidades por pedido.
 - **Vendedor y cobranzas:** solo acceden a las pantallas del modo distribuidor; la base (RLS) acota la cartera del vendedor.
+- **Agente con lectura directa (Fase 2):** el agente nunca escribe en la base del cliente: abre SQLite en modo solo lectura, ODBC con
+  `readonly=True` y valida que cada consulta sea un único SELECT sin palabras que modifiquen datos. Trae solo lo nuevo con una marca de agua
+  por consulta (columna `incremental` y `:desde` en el SQL). El resultado se deja como CSV en la carpeta y sigue el mismo camino que una
+  exportación. Si las columnas se llaman exactamente como los datos de la plataforma, se importa sin confirmar columnas.
+- **Logística del distribuidor:** `cantidad_entregada` es lo que el cliente se quedó; lo devuelto en el momento de la entrega se guarda
+  aparte (`cantidad_devuelta`, con motivo). «A tiempo» = entregado hasta la fecha prometida. Desde Odoo, la fecha de entrega es la de la
+  última salida terminada del pedido (stock.picking).
+- **Cobertura por zona:** clientes que compraron en 90 días sobre el universo conocido (clientes + comercios relevados que no son clientes).
+

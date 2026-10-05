@@ -7,7 +7,9 @@ import { Aviso, Boton, Campo, Entrada, Etiqueta, Tabla, Tarjeta } from "@/compon
 
 type Agente = { id: number; nombre: string; activo: boolean; version: string | null; equipo: string | null; carpeta: string | null;
   ultima_conexion: string | null; ultima_subida: string | null; archivos_subidos: number; pendientes: number; ultimo_error: string | null;
-  ultimo_error_at: string | null; created_at: string };
+  ultimo_error_at: string | null; created_at: string; base: string | null;
+  consultas: { nombre: string; tipo: string | null; ultima: string | null; filas: number | null; error: string | null }[] };
+const BASES: Record<string, string> = { sqlite: "SQLite", dbf: "DBF (dBase/FoxPro)", odbc: "ODBC (SQL Server, Access, Firebird, MySQL)" };
 type Esperando = { id: number; agente_id: number; tipo: string; nombre_archivo: string | null; created_at: string };
 
 // Sin noticias en más de 2 horas: la PC está apagada, sin internet o el agente no corre.
@@ -51,7 +53,8 @@ export function AgenteSincronizacion() {
       <p className="text-sm text-suave">
         Si tu sistema de caja no tiene internet ni API, instalá el agente en la PC del local: mira la carpeta donde el sistema deja sus exportaciones
         (ventas_…, stock_…, productos_…, compras_…, precios_…) y las sube solas por HTTPS. Sin internet, guarda los archivos y los manda cuando vuelve.
-        La primera vez que llega un formato nuevo tenés que confirmar sus columnas; después entran solos.
+        La primera vez que llega un formato nuevo tenés que confirmar sus columnas; después entran solos. También puede leer directamente la base
+        del sistema (SQLite, DBF, o SQL Server/Tango, Access, Firebird y MySQL por ODBC), siempre en solo lectura y trayendo solo lo nuevo.
       </p>
       {error && <div className="mt-3"><Aviso tipo="error">{error}</Aviso></div>}
       {token && (
@@ -82,7 +85,17 @@ export function AgenteSincronizacion() {
               const e = estado(a);
               return (
                 <tr key={a.id} className="align-top">
-                  <td>{a.nombre}<div className="text-xs text-suave">{[a.equipo, a.carpeta, a.version && `v${a.version}`].filter(Boolean).join(" · ") || "—"}</div></td>
+                  <td>{a.nombre}<div className="text-xs text-suave">{[a.equipo, a.carpeta, a.version && `v${a.version}`].filter(Boolean).join(" · ") || "—"}</div>
+                    {a.base && <div className="mt-1 text-xs">Lee la base: {BASES[a.base] ?? a.base}</div>}
+                    {a.consultas.length > 0 && (
+                      <ul className="mt-1 grid gap-0.5 text-xs">
+                        {a.consultas.map((q) => (
+                          <li key={q.nombre} className={q.error ? "text-peligro" : "text-suave"}>
+                            {q.error ? "✕" : "✓"} {q.nombre} ({q.tipo}): {q.error ?? `${q.filas ?? 0} filas nuevas`}{q.ultima ? ` · ${fechaHora(q.ultima)}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}</td>
                   <td><Etiqueta tono={e.tono}>{e.texto}</Etiqueta>
                     {a.activo && a.ultimo_error && <div className="mt-1 max-w-xs text-xs text-peligro">{a.ultimo_error}</div>}</td>
                   <td className="whitespace-nowrap">{a.ultima_conexion ? fechaHora(a.ultima_conexion) : "—"}

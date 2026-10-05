@@ -31,3 +31,18 @@ El ejecutable queda en `dist\agente_sync.exe`. El agente usa solo la biblioteca 
 
 ## Fase 2
 Lectura directa de las bases de datos de los sistemas de caja más comunes (sin exportar a carpeta).
+
+
+## Lectura directa de la base del sistema (sin exportar a mano)
+
+Además de mirar la carpeta, el agente puede leer la base del sistema de caja **en solo lectura** y traer solo lo nuevo:
+
+- **SQLite** y **DBF** (dBase, FoxPro, Clipper): no hace falta instalar nada.
+- **SQL Server** (por ejemplo Tango), **Access**, **Firebird** y **MySQL**: por ODBC, con el controlador de esa base instalado en Windows
+  (pyodbc va incluido en el .exe: `pyinstaller --onefile --hidden-import pyodbc agente_sync.py`).
+
+Se configura agregando a `agente.ini` una sección `[base]` y una `[consulta:nombre]` por cada dato: ver la carpeta `plantillas`.
+Cada consulta deja un CSV en la carpeta y de ahí sigue el camino de siempre (cola, reintentos e importador). El estado de cada consulta
+(filas nuevas, último error) se ve en Datos → Conexiones.
+
+Para probarlo sin un sistema real: `python ejemplo/crear_base_ejemplo.py C:\Ejemplo` crea una base SQLite de ejemplo y un `agente.ini` que la lee.

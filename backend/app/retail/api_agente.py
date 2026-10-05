@@ -10,6 +10,7 @@ solo sirve para subir archivos y reportar estado de su empresa; se revoca desde 
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 
@@ -42,7 +43,7 @@ def listar(ctx: db.Contexto = Depends(sesiones.contexto)):
     permisos.exigir(ctx, "gestionar_conexiones")
     with db.transaccion(ctx) as conn:
         agentes = db.filas(conn, """SELECT id, nombre, activo, version, equipo, carpeta, ultima_conexion, ultima_subida, archivos_subidos, pendientes,
-                                           ultimo_error, ultimo_error_at, created_at FROM agentes_sincronizacion ORDER BY activo DESC, id""")
+                                           ultimo_error, ultimo_error_at, created_at, base, consultas FROM agentes_sincronizacion ORDER BY activo DESC, id""")
         esperando = db.filas(conn, """SELECT id, agente_id, tipo, nombre_archivo, created_at FROM lotes_importacion
                                       WHERE agente_id IS NOT NULL AND estado = 'pendiente' ORDER BY id DESC LIMIT 20""")
         return respuesta({"agentes": agentes, "esperando_columnas": esperando})
@@ -91,15 +92,20 @@ class Latido(BaseModel):
     carpeta: str | None = Field(default=None, max_length=400)
     pendientes: int = 0
     error: str | None = Field(default=None, max_length=500)
+    base: str | None = Field(default=None, max_length=20)
+    consultas: list[dict] = Field(default_factory=list, max_length=50)
 
 
 @api.post("/agente/latido")
 def latido(datos: Latido, agente=Depends(agente_de)):
     ctx, a = agente
     with db.transaccion(ctx) as conn, conn.cursor() as cur:
+        consultas = [{k: (str(q.get(k))[:300] if q.get(k) is not None and k in ("error", "nombre", "tipo", "ultima", "marca") else q.get(k))
+                      for k in ("nombre", "tipo", "ultima", "filas", "error", "marca")} for q in datos.consultas]
         cur.execute("""UPDATE agentes_sincronizacion SET ultima_conexion = now(), version = %s, equipo = %s, carpeta = %s, pendientes = %s,
-                       ultimo_error = coalesce(%s, ultimo_error), ultimo_error_at = CASE WHEN %s::text IS NULL THEN ultimo_error_at ELSE now() END
-                       WHERE id = %s""", (datos.version, datos.equipo, datos.carpeta, datos.pendientes, datos.error, datos.error, a["id"]))
+                       ultimo_error = coalesce(%s, ultimo_error), ultimo_error_at = CASE WHEN %s::text IS NULL THEN ultimo_error_at ELSE now() END,
+                       base = %s, consultas = %s WHERE id = %s""",
+                    (datos.version, datos.equipo, datos.carpeta, datos.pendientes, datos.error, datos.error, datos.base, json.dumps(consultas), a["id"]))
     return respuesta({"ok": True, "hora_servidor": datetime.now().astimezone()})
 
 
@@ -125,7 +131,11 @@ async def subir(archivo: UploadFile = File(...), tipo: str | None = Form(default
                 with conn.cursor() as cur:
                     cur.execute("UPDATE lotes_importacion SET estado = 'duplicado' WHERE id = %s", (r["lote_id"],))
                 return respuesta({"estado": "duplicado", "lote_id": r["lote_id"], "mensaje": "Ese archivo ya se había importado: no se duplica."})
-            if not r["mapeo_recordado"]:
+            exacto = all(c in r["encabezados"] for c, _, obligatorio in importar.CAMPOS[tipo] if obligatorio)
+            if not r["mapeo_recordado"] and exacto:
+                # Columnas con el nombre exacto de cada dato (lo que traen las consultas del agente): no hace falta confirmarlas.
+                r["mapeo"] = {c: c if c in r["encabezados"] else None for c, _, _ in importar.CAMPOS[tipo]}
+            elif not r["mapeo_recordado"]:
                 return respuesta({"estado": "esperando_columnas", "lote_id": r["lote_id"],
                                   "mensaje": "Primera vez con este formato: confirmá las columnas en Datos → Importar. Los siguientes entran solos."})
             v = importar.validar(conn, ctx, r["lote_id"], r["mapeo"])
