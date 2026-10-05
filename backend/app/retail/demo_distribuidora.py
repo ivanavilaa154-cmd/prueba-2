@@ -203,7 +203,9 @@ def cargar(hoy: date | None = None, escala: Escala | None = None, semilla: int =
                   [(oid, pid, deposito, desde + timedelta(days=d), 0, False) for pid, desde in sin_stock.items()
                    for d in range((hoy - desde).days + 1)])
         resumen = {k: v for k, v in resumen.items() if k not in ("diaria", "fechas_pedido", "marcas", "venta_mes")}
-        resumen.update({"org_id": oid, "clientes": len(clientes), "productos": len(prods)})
+        # Verdad de la demo para las pruebas: a quiénes se los hizo dejar de comprar (más de 3 vueltas de su ritmo, y al menos 21 días).
+        perdidos = [c.nombre for c in clientes if c.fin and (hoy - c.fin).days > max(21, 3 * c.frecuencia)]
+        resumen.update({"org_id": oid, "clientes": len(clientes), "productos": len(prods), "perdidos": perdidos})
     if calcular:
         from . import motor
         resumen["calculo"] = {k: v for k, v in motor.recalcular(oid, hoy, "nocturno").items() if k in ("segundos", "productos")}
@@ -252,8 +254,9 @@ def _clientes(conn, rng, oid, cantidad, inicio, hoy, prods, vendedores, listas) 
             fin = hoy - timedelta(days=caso["sin_comprar"])
         elif not caso:
             r = rng.random()
-            if r < 0.08:                                         # dejó de comprar
-                fin = hoy - timedelta(days=rng.randint(max(30, frecuencia * 4), 220))
+            desde, hasta = max(30, frecuencia * 4), min(220, (hoy - alta).days - 3 * frecuencia)   # antes compró al menos 3 vueltas
+            if r < 0.08 and hasta >= desde:                      # dejó de comprar
+                fin = hoy - timedelta(days=rng.randint(desde, hasta))
             elif r < 0.13:                                       # se está alejando: lleva entre 1,6 y 2,6 veces su intervalo
                 fin = hoy - timedelta(days=int(frecuencia * rng.uniform(1.6, 2.6)))
         # Surtido: categorías según el tipo de comercio, productos según su popularidad.

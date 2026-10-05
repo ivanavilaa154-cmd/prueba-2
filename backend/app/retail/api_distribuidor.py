@@ -17,7 +17,8 @@ api = APIRouter(prefix="/retail/api/distribuidor", tags=["retail"])
 
 def _hoy(conn) -> date:
     """El «hoy» de los datos: el último día con pedidos (la demo o una importación pueden terminar antes que el calendario)."""
-    f = db.fila(conn, "SELECT max(fecha) m FROM pedidos_venta")
+    # De toda la empresa, no de la cartera visible: para un vendedor, sus pedidos pueden terminar antes (y su ruta sería la de otro día).
+    f = db.fila(conn, "SELECT greatest((SELECT max(fecha) FROM pedidos_venta), (SELECT max(fecha) FROM agg_producto_ubicacion_dia)) m")
     return f["m"] if f and f["m"] else hoy_empresa(conn)
 
 

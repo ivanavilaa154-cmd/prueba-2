@@ -191,7 +191,7 @@ def test_el_vendedor_solo_ve_su_cartera(retail_distribuidora):
 def test_mi_cartera_y_visitas(retail_distribuidora):
     carla = cliente("carla@valle.demo")
     r = carla.get("/retail/api/distribuidor/mi-cartera").json()
-    assert r["vendedor"]["nombre"] == "Carla Mendoza"
+    assert r["vendedor"]["nombre"] == "Carla Mendoza" and r["hoy"] == HOY.isoformat()   # el «hoy» es el de la empresa, no el de su cartera
     parada = _fila(r["ruta"], CASOS["riesgo"]["cliente"])          # el cliente en riesgo está en la ruta de hoy, con qué ofrecerle
     assert parada["estado"] == "en_riesgo" and parada["oportunidades"]
     assert r["meta"] and r["meta"]["meta_mes"] and r["resumen"]["en_riesgo"] >= 1

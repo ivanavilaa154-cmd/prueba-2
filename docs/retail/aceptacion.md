@@ -19,6 +19,12 @@ Tiempos con la demo completa (13 meses, ~187.000 tickets): `python -m app.retail
 | Cada alerta muestra impacto en pesos, explicación y acción | `test_retail_avisos.py::test_cada_alerta_tiene_impacto_explicacion_y_accion` | ✓ |
 | El copiloto no responde cifras que no vengan de sus herramientas | `test_retail_copiloto.py::test_responde_con_cifras_de_las_herramientas`, `::test_las_herramientas_respetan_sucursales_y_permisos` (herramientas predefinidas, sin SQL libre, con RLS; la regla va en el prompt de sistema) | ✓ (la respuesta final la redacta el modelo: se verifica con el cliente de IA falso) |
 | Todas las pantallas cargan en menos de 3 s con la demo | `test_retail_aceptacion.py::test_todas_las_pantallas_cargan_en_menos_de_3_segundos` (demo reducida) y `app.retail.tiempos` (demo completa) | ✓ |
+| **SPEC v2** · Conversiones exactas: 1 bulto de 12 suma 12 unidades; margen por unidad base | `test_retail_calculos.py` (conversión `a_unidad_base`), `test_retail_lector.py::test_bultos_se_convierten_a_unidades_exactas` | ✓ |
+| **SPEC v2** · El margen usa costo de reposición e importes netos de impuestos recuperables | `test_retail_costos_impuestos.py::test_margen_con_costo_de_reposicion_neto_de_impuestos`, `::test_costos_cargados_con_iva_no_cambian_el_margen` | ✓ |
+| **SPEC v2** · El diagnóstico de calidad detecta todos los problemas sembrados en la demo | `test_retail_calidad.py::test_detecta_todos_los_problemas_sembrados` | ✓ |
+| **SPEC v2** · Un vendedor solo ve su cartera; un distribuidor no ve datos identificables de otro | `test_retail_distribuidor.py::test_el_vendedor_solo_ve_su_cartera` (pantallas y RLS), `test_retail_aceptacion.py::test_una_distribuidora_no_ve_clientes_de_otra_empresa`, `test_retail_panel.py::test_panel_agregado_y_anonimo` | ✓ |
+| **SPEC v2** · El reporte de clientes perdidos detecta a los clientes de demostración que dejaron de comprar | `test_retail_aceptacion.py::test_el_reporte_de_clientes_perdidos_detecta_a_los_de_la_demo` | ✓ |
+| **SPEC v2** · Pantallas del modo distribuidor en menos de 3 s | `test_retail_distribuidor.py::test_pantallas_del_distribuidor_cargan_en_menos_de_3_segundos` (demo reducida) y `app.retail.tiempos --email dueno@valle.demo` (demo completa) | ✓ |
 
 ## Tiempos medidos con la demo completa (28/09/2026)
 
@@ -37,3 +43,15 @@ Tiempos con la demo completa (13 meses, ~187.000 tickets): `python -m app.retail
 | Avisos | 0,03 |
 | Datos (importar, catálogo, documentos, conexiones) | ≤ 0,04 |
 | Configuración | 0,09 |
+
+## Tiempos del modo distribuidor con la demo completa (05/10/2026: 350 clientes, 11.400 pedidos, 246.000 líneas)
+
+| Pantalla | Segundos |
+|---|---|
+| Clientes que dejaron de comprar | 0,25 |
+| Vendedores | 0,65 |
+| Cuenta corriente | 0,22 |
+| Pareto de clientes y productos | 0,28 |
+| Pedidos y entregas | 0,27 |
+| Qué comprar hoy | 0,08 |
+| Mi cartera (vendedor) | 1,49 |
